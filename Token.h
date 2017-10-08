@@ -3,6 +3,7 @@
 #include "mytypes.h"
 
 enum TOKEN_TYPE {
+	INVALID,
 	EOF,
 	NUMBER,
 	IDENTIFIER,
@@ -31,6 +32,8 @@ enum TOKEN_TYPE {
 	AMP,
 	PLUS,
 	MINUS,
+	COMMA,
+	BANG,
 	STRING,
 	CHAR
 };
@@ -43,7 +46,7 @@ public:
 	Token(TOKEN_TYPE t) : type(t) {
 		pl.pstr = nullptr;
 	};
-	Token() : type(EOF) {
+	Token() : type(INVALID) {
 		pl.pstr = nullptr;
 	}
 	~Token();
@@ -56,5 +59,15 @@ public:
 		f64 pf64;
 		char * pstr;
 	} pl;
+
+	void clear();
+
+	Token(const Token &rhs);
+	Token(Token &&rhs);
+	Token& operator=(Token &&rhs);
+	Token& operator=(Token const &rhs);
+
+	void print();
 };
 
+const char * TokenTypeToStr(TOKEN_TYPE);

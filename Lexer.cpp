@@ -10,7 +10,7 @@ inline bool isWhiteSpace(char c)
 	return ((c == ' ') ||
 		(c == '\t') ||
 		(c == '\n') ||
-		(c == 'r'));
+		(c == '\r'));
 }
 
 inline bool isNumber(char c)
@@ -43,18 +43,23 @@ Lexer::~Lexer()
 {
 }
 
-void Lexer::openFile(FileData & file)
+bool Lexer::openFile(const char * filename)
 {
-	this->file = file;
+	return file.open(filename);
 }
 
-Token Lexer::getNextToken()
+void Lexer::getNextToken(Token &tok)
 {
-	Token tok(EOF);
 	char c = 0;
+	tok.type = INVALID;
 
-	consumeWhiteSpace();
-	while (file.getc(c)) {
+	while(1) {
+		consumeWhiteSpace();
+		if (!file.getc(c)) {
+			tok.type = EOF;
+			return;
+		}
+
 		if (isNumber(c)) {
 			// this is a number token
 			u64 total = c - '0';
@@ -65,8 +70,7 @@ Token Lexer::getNextToken()
 			}
 			tok.type = NUMBER;
 			tok.pl.pu64 = total;
-		}
-		else if (isAlpha(c) || (c == '_')) {
+		} else if (isAlpha(c) || (c == '_')) {
 			// this can indicate that an identifier starts
 			char buff[256] = {};
 			unsigned int i = 0;
@@ -78,27 +82,25 @@ Token Lexer::getNextToken()
 			tok.type = IDENTIFIER;
 			tok.pl.pstr = new char[i + 1];
 			memcpy(tok.pl.pstr, buff, i + 1);
-		}
-		else if (c == '"') {
+		} else if (c == '"') {
 			// this marks the start of a string
-		}
-		else if (c == '\'') {
+		} else if (c == '\'') {
 			// this marks a character
 
-		}
-		else if (c == '/') {
+		} else if (c == '/') {
 			// this can mean a line comment or multi line comment (or just a division)
 
-		}
-		else if (c == '=') {
+		} else if (c == '=') {
 			// this can be the assign or equals operator
 
-		}
-		else if (c == '<') {
+		} else if (c == '<') {
 			// this can be the LEQ or LT command or LSHIFT
 
 		} else if (c == '>') {
 			// this can be the GEQ or GT command or RSHIFT
+
+		} else if (c == '!') {
+			// this can be NEQ or just the bang unary operator
 
 		} else {
 			// here we handle the case of each individual character in a simple switch
@@ -148,12 +150,18 @@ Token Lexer::getNextToken()
 			case '-':
 				tok.type = MINUS;
 				break;
+			case ',':
+				tok.type = COMMA;
+				break;
 			default:
 				printf("We should never get here. Character: %c\n", c);
 				exit(1);
 			}
 		}
 
+		if (tok.type != INVALID) {
+			return;
+			// if we have a valid token return it, otherwise continue. This handles comments, etc
+		}
 	}
-	return tok;
 }

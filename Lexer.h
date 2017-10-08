@@ -1,7 +1,7 @@
 #pragma once
 
-#include "FileData.h"
 #include "Token.h"
+#include "FileData.h"
 
 class Lexer
 {
@@ -13,6 +13,6 @@ class Lexer
 public:
 	Lexer();
 	~Lexer();
-	void openFile(FileData &file);
-	Token getNextToken();
+	bool openFile(const char *filename);
+	void getNextToken(Token &tok);
 };

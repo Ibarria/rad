@@ -42,6 +42,7 @@ void FileData::close()
 {
 	if (data) {
 		free(data);
+		data = nullptr;
 		index = 0;
 		size = 0;
 	}
