@@ -13,6 +13,11 @@ inline bool isWhiteSpace(char c)
 		(c == '\r'));
 }
 
+inline bool isNewLine(char c)
+{
+	return ((c == '\n'));
+}
+
 inline bool isNumber(char c)
 {
 	return ((c >= '0') && (c <= '9'));
@@ -51,7 +56,7 @@ bool Lexer::openFile(const char * filename)
 void Lexer::getNextToken(Token &tok)
 {
 	char c = 0;
-	tok.type = INVALID;
+	tok.clear();
 
 	while(1) {
 		consumeWhiteSpace();
@@ -84,21 +89,94 @@ void Lexer::getNextToken(Token &tok)
 			memcpy(tok.pl.pstr, buff, i + 1);
 		} else if (c == '"') {
 			// this marks the start of a string
+			char *s = new char[1024];
+			u32 i = 0;
+			while (file.getc(c) && (c != '"') && (!isNewLine(c))) {
+				s[i++] = c;
+				if (i >= 1024 - 1) {
+					printf("Error: Found string too long to parse\n");
+					exit(1);
+				}
+			}
+			if (isNewLine(c)) {
+				printf("Error: Newlines are not allowed inside a quoted string\n");
+				exit(1);
+			}
+			tok.type = STRING;
+			tok.pl.pstr = s;
+			return;
 		} else if (c == '\'') {
 			// this marks a character
 
 		} else if (c == '/') {
 			// this can mean a line comment or multi line comment (or just a division)
-
+			if (!file.peek(c)) {
+				tok.type = DIV;
+				return;
+			}
+			if (c != '/') {
+				// this is not a comment, just return the DIV operator
+				tok.type = DIV;
+				return;
+			}
+			// we are in a comment situation, advance the pointer
+			file.getc(c);
+			// this will consume all characters until the newline is found, or end of file
+			while (file.getc(c) && !isNewLine(c));
 		} else if (c == '=') {
 			// this can be the assign or equals operator
-
+			if (!file.peek(c)) {
+				tok.type = ASSIGN;
+				return;
+			}
+			if (c != '=') {
+				// this is not a comment, just return the DIV operator
+				tok.type = ASSIGN;
+				return;
+			} else {
+				// We have to consume the second = since it is part of EQ
+				file.getc(c);
+				tok.type = EQ;
+				return;
+			}
 		} else if (c == '<') {
 			// this can be the LEQ or LT command or LSHIFT
-
+			if (!file.peek(c)) {
+				tok.type = LT;
+				return;
+			}
+			if (c == '<') {
+				// this is a LSHIFT
+				file.getc(c);
+				tok.type = LSHIFT;
+				return;
+			} else if (c == '=') {				
+				file.getc(c);
+				tok.type = LEQ;
+				return;
+			} else {
+				tok.type = LT;
+				return; 
+			}
 		} else if (c == '>') {
 			// this can be the GEQ or GT command or RSHIFT
-
+			if (!file.peek(c)) {
+				tok.type = GT;
+				return;
+			}
+			if (c == '>') {
+				// this is a RSHIFT
+				file.getc(c);
+				tok.type = RSHIFT;
+				return;
+			} else if (c == '=') {
+				file.getc(c);
+				tok.type = GEQ;
+				return;
+			} else {
+				tok.type = GT;
+				return;
+			}
 		} else if (c == '!') {
 			// this can be NEQ or just the bang unary operator
 
