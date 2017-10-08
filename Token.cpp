@@ -70,7 +70,7 @@ Token & Token::operator=(Token const & rhs)
 
 void Token::print()
 {
-	printf("Token type %s", TokenTypeToStr(type));
+	printf("Token %03lld:%03lld type %s", loc.line, loc.col, TokenTypeToStr(type));
 	switch (type) {
 	case NUMBER:
 		printf(" %d", pl.pu32);

@@ -32,10 +32,11 @@ inline bool isAlpha(char c)
 void Lexer::consumeWhiteSpace()
 {
 	char c = 0;
-	while (file.getc(c)) {
-		if (!isWhiteSpace(c)) {
-			file.rewind_one();
+	while (file.peek(c)) {
+		if (!isWhiteSpace(c)) {			
 			return;
+		} else {
+			file.getc(c);
 		}
 	}
 }
@@ -64,6 +65,8 @@ void Lexer::getNextToken(Token &tok)
 			tok.type = EOF;
 			return;
 		}
+
+		file.getLocation(tok.loc);
 
 		if (isNumber(c)) {
 			// this is a number token

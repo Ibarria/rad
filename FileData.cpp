@@ -1,12 +1,16 @@
 #include "FileData.h"
 #include <windows.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 FileData::FileData()
 {
 	data = nullptr;
 	index = 0;
 	size = 0;
+	nline = 1;
+	ncol = 1;
+
 }
 
 
@@ -51,21 +55,28 @@ void FileData::close()
 bool FileData::getc(char & c)
 {
 	if (!data) return false;
-	if (index >= size) return false;
-	c = data[index];
+	if (index+1 >= size) return false;
+	if (c == '\n') {
+		nline++;
+		ncol = 1;
+	} else {
+		ncol++;
+	}
 	index++;
+	c = data[index];
 	return true;
 }
 
 bool FileData::peek(char & c)
 {
 	if (!data) return false;
-	if (index >= size) return false;
-	c = data[index];
+	if (index+1 >= size) return false;
+	c = data[index+1];
 	return true;
 }
 
-void FileData::rewind_one()
+void FileData::getLocation(SrcLocation & loc)
 {
-	if (index > 0) index--;
+	loc.line = nline;
+	loc.col = ncol;
 }

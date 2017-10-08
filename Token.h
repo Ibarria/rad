@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mytypes.h"
+#include "SrcLocation.h"
 
 enum TOKEN_TYPE {
 	INVALID,
@@ -43,6 +44,7 @@ class Token
 {
 public: 
 	TOKEN_TYPE type;
+	SrcLocation loc;
 	Token(TOKEN_TYPE t) : type(t) {
 		pl.pstr = nullptr;
 	};

@@ -119,6 +119,7 @@
     <ClInclude Include="FileData.h" />
     <ClInclude Include="Lexer.h" />
     <ClInclude Include="mytypes.h" />
+    <ClInclude Include="SrcLocation.h" />
     <ClInclude Include="Token.h" />
   </ItemGroup>
   <ItemGroup>

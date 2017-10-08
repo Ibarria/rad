@@ -1,2 +1,4 @@
 * Lexer.cpp needs a way to handle errors and print to screen
-* We need a way to know what line, column we're parsing when there is an error
+* Number to support float (period)
+
+- We need a way to know what line, column we're parsing when there is an error
