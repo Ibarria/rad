@@ -41,6 +41,14 @@ void Lexer::consumeWhiteSpace()
 	}
 }
 
+void Lexer::Error(const char * msg)
+{
+	SrcLocation loc;
+	file.getLocation(loc);
+	printf("Error %s:%lld - %s", file.getFilename(), loc.line, msg);
+	exit(1);
+}
+
 Lexer::Lexer()
 {
 }
@@ -97,12 +105,12 @@ void Lexer::getNextToken(Token &tok)
 			while (file.getc(c) && (c != '"') && (!isNewLine(c))) {
 				s[i++] = c;
 				if (i >= 1024 - 1) {
-					printf("Error: Found string too long to parse\n");
+					Error("Found string too long to parse\n");
 					exit(1);
 				}
 			}
 			if (isNewLine(c)) {
-				printf("Error: Newlines are not allowed inside a quoted string\n");
+				Error("Newlines are not allowed inside a quoted string\n");
 				exit(1);
 			}
 			tok.type = STRING;
@@ -110,22 +118,44 @@ void Lexer::getNextToken(Token &tok)
 			return;
 		} else if (c == '\'') {
 			// this marks a character
-
+			if (!file.getc(c)) {
+				Error("Character was not defined before end of file\n");
+			} 
+			tok.type = CHAR;
+			tok.pl.pu32 = c;
+			if (!file.getc(c)) {
+				Error("Character was not defined before end of file\n");
+			}
+			if (c != '\'') {
+				Error("Character definitions can only be a single character\n");
+			}
+			return;
 		} else if (c == '/') {
 			// this can mean a line comment or multi line comment (or just a division)
 			if (!file.peek(c)) {
 				tok.type = DIV;
 				return;
 			}
-			if (c != '/') {
+			if (c == '*') {
+				// this is a multi line comment, move until we find a star (and then a slash)
+				bool cont = file.getc(c);
+				
+				while (cont) {
+					while ((cont = file.getc(c)) && (c != '*'));
+					cont = file.getc(c);
+					if (cont && (c == '/')) break;
+					// just fall through and parse a new token
+				}
+			} else if (c != '/') {
 				// this is not a comment, just return the DIV operator
 				tok.type = DIV;
 				return;
+			} else {
+				// we are in a comment situation, advance the pointer
+				file.getc(c);
+				// this will consume all characters until the newline is found, or end of file
+				while (file.getc(c) && !isNewLine(c));
 			}
-			// we are in a comment situation, advance the pointer
-			file.getc(c);
-			// this will consume all characters until the newline is found, or end of file
-			while (file.getc(c) && !isNewLine(c));
 		} else if (c == '=') {
 			// this can be the assign or equals operator
 			if (!file.peek(c)) {

@@ -39,6 +39,7 @@ bool FileData::open(const char * filename)
 		close();
 		return false;
 	}
+	strncpy_s(this->filename, filename, sizeof(this->filename));
 	return true;
 }
 
@@ -55,7 +56,8 @@ void FileData::close()
 bool FileData::getc(char & c)
 {
 	if (!data) return false;
-	if (index+1 >= size) return false;
+	if (index >= size) return false;
+	c = data[index];
 	if (c == '\n') {
 		nline++;
 		ncol = 1;
@@ -63,15 +65,14 @@ bool FileData::getc(char & c)
 		ncol++;
 	}
 	index++;
-	c = data[index];
 	return true;
 }
 
 bool FileData::peek(char & c)
 {
 	if (!data) return false;
-	if (index+1 >= size) return false;
-	c = data[index+1];
+	if (index >= size) return false;
+	c = data[index];
 	return true;
 }
 

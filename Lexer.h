@@ -8,7 +8,7 @@ class Lexer
 	FileData file;
 
 	void consumeWhiteSpace();
-
+	void Error(const char *msg);
 
 public:
 	Lexer();
