@@ -212,7 +212,15 @@ void Lexer::getNextToken(Token &tok)
 			}
 		} else if (c == '!') {
 			// this can be NEQ or just the bang unary operator
-
+			tok.type = BANG;
+			if (!file.peek(c)) {
+				return;
+			}
+			if (c == '=') {
+				file.getc(c);
+				tok.type = NEQ;
+			}
+			return;
 		} else {
 			// here we handle the case of each individual character in a simple switch
 			switch (c) {
