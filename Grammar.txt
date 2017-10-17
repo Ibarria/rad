@@ -1,0 +1,30 @@
+
+Program = TopLevelStatement [ Program ]
+
+TopLevelStatement = FunctionDeclaration 
+                  | VariableDeclaration
+				  | CompilerStatement
+
+CompilerStatement = <TODO>
+
+FunctionDeclaration = IDENTIFIER ':' ':' '(' FunctionParameters ')' [ '->' Type ] FunctionImplementation
+
+FunctionParameters = FunctionParameter [',' FunctionParameters]
+                   | 
+
+FunctionParameter = IDENTIFIER ':' Type
+
+FunctionImplementation = '{' StatementList '}'
+
+StatementList = Statement [ StatementList ]
+               |
+
+Statement = VariableDeclaration ';'
+          | AssignmentStatement ';'
+          | ConditionalStatement
+          | ReturnStatement
+          
+
+
+VariableDeclaration = 
+Type =

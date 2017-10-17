@@ -10,9 +10,7 @@ FileData::FileData()
 	size = 0;
 	nline = 1;
 	ncol = 1;
-
 }
-
 
 FileData::~FileData()
 {
@@ -76,7 +74,7 @@ bool FileData::peek(char & c)
 	return true;
 }
 
-void FileData::getLocation(SrcLocation & loc)
+void FileData::getLocation(SrcLocation & loc) const
 {
 	loc.line = nline;
 	loc.col = ncol;

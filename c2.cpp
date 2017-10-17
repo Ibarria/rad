@@ -5,9 +5,7 @@
 #define MINOR_V 1
 
 #include <stdio.h>
-#include <stdlib.h>
-#undef EOF
-#include "Lexer.h"
+#include "Parser.h"
 
 void usage()
 {
@@ -27,20 +25,13 @@ void parseOptions(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
-	FileData file;
-	Lexer lex;
-	Token t;
-
 	parseOptions(argc, argv);
+	std::vector<BaseAST *> vec = Parse(argv[1]);
 
-	lex.openFile(argv[1]);
-
-	lex.getNextToken(t);
-
-	while (t.type != EOF) {
-		t.print();
-		lex.getNextToken(t);
+	for (auto ast : vec) {
+		ast->print();
 	}
+
     return 0;
 }
 

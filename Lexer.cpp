@@ -284,3 +284,13 @@ void Lexer::getNextToken(Token &tok)
 		}
 	}
 }
+
+const char * Lexer::getFilename() const
+{
+	return file.getFilename();
+}
+
+void Lexer::getLocation(SrcLocation & loc) const
+{
+	file.getLocation(loc);
+}

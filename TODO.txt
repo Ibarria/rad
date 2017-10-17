@@ -1,3 +1,5 @@
+
+#####  LEXER  #####
 * Number to support float (period)
 * Support numbers of differnt precision
 * Support _ in numbers for clarity
@@ -7,3 +9,13 @@
 - Lexer.cpp needs a way to handle errors and print to screen
 - Handle String type
 - Handle multiline comments
+
+#####   PARSER  #####
+- Create Basic AST hierarchy
+- Be able to parse variable declaration
+- Be able to parse functions
+- Be able to parse blocks
+- Be able to parse assignments
+- Be able to parse Math expressions
+- Be able to parse conditionals
+- Print AST on the screen

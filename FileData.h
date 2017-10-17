@@ -17,7 +17,7 @@ public:
 	void close();
 	bool getc(char &c);
 	bool peek(char &c);
-	void getLocation(SrcLocation &loc);
-	const char *getFilename() { return filename; }
+	void getLocation(SrcLocation &loc) const;
+	const char *getFilename() const { return filename; }
 };
 

@@ -63,8 +63,8 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <MinimalRebuild>false</MinimalRebuild>
-      <ExceptionHandling>false</ExceptionHandling>
-      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <EnableModules>true</EnableModules>
       <BufferSecurityCheck>false</BufferSecurityCheck>
     </ClCompile>
@@ -94,6 +94,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AST.cpp" />
     <ClCompile Include="c2.cpp">
       <DebugInformationFormat Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ProgramDatabase</DebugInformationFormat>
       <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SDLCheck>
@@ -113,16 +114,20 @@
     </ClCompile>
     <ClCompile Include="FileData.cpp" />
     <ClCompile Include="Lexer.cpp" />
+    <ClCompile Include="Parser.cpp" />
     <ClCompile Include="Token.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AST.h" />
     <ClInclude Include="FileData.h" />
     <ClInclude Include="Lexer.h" />
     <ClInclude Include="mytypes.h" />
+    <ClInclude Include="Parser.h" />
     <ClInclude Include="SrcLocation.h" />
     <ClInclude Include="Token.h" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="Grammar.txt" />
     <Text Include="TODO.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

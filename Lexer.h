@@ -15,4 +15,6 @@ public:
 	~Lexer();
 	bool openFile(const char *filename);
 	void getNextToken(Token &tok);
+	void getLocation(SrcLocation &loc) const;
+	const char * getFilename() const;
 };
