@@ -1,0 +1,24 @@
+// Single line comment
+alpha := "a";
+
+/* Block comment */
+beta := "b";
+
+/* Nested /* Block /* Comment */ */ */
+another := "c";
+
+/* Multi
+     Line /* 
+          Block */ 
+              Comment */ 
+
+delta : string = "d";
+
+some_global_int: int;
+
+a := 3;
+b : string = "Hello there";
+c : float = 3.0;
+
+square := (x: float) -> float { return x * x; }
+multiply := (x: float, y: float) -> float { return x * y; }

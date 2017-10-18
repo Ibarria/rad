@@ -51,6 +51,7 @@ void Lexer::Error(const char * msg)
 
 Lexer::Lexer()
 {
+    num_nested = 0;
 }
 
 Lexer::~Lexer()
@@ -74,6 +75,7 @@ void Lexer::getNextToken(Token &tok)
 			return;
 		}
 
+        // Get the location in the token, the one for the first character of the token
 		file.getLocation(tok.loc);
 
 		if (isNumber(c)) {
@@ -113,6 +115,7 @@ void Lexer::getNextToken(Token &tok)
 				Error("Newlines are not allowed inside a quoted string\n");
 				exit(1);
 			}
+            s[i++] = 0;
 			tok.type = STRING;
 			tok.pl.pstr = s;
 			return;
@@ -139,11 +142,31 @@ void Lexer::getNextToken(Token &tok)
 			if (c == '*') {
 				// this is a multi line comment, move until we find a star (and then a slash)
 				bool cont = file.getc(c);
-				
+                file.getLocation(nested_comment_stack[num_nested]);
+                num_nested++;
 				while (cont) {
-					while ((cont = file.getc(c)) && (c != '*'));
-					cont = file.getc(c);
-					if (cont && (c == '/')) break;
+					while ((cont = file.getc(c)) && (c != '*') && (c != '/'));
+                    if (!cont) {
+                        tok.type = EOF;
+                        return;
+                    }
+                    if (c == '/') {
+                        // possible nested comment
+                        cont = file.getc(c);
+                        if (cont && (c == '*')) {
+                            if (num_nested + 1 >= MAX_NESTED_COMMENT) {
+                                Error("You have reached the maximum number of nested comments\n");
+                            }
+                            file.getLocation(nested_comment_stack[num_nested]);
+                            num_nested++;
+                        }
+                    } else {
+                        cont = file.getc(c);
+                        if (cont && (c == '/')) {
+                            num_nested--;
+                            if (num_nested == 0) break;
+                        }
+                    }
 					// just fall through and parse a new token
 				}
 			} else if (c != '/') {

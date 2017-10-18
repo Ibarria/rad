@@ -5,8 +5,10 @@
 
 class Lexer
 {
+    static const int MAX_NESTED_COMMENT = 16;
 	FileData file;
-
+    SrcLocation nested_comment_stack[MAX_NESTED_COMMENT];
+    u8 num_nested;
 	void consumeWhiteSpace();
 	void Error(const char *msg);
 

@@ -29,6 +29,9 @@ std::vector<BaseAST *> Parse(const char *filename)
 		// Function definition, declaration [FUTURE]
 		// Variable declaration
 		// Assignment
+        t.print();
+        lex.getNextToken(t);
+        continue;
 
 		if (t.type != IDENTIFIER) {
 			Error(lex, "Identifier expected but not found\n");
