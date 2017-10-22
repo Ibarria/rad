@@ -115,18 +115,83 @@ bool Lexer::parseStringToken(char *input, Token &tok)
 
 inline bool isNewLine(char c)
 {
-	return ((c == '\n'));
+    return ((c == '\n'));
 }
 
 inline bool isNumber(char c)
 {
-	return ((c >= '0') && (c <= '9'));
+    return ((c >= '0') && (c <= '9'));
 }
 
 inline bool isAlpha(char c)
 {
-	return ((c >= 'a') && (c <= 'z')) ||
-		((c >= 'A') && (c <= 'Z'));
+    return ((c >= 'a') && (c <= 'z')) ||
+        ((c >= 'A') && (c <= 'Z'));
+}
+
+inline bool isHex(char c)
+{
+    return isNumber(c) || ((c >= 'A') && (c <= 'F'))
+        || ((c >= 'a') && (c <= 'f'));
+}
+
+void Lexer::parseNumber(Token & tok, char c)
+{
+    // this is a number token
+    u64 total = c - '0';
+    double dtotal = 0;
+    int base = 10;
+    bool decimal = false;
+    int dec_index = 0;
+
+    file.peek(c);
+    if (c == 'x') {
+        if (total != 0) {
+            Error("Hex numbers must start with prefix 0x\n");
+        }
+        base = 16;
+    }
+
+    while (file.peek(c)) {
+        if (c == '.') {
+            // handle the conversion to float right now
+            if (base == 16) Error("Hex numbers cannot have a period in them\n");
+            file.getc(c);
+            decimal = true;
+            dtotal = total;
+            continue;
+        }
+        if ((base == 10) && !isNumber(c) && isAlpha(c)) {
+            Error("Numbers need a space at the end\n");
+        }
+        if ((base == 16) && !isHex(c) && isAlpha(c)) {
+            Error("Numbers need a space at the end\n");
+        }
+        if (!isAlpha(c) && !isNumber(c)) {
+            break;
+        }
+        if (!decimal) {
+            total = total * base;
+            if (isNumber(c)) {
+                total += c - '0';
+            } else {
+                c &= 0xDF; // this makes this character lowercase
+                total += c - 'A';
+            }
+        } else {
+            dec_index++;
+            float num = float(c - '0');
+            dtotal = dtotal + num / pow(10, dec_index);
+        }
+        file.getc(c);
+    }
+    if (decimal) {
+        tok.pl.pf64 = dtotal;
+        tok.type = FNUMBER;
+    } else {
+        tok.pl.pu64 = total;
+        tok.type = NUMBER;
+    }
 }
 
 void Lexer::consumeWhiteSpace()
@@ -201,15 +266,7 @@ void Lexer::getNextTokenInternal(Token &tok)
 		file.getLocation(tok.loc);
 
 		if (isNumber(c)) {
-			// this is a number token
-			u64 total = c - '0';
-
-			while (file.peek(c) && isNumber(c)) {
-				total = total * 10 + (c - '0');
-				file.getc(c);
-			}
-			tok.type = NUMBER;
-			tok.pl.pu64 = total;
+            parseNumber(tok, c);
 		} else if (isAlpha(c) || (c == '_')) {
 			// this can indicate that an identifier starts
 			char buff[256] = {};

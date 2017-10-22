@@ -61,9 +61,12 @@ void Token::print()
 	printf("Token %03lld:%03lld type %s", loc.line, loc.col, TokenTypeToStr(type));
 	switch (type) {
 	case NUMBER:
-		printf(" %d", pl.pu32);
+		printf(" %lld", pl.pu64);
 		break;
-	case IDENTIFIER:
+    case FNUMBER:
+        printf(" %lf", pl.pf64);
+        break;
+    case IDENTIFIER:
 	case STRING:
 		printf(" %s", str.c_str());
 		break;
@@ -80,7 +83,8 @@ const char * TokenTypeToStr(TOKEN_TYPE type)
 	switch (type) {
 		CASE_TOKEN_TYPE(LAST_TOKEN);
 		CASE_TOKEN_TYPE(NUMBER);
-		CASE_TOKEN_TYPE(IDENTIFIER);
+        CASE_TOKEN_TYPE(FNUMBER);
+        CASE_TOKEN_TYPE(IDENTIFIER);
 		CASE_TOKEN_TYPE(EQ);
 		CASE_TOKEN_TYPE(LEQ);
 		CASE_TOKEN_TYPE(GEQ);

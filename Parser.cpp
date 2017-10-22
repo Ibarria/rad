@@ -18,7 +18,16 @@ static void Error(const Lexer &lex, const char *msg)
 static bool isAssignmentOperator(const Token &t)
 {
     return (t.type == ASSIGN)
-        || (t.type == ASSIGN);
+        || (t.type == MUL_ASSIGN)
+        || (t.type == DIV_ASSIGN)
+        || (t.type == MOD_ASSIGN)
+        || (t.type == ADD_ASSIGN)
+        || (t.type == SUB_ASSIGN)
+        || (t.type == LEFT_ASSIGN)
+        || (t.type == RIGHT_ASSIGN)
+        || (t.type == AND_ASSIGN)
+        || (t.type == XOR_ASSIGN)
+        || (t.type == OR_ASSIGN);
 }
 
 TypeAST *parseDirectType(Lexer &lex)
@@ -81,25 +90,37 @@ FunctionDefinitionAST *parseFunctionDefinition(Lexer &lex)
     return nullptr;
 }
 
-ExprAST * parseUnaryExpression(Lexer &lex)
+ExprAST * parseCastExpression(Lexer &lex)
 {
+    Token t;
+    lex.getNextToken(t);
+
+    if (t.type == IDENTIFIER) {
+
+    } else if (t.type == NUMBER) {
+
+    }
     return nullptr;
 }
 
 ExprAST * parseAssignmentExpression(Lexer &lex)
 {
-    ExprAST *lhs = parseUnaryExpression(lex);
+    ExprAST *lhs = parseCastExpression(lex);
     Token t;
 
     lex.lookaheadToken(t);
+    if (isAssignmentOperator(t)) {
+
+    }
     return nullptr;
 }
 
 ExprAST * parseExpression(Lexer &lex)
 {
     Token t;
-    lex.getNextToken(t);
+    lex.lookaheadToken(t);
     if (t.type == OPEN_PAREN) {
+        lex.getNextToken(t);
         ExprAST *expr = parseExpression(lex);
         lex.getNextToken(t);
         if (t.type != CLOSE_PAREN) {
