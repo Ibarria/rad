@@ -82,6 +82,7 @@ void CompareAST::print()
 
 DeclAST::DeclAST()
 {
+    specified_type = inferred_type = nullptr;
 }
 
 DeclAST::~DeclAST()
@@ -92,14 +93,6 @@ void DeclAST::print()
 {
 }
 
-TypeAST::TypeAST()
-{
-}
-
-TypeAST::~TypeAST()
-{
-}
-
-void TypeAST::print()
+void DirectTypeAST::print()
 {
 }

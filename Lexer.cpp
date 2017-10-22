@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#undef EOF
 
 #include "Lexer.h"
 
@@ -63,15 +62,37 @@ bool Lexer::openFile(const char * filename)
 	return file.open(filename);
 }
 
+void Lexer::parseFile()
+{
+    Token tok;
+    while (tok.type != LAST_TOKEN) {
+        getNextTokenInternal(tok);
+        tokens.push_back(tok);
+    }
+    file.close();
+    token_index = 0;
+}
+
 void Lexer::getNextToken(Token &tok)
 {
+    if (token_index == tokens.size()) {
+        tok.clear();
+        tok.type = LAST_TOKEN;
+        return;
+    }
+    tok = tokens[token_index++];
+}
+
+void Lexer::getNextTokenInternal(Token &tok)
+{
 	char c = 0;
+
 	tok.clear();
 
 	while(1) {
 		consumeWhiteSpace();
 		if (!file.getc(c)) {
-			tok.type = EOF;
+			tok.type = LAST_TOKEN;
 			return;
 		}
 
@@ -98,8 +119,8 @@ void Lexer::getNextToken(Token &tok)
 				file.getc(c);
 			}
 			tok.type = IDENTIFIER;
-			tok.pl.pstr = new char[i + 1];
-			memcpy(tok.pl.pstr, buff, i + 1);
+            buff[i] = 0;
+			tok.str = buff;
 		} else if (c == '"') {
 			// this marks the start of a string
 			char *s = new char[1024];
@@ -117,7 +138,7 @@ void Lexer::getNextToken(Token &tok)
 			}
             s[i++] = 0;
 			tok.type = STRING;
-			tok.pl.pstr = s;
+			tok.str = s;
 			return;
 		} else if (c == '\'') {
 			// this marks a character
@@ -147,7 +168,7 @@ void Lexer::getNextToken(Token &tok)
 				while (cont) {
 					while ((cont = file.getc(c)) && (c != '*') && (c != '/'));
                     if (!cont) {
-                        tok.type = EOF;
+                        tok.type = LAST_TOKEN;
                         return;
                     }
                     if (c == '/') {
@@ -244,8 +265,18 @@ void Lexer::getNextToken(Token &tok)
 				tok.type = NEQ;
 			}
 			return;
-		} else {
-			// here we handle the case of each individual character in a simple switch
+		} else if (c == ':') {
+            tok.type = COLON;
+            if (!file.peek(c)) {
+                return;
+            }
+            if (c == ':') {
+                file.getc(c);
+                tok.type = DOUBLE_COLON;
+            }
+            return;
+        } else {
+            // here we handle the case of each individual character in a simple switch
 			switch (c) {
 			case '(':
 				tok.type = OPEN_PAREN;
@@ -267,9 +298,6 @@ void Lexer::getNextToken(Token &tok)
 				break;
 			case ';':
 				tok.type = SEMICOLON;
-				break;
-			case ':':
-				tok.type = COLON;
 				break;
 			case '.':
 				tok.type = PERIOD;
@@ -308,6 +336,16 @@ void Lexer::getNextToken(Token &tok)
 	}
 }
 
+void Lexer::lookaheadToken(Token & tok)
+{
+    if (token_index == tokens.size()) {
+        tok.clear();
+        tok.type = LAST_TOKEN;
+        return;
+    }
+    tok = tokens[token_index];
+}
+
 const char * Lexer::getFilename() const
 {
 	return file.getFilename();
@@ -316,4 +354,14 @@ const char * Lexer::getFilename() const
 void Lexer::getLocation(SrcLocation & loc) const
 {
 	file.getLocation(loc);
+}
+
+unsigned int Lexer::getTokenStreamPosition() const
+{
+    return token_index;
+}
+
+void Lexer::setTokenStreamPosition(unsigned int index)
+{
+    token_index = index;
 }

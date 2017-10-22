@@ -187,12 +187,8 @@ declaration
 	;
 
 declaration_specifiers
-	: storage_class_specifier
-	| storage_class_specifier declaration_specifiers
-	| type_specifier
+	: type_specifier
 	| type_specifier declaration_specifiers
-	| type_qualifier
-	| type_qualifier declaration_specifiers
 	;
 
 init_declarator_list
@@ -205,14 +201,6 @@ init_declarator
 	| declarator '=' initializer
 	;
 
-storage_class_specifier
-	: TYPEDEF
-	| EXTERN
-	| STATIC
-	| AUTO
-	| REGISTER
-	;
-
 type_specifier
 	: VOID
 	| CHAR
@@ -223,21 +211,17 @@ type_specifier
 	| DOUBLE
 	| SIGNED
 	| UNSIGNED
-	| struct_or_union_specifier
+	| struct_specifier
 	| enum_specifier
 	| TYPE_NAME
 	;
 
-struct_or_union_specifier
-	: struct_or_union IDENTIFIER '{' struct_declaration_list '}'
-	| struct_or_union '{' struct_declaration_list '}'
-	| struct_or_union IDENTIFIER
+struct_specifier
+	: STRUCT IDENTIFIER '{' struct_declaration_list '}'
+	| STRUCT '{' struct_declaration_list '}'
+	| STRUCT IDENTIFIER
 	;
 
-struct_or_union
-	: STRUCT
-	| UNION
-	;
 
 struct_declaration_list
 	: struct_declaration
@@ -251,8 +235,6 @@ struct_declaration
 specifier_qualifier_list
 	: type_specifier specifier_qualifier_list
 	| type_specifier
-	| type_qualifier specifier_qualifier_list
-	| type_qualifier
 	;
 
 struct_declarator_list
@@ -282,11 +264,6 @@ enumerator
 	| IDENTIFIER '=' constant_expression
 	;
 
-type_qualifier
-	: CONST
-	| VOLATILE
-	;
-
 declarator
 	: pointer direct_declarator
 	| direct_declarator
@@ -304,16 +281,8 @@ direct_declarator
 
 pointer
 	: '*'
-	| '*' type_qualifier_list
 	| '*' pointer
-	| '*' type_qualifier_list pointer
 	;
-
-type_qualifier_list
-	: type_qualifier
-	| type_qualifier_list type_qualifier
-	;
-
 
 parameter_type_list
 	: parameter_list
@@ -392,11 +361,6 @@ compound_statement
 	| '{' declaration_list statement_list '}'
 	;
 
-declaration_list
-	: declaration
-	| declaration_list declaration
-	;
-
 statement_list
 	: statement
 	| statement_list statement
@@ -421,21 +385,15 @@ iteration_statement
 	;
 
 jump_statement
-	: GOTO IDENTIFIER ';'
-	| CONTINUE ';'
+	: CONTINUE ';'
 	| BREAK ';'
 	| RETURN ';'
 	| RETURN expression ';'
 	;
 
-translation_unit
-	: external_declaration
-	| translation_unit external_declaration
-	;
-
-external_declaration
-	: function_definition
-	| declaration
+declaration_list
+	: declaration
+	| declaration_list declaration
 	;
 
 function_definition
@@ -445,6 +403,16 @@ function_definition
 	| declarator compound_statement
 	;
 
+top_level_statement
+	: function_definition
+	| declaration
+    | compiler_statement
+	;
+
+program
+	: top_level_statement
+	| program top_level_statement
+	;
 
 
 
@@ -456,32 +424,206 @@ function_definition
 
 
 
-Program = TopLevelStatement [ Program ]
+program
+    : top_level_statement
+    | program top_level_statement
 
-TopLevelStatement = FunctionDeclaration 
-                  | VariableDeclaration
-				  | CompilerStatement
+top_level_statement 
+    : declaration
+    | CompilerStatement
 
 CompilerStatement = <TODO>
 
-FunctionDeclaration = IDENTIFIER ':' ':' '(' FunctionParameters ')' [ '->' Type ] FunctionImplementation
+declaration
+    : IDENTIFIER ':' type_specifier '=' definition       // full definition for a variable non const
+    | IDENTIFIER ':' '=' definition                      // start value provides implicit type
+    | IDENTIFIER ':' type_specifier                      // variable without start value
+    | IDENTIFIER ':' ':' definition                      // this is constant definition
 
-FunctionParameters = FunctionParameter [',' FunctionParameters]
-                   | 
+definition
+    : expression
+    | function_definition
 
-FunctionParameter = IDENTIFIER ':' Type
+function_definition
+    : function_declaration instruction_block
 
-FunctionImplementation = '{' StatementList '}'
+function_declaration
+    : '(' argument_declaration_list ')' '-' '>' type_specifier
+    | '(' ')' '-' '>' type_specifier
+    | '(' argument_declaration_list ')' 
+    | '(' ')' 
 
-StatementList = Statement [ StatementList ]
-               |
+argument_declaration_list
+    : argument_declaration
+    | argument_declaration_list ',' argument_declaration
 
-Statement = VariableDeclaration ';'
+argument_declaration
+    : IDENTIFIER ':' type_specifier
+
+@TODO: support arrays, pointers, etc
+type_specifier
+    : IDENTIFIER
+
+instruction_block
+    : '{' '}'
+    | '{' statement_list '}'
+
+statement_list
+    : statement
+    | statement_list ';' statement
+
+
+Statement = declaration ';'
           | AssignmentStatement ';'
           | ConditionalStatement
           | ReturnStatement
           
+AssignmentStatement
+    : variable_reference assignment_operator expression
+
+variable_reference
+    : IDENTIFIER
+    | array_access variable_reference
+    | pointer_deref variable_reference
+
+array_access
+    : '[' expression ']'
+
+pointer_deref
+   : '*'
+   | pointer_deref '*'
+   | '<<'
+   | pointer_deref '<<'
 
 
-VariableDeclaration = 
-Type =
+primary_expression
+	: IDENTIFIER
+	| CONSTANT
+	| STRING_LITERAL
+	| '(' expression ')'
+	;
+
+postfix_expression
+	: primary_expression
+	| postfix_expression '[' expression ']'
+	| postfix_expression '(' ')'
+	| postfix_expression '(' argument_expression_list ')'
+	| postfix_expression '.' IDENTIFIER
+	| postfix_expression INC_OP
+	| postfix_expression DEC_OP
+	;
+
+argument_expression_list
+	: assignment_expression
+	| argument_expression_list ',' assignment_expression
+	;
+
+unary_expression
+	: postfix_expression
+	| INC_OP unary_expression
+	| DEC_OP unary_expression
+	| unary_operator cast_expression
+	| SIZEOF unary_expression
+	| SIZEOF '(' type_name ')'
+	;
+
+unary_operator
+	: '&'
+	| '*'
+	| '+'
+	| '-'
+	| '~'
+	| '!'
+	;
+
+cast_expression
+	: unary_expression
+	| '(' type_name ')' cast_expression
+	;
+
+multiplicative_expression
+	: cast_expression
+	| multiplicative_expression '*' cast_expression
+	| multiplicative_expression '/' cast_expression
+	| multiplicative_expression '%' cast_expression
+	;
+
+additive_expression
+	: multiplicative_expression
+	| additive_expression '+' multiplicative_expression
+	| additive_expression '-' multiplicative_expression
+	;
+
+shift_expression
+	: additive_expression
+	| shift_expression LEFT_OP additive_expression
+	| shift_expression RIGHT_OP additive_expression
+	;
+
+relational_expression
+	: shift_expression
+	| relational_expression '<' shift_expression
+	| relational_expression '>' shift_expression
+	| relational_expression LE_OP shift_expression
+	| relational_expression GE_OP shift_expression
+	;
+
+equality_expression
+	: relational_expression
+	| equality_expression EQ_OP relational_expression
+	| equality_expression NE_OP relational_expression
+	;
+
+and_expression
+	: equality_expression
+	| and_expression '&' equality_expression
+	;
+
+exclusive_or_expression
+	: and_expression
+	| exclusive_or_expression '^' and_expression
+	;
+
+inclusive_or_expression
+	: exclusive_or_expression
+	| inclusive_or_expression '|' exclusive_or_expression
+	;
+
+logical_and_expression
+	: inclusive_or_expression
+	| logical_and_expression AND_OP inclusive_or_expression
+	;
+
+logical_or_expression
+	: logical_and_expression
+	| logical_or_expression OR_OP logical_and_expression
+	;
+
+conditional_expression
+	: logical_or_expression
+	| logical_or_expression '?' expression ':' conditional_expression
+	;
+
+assignment_expression
+	: conditional_expression
+	| unary_expression assignment_operator assignment_expression
+	;
+
+assignment_operator
+	: '='
+	| MUL_ASSIGN
+	| DIV_ASSIGN
+	| MOD_ASSIGN
+	| ADD_ASSIGN
+	| SUB_ASSIGN
+	| LEFT_ASSIGN
+	| RIGHT_ASSIGN
+	| AND_ASSIGN
+	| XOR_ASSIGN
+	| OR_ASSIGN
+	;
+
+expression
+	: assignment_expression
+	| expression ',' assignment_expression
+	;

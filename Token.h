@@ -2,10 +2,11 @@
 
 #include "mytypes.h"
 #include "SrcLocation.h"
+#include <string>
 
 enum TOKEN_TYPE {
 	INVALID,
-	EOF,
+	LAST_TOKEN,
 	NUMBER,
 	IDENTIFIER,
 	EQ,
@@ -25,6 +26,7 @@ enum TOKEN_TYPE {
 	CLOSE_SQBRACKET,
 	SEMICOLON,
 	COLON,
+    DOUBLE_COLON,
 	PERIOD,
 	HASH,
 	STAR,
@@ -45,13 +47,9 @@ class Token
 public: 
 	TOKEN_TYPE type;
 	SrcLocation loc;
-	Token(TOKEN_TYPE t) : type(t) {
-		pl.pstr = nullptr;
-	};
-	Token() : type(INVALID) {
-		pl.pstr = nullptr;
-	}
-	~Token();
+	Token(TOKEN_TYPE t) : type(t) {}
+    Token() : type(INVALID) {}
+	//~Token();
 	union payload {
 		u32 pu32;
 		u64 pu64;
@@ -59,15 +57,15 @@ public:
 		s64 ps64;
 		f32 pf32;
 		f64 pf64;
-		char * pstr;
 	} pl;
+    std::string str;
 
 	void clear();
 
-	Token(const Token &rhs);
-	Token(Token &&rhs);
-	Token& operator=(Token &&rhs);
-	Token& operator=(Token const &rhs);
+	//Token(const Token &rhs);
+	//Token(Token &&rhs);
+	//Token& operator=(Token &&rhs);
+	//Token& operator=(Token const &rhs);
 
 	void print();
 };

@@ -1,89 +1,121 @@
 #pragma once
 
-#define MAX_VARNAME 64
+#include <string>
+#include <vector>
 
-class BaseAST
+struct BaseAST;
+struct TypeAST;
+struct ExprAST;
+
+struct BaseAST
 {
-public:
 	BaseAST();
 	~BaseAST();
 	virtual void print() {}
 };
 
-class ExprAST : BaseAST
+struct DefinitionAST : BaseAST
 {
-public:
+    virtual void print() {}
+};
+
+struct TypeAST : BaseAST
+{
+    virtual void print() {}
+};
+
+struct ArgumentDeclarationAST : BaseAST
+{
+    std::string name;
+    TypeAST *type;
+    virtual void print();
+};
+
+struct FunctionDeclarationAST : TypeAST
+{
+    std::vector<ArgumentDeclarationAST *> arguments;
+    TypeAST *return_value;
+    virtual void print();
+};
+
+struct StatementBlockAST : BaseAST
+{
+    virtual void print();
+};
+
+struct FunctionDefinitionAST : DefinitionAST
+{
+    FunctionDeclarationAST *declaration;
+    StatementBlockAST *function_body;
+    virtual void print();
+};
+
+struct ExprAST : DefinitionAST
+{
 	ExprAST();
 	~ExprAST();
 	virtual void print();
 };
 
-class TypeAST : BaseAST
+struct DirectTypeAST : TypeAST
 {
-public:
-	TypeAST();
-	~TypeAST();
 	virtual void print();
 
 	enum BasicType {
 		I8, I16, I32, I64,
 		U8, U16, U32, U64,
-		F32, F64, BOOL, CUSTOM
+		F32, F64, BOOL, STRING, CUSTOM
 	};
 
 	BasicType type;
 	bool isArray;
 	bool isPointer;
-	char name[MAX_VARNAME];
+	std::string name;
 };
 
 
-class ConstNumAST : ExprAST
+struct ConstNumAST : ExprAST
 {
-public:
 	ConstNumAST();
 	~ConstNumAST();
 	virtual void print();
 };
 
-class BinOpAST : ExprAST
+struct BinOpAST : ExprAST
 {
-public:
 	BinOpAST();
 	~BinOpAST();
 	virtual void print();
 };
 
-class UnOpAST : ExprAST
+struct UnOpAST : ExprAST
 {
-public:
 	UnOpAST();
 	~UnOpAST();
 	virtual void print();
 };
 
-class AssignAST : ExprAST
+struct AssignAST : ExprAST
 {
-public:
 	AssignAST();
 	~AssignAST();
 	virtual void print();
 };
 
-class CompareAST : ExprAST
+struct CompareAST : ExprAST
 {
-public:
 	CompareAST();
 	~CompareAST();
 	virtual void print();
 };
 
-class DeclAST : BaseAST
+struct DeclAST : BaseAST
 {
-public:
-	char varname[MAX_VARNAME];
-	TypeAST type;
-
+    std::string varname;
+	TypeAST *specified_type;
+    TypeAST *inferred_type;
+    DefinitionAST *definition;
+    bool is_constant;
 	DeclAST();
 	~DeclAST();
 	virtual void print();
