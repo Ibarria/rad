@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <assert.h>
 #include "Lexer.h"
 
 inline bool isWhiteSpace(char c)
@@ -10,6 +10,107 @@ inline bool isWhiteSpace(char c)
 		(c == '\t') ||
 		(c == '\n') ||
 		(c == '\r'));
+}
+
+struct StringToken {
+    const char *str;
+    TOKEN_TYPE token;
+} strTok[] = {
+    { "<<=", LEFT_ASSIGN},
+    { "<<",  LSHIFT },
+    { "<=",  LEQ },
+    { "<",   LT },
+
+    { "==",  EQ },
+    { "=",   ASSIGN},
+
+    { ">>=", RIGHT_ASSIGN },
+    { ">>",  RSHIFT },
+    { ">=",  GEQ },
+    { ">",   GT },
+
+    { "::",  DOUBLE_COLON },
+    { ":",   COLON },
+
+    { "*=",  MUL_ASSIGN },
+    { "*/",  CLOSE_BLOCK_COMMENT },
+    { "*",   STAR},
+
+    { "/=",  DIV_ASSIGN },
+    { "//",  LINE_COMMENT },
+    { "/*",  OPEN_BLOCK_COMMENT },
+    { "/",   DIV },
+
+    { "+=",  ADD_ASSIGN },
+    { "++",  DOUBLE_PLUS },
+    { "+",   PLUS },
+
+    { "---", TRIPLE_MINUS },
+    { "-=",  SUB_ASSIGN },
+    { "--",  DOUBLE_MINUS },
+    { "-",   MINUS },
+
+    { "&=",  AND_ASSIGN },
+    { "&&",  DOUBLE_AMP },
+    { "&",   AMP },
+
+    { "^=",  XOR_ASSIGN },
+    { "^",   HAT },
+
+    { "|=",  OR_ASSIGN },
+    { "||",  DOUBLE_PIPE },
+    { "|",   PIPE },
+
+    { "..",  DOUBLE_PERIOD},
+    { ".",   PERIOD},
+
+    { "!=",  NEQ },
+    { "!",   BANG },
+
+    { ";",   SEMICOLON },
+    { "(",   OPEN_PAREN },
+    { ")",   CLOSE_PAREN },
+    { "[",   OPEN_SQBRACKET },
+    { "]",   CLOSE_SQBRACKET },
+    { "{",   OPEN_CURLYBRACKET },
+    { "}",   CLOSE_CURLYBRACKET },
+    { "#",   HASH },
+    { "%",   MOD },
+    { ",",   COMMA },
+
+    { nullptr, INVALID}
+};
+
+bool Lexer::parseStringToken(char *input, Token &tok)
+{
+    // find the first existence of the first character of input in our array
+    struct StringToken *st;
+    st = strTok;
+    while (st->str != nullptr) {
+        if (input[0] == st->str[0]) {
+            break;
+        }
+        st++;
+    }
+    if (st->str == nullptr) return false;
+
+    // we assume that input is for sure a string of less than 4 characters
+    assert(strlen(input) < 4);
+
+    while ((st->str != nullptr) && (st->str[0] == input[0])) {
+        if (!strncmp(st->str, input, strlen(st->str))) {
+            // we found a match, our table assigns the first match lenghtwise
+            tok.type = st->token;
+            char c;
+            int i, s;
+            s = (int)strlen(st->str); 
+            // the for loop starts with 1 because we usually have consumed 1 char
+            for (i = 1; i < s; i++) file.getc(c);
+            return true;
+        }
+        st++;
+    }
+    return false;
 }
 
 inline bool isNewLine(char c)
@@ -140,33 +241,42 @@ void Lexer::getNextTokenInternal(Token &tok)
 			tok.type = STRING;
 			tok.str = s;
 			return;
-		} else if (c == '\'') {
-			// this marks a character
-			if (!file.getc(c)) {
-				Error("Character was not defined before end of file\n");
-			} 
-			tok.type = CHAR;
-			tok.pl.pu32 = c;
-			if (!file.getc(c)) {
-				Error("Character was not defined before end of file\n");
-			}
-			if (c != '\'') {
-				Error("Character definitions can only be a single character\n");
-			}
-			return;
-		} else if (c == '/') {
-			// this can mean a line comment or multi line comment (or just a division)
-			if (!file.peek(c)) {
-				tok.type = DIV;
-				return;
-			}
-			if (c == '*') {
-				// this is a multi line comment, move until we find a star (and then a slash)
-				bool cont = file.getc(c);
+        } else if (c == '\'') {
+            // this marks a character
+            if (!file.getc(c)) {
+                Error("Character was not defined before end of file\n");
+            }
+            tok.type = CHAR;
+            tok.pl.pu32 = c;
+            if (!file.getc(c)) {
+                Error("Character was not defined before end of file\n");
+            }
+            if (c != '\'') {
+                Error("Character definitions can only be a single character\n");
+            }
+            return;
+        } else {
+            // we are going to do a bit of lookahead in the string
+            char input[4] = {};
+            input[0] = c;
+            file.lookAheadTwo(&input[1]);
+            if (!parseStringToken(input, tok)) {
+                // at this point, all other tokens must be in this form
+                Error("Token not recognized\n"); // @TODO: improve this error message
+            }
+
+            if (tok.type == LINE_COMMENT) {
+                // we are in a comment situation, advance the pointer
+                file.getc(c);
+                // this will consume all characters until the newline is found, or end of file
+                while (file.getc(c) && !isNewLine(c));
+            } else if (tok.type == OPEN_BLOCK_COMMENT) {
+                // this is a multi line comment, move until we find a star (and then a slash)
+                bool cont = file.getc(c);
                 file.getLocation(nested_comment_stack[num_nested]);
                 num_nested++;
-				while (cont) {
-					while ((cont = file.getc(c)) && (c != '*') && (c != '/'));
+                while (cont) {
+                    while ((cont = file.getc(c)) && (c != '*') && (c != '/'));
                     if (!cont) {
                         tok.type = LAST_TOKEN;
                         return;
@@ -188,147 +298,12 @@ void Lexer::getNextTokenInternal(Token &tok)
                             if (num_nested == 0) break;
                         }
                     }
-					// just fall through and parse a new token
-				}
-			} else if (c != '/') {
-				// this is not a comment, just return the DIV operator
-				tok.type = DIV;
-				return;
-			} else {
-				// we are in a comment situation, advance the pointer
-				file.getc(c);
-				// this will consume all characters until the newline is found, or end of file
-				while (file.getc(c) && !isNewLine(c));
-			}
-		} else if (c == '=') {
-			// this can be the assign or equals operator
-			if (!file.peek(c)) {
-				tok.type = ASSIGN;
-				return;
-			}
-			if (c != '=') {
-				// this is not a comment, just return the DIV operator
-				tok.type = ASSIGN;
-				return;
-			} else {
-				// We have to consume the second = since it is part of EQ
-				file.getc(c);
-				tok.type = EQ;
-				return;
-			}
-		} else if (c == '<') {
-			// this can be the LEQ or LT command or LSHIFT
-			if (!file.peek(c)) {
-				tok.type = LT;
-				return;
-			}
-			if (c == '<') {
-				// this is a LSHIFT
-				file.getc(c);
-				tok.type = LSHIFT;
-				return;
-			} else if (c == '=') {				
-				file.getc(c);
-				tok.type = LEQ;
-				return;
-			} else {
-				tok.type = LT;
-				return; 
-			}
-		} else if (c == '>') {
-			// this can be the GEQ or GT command or RSHIFT
-			if (!file.peek(c)) {
-				tok.type = GT;
-				return;
-			}
-			if (c == '>') {
-				// this is a RSHIFT
-				file.getc(c);
-				tok.type = RSHIFT;
-				return;
-			} else if (c == '=') {
-				file.getc(c);
-				tok.type = GEQ;
-				return;
-			} else {
-				tok.type = GT;
-				return;
-			}
-		} else if (c == '!') {
-			// this can be NEQ or just the bang unary operator
-			tok.type = BANG;
-			if (!file.peek(c)) {
-				return;
-			}
-			if (c == '=') {
-				file.getc(c);
-				tok.type = NEQ;
-			}
-			return;
-		} else if (c == ':') {
-            tok.type = COLON;
-            if (!file.peek(c)) {
-                return;
-            }
-            if (c == ':') {
-                file.getc(c);
-                tok.type = DOUBLE_COLON;
-            }
-            return;
-        } else {
-            // here we handle the case of each individual character in a simple switch
-			switch (c) {
-			case '(':
-				tok.type = OPEN_PAREN;
-				break;
-			case ')':
-				tok.type = CLOSE_PAREN;
-				break;
-			case '{':
-				tok.type = OPEN_BRACKET;
-				break;
-			case '}':
-				tok.type = CLOSE_BRACKET;
-				break;
-			case '[':
-				tok.type = OPEN_SQBRACKET;
-				break;
-			case ']':
-				tok.type = CLOSE_SQBRACKET;
-				break;
-			case ';':
-				tok.type = SEMICOLON;
-				break;
-			case '.':
-				tok.type = PERIOD;
-				break;
-			case '#':
-				tok.type = HASH;
-				break;
-			case '*':
-				tok.type = STAR;
-				break;
-			case '%':
-				tok.type = MOD;
-				break;
-			case '&':
-				tok.type = AMP;
-				break;
-			case '+':
-				tok.type = PLUS;
-				break;
-			case '-':
-				tok.type = MINUS;
-				break;
-			case ',':
-				tok.type = COMMA;
-				break;
-			default:
-				printf("We should never get here. Character: %c\n", c);
-				exit(1);
-			}
-		}
-
+                    // just fall through and parse a new token
+                    tok.clear();
+                }
+            } 
+        }
+                        
 		if (tok.type != INVALID) {
 			return;
 			// if we have a valid token return it, otherwise continue. This handles comments, etc

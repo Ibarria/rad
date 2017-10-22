@@ -2,7 +2,10 @@
 #include "Lexer.h"
 #include <string>
 
-TypeAST *parseFunctionDefinition(Lexer &lex);
+TypeAST *parseFunctionDeclaration(Lexer &lex);
+FunctionDefinitionAST *parseFunctionDefinition(Lexer &lex);
+
+ExprAST * parseAssignmentExpression(Lexer & lex);
 
 static void Error(const Lexer &lex, const char *msg)
 {
@@ -10,6 +13,12 @@ static void Error(const Lexer &lex, const char *msg)
 	lex.getLocation(loc);
 	printf("Error %s:%lld - %s", lex.getFilename(), loc.line, msg);
 	exit(1);
+}
+
+static bool isAssignmentOperator(const Token &t)
+{
+    return (t.type == ASSIGN)
+        || (t.type == ASSIGN);
 }
 
 TypeAST *parseDirectType(Lexer &lex)
@@ -55,16 +64,50 @@ TypeAST * parseType(Lexer &lex)
     Token t;
     lex.lookaheadToken(t);
     if (t.type == OPEN_PAREN) {
-        return parseFunctionDefinition(lex);
+        return parseFunctionDeclaration(lex);
     }
 
     return parseDirectType(lex);
 }
 
-TypeAST *parseFunctionDefinition(Lexer &lex) 
+TypeAST *parseFunctionDeclaration(Lexer &lex) 
 {
     // @TODO: implement me
     return nullptr;
+}
+
+FunctionDefinitionAST *parseFunctionDefinition(Lexer &lex)
+{
+    return nullptr;
+}
+
+ExprAST * parseUnaryExpression(Lexer &lex)
+{
+    return nullptr;
+}
+
+ExprAST * parseAssignmentExpression(Lexer &lex)
+{
+    ExprAST *lhs = parseUnaryExpression(lex);
+    Token t;
+
+    lex.lookaheadToken(t);
+    return nullptr;
+}
+
+ExprAST * parseExpression(Lexer &lex)
+{
+    Token t;
+    lex.getNextToken(t);
+    if (t.type == OPEN_PAREN) {
+        ExprAST *expr = parseExpression(lex);
+        lex.getNextToken(t);
+        if (t.type != CLOSE_PAREN) {
+            Error(lex, "Cound not find a matching close parentesis\n");
+        }
+        return expr;
+    }
+    return parseAssignmentExpression(lex);
 }
 
 DefinitionAST *parseDefinition(Lexer &lex)
@@ -72,11 +115,19 @@ DefinitionAST *parseDefinition(Lexer &lex)
     Token t;
     lex.lookaheadToken(t);
     if (t.type == OPEN_PAREN) {
-        
-        // return parseFunctionDefinition(lex);
+        // ok, this could be an expression or a function definition!
+        // hard to tell, so we will try both and see which one produces a result
+        u32 lex_pos = lex.getTokenStreamPosition();
+        FunctionDefinitionAST *func_def = parseFunctionDefinition(lex);
+        if (func_def != nullptr) {
+            return func_def;
+        }
+        // if we are here, means that we could not parse the function definition
+        // it has to be an expression, but we need to reset the parsing stream
+        lex.setTokenStreamPosition(lex_pos);
+        // fall through to the normal expression parsing
     }
-    
-    return nullptr;
+    return parseExpression(lex);
 }
 
 DeclAST * parseDeclaration(Lexer &lex)

@@ -18,6 +18,7 @@ public:
 	bool getc(char &c);
 	bool peek(char &c);
 	void getLocation(SrcLocation &loc) const;
+    void lookAheadTwo(char *in);
 	const char *getFilename() const { return filename; }
 };
 

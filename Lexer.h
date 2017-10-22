@@ -15,6 +15,7 @@ class Lexer
 	void consumeWhiteSpace();
 	void Error(const char *msg);
     void getNextTokenInternal(Token &tok);
+    bool parseStringToken(char *input, Token &tok);
 public:
 	Lexer();
 	~Lexer();

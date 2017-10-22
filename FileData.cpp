@@ -79,3 +79,10 @@ void FileData::getLocation(SrcLocation & loc) const
 	loc.line = nline;
 	loc.col = ncol;
 }
+
+void FileData::lookAheadTwo(char * in)
+{
+    if (!data) return;
+    if (index < size) in[0] = data[index];
+    if (index +1 < size) in[1] = data[index+1];
+}
