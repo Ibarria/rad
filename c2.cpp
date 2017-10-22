@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include "Parser.h"
+#include "Timer.h"
 
 void usage()
 {
@@ -26,11 +27,18 @@ void parseOptions(int argc, char **argv)
 int main(int argc, char **argv)
 {
 	parseOptions(argc, argv);
+    Timer timer;
+    timer.startTimer();
+
 	std::vector<BaseAST *> vec = Parse(argv[1]);
 
 	for (auto ast : vec) {
 		ast->print();
 	}
+
+
+    timer.stopTimer();
+    timer.printTimeEllapsed();
 
     return 0;
 }

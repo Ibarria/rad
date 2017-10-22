@@ -115,6 +115,7 @@
     <ClCompile Include="FileData.cpp" />
     <ClCompile Include="Lexer.cpp" />
     <ClCompile Include="Parser.cpp" />
+    <ClCompile Include="Timer.cpp" />
     <ClCompile Include="Token.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -124,6 +125,7 @@
     <ClInclude Include="mytypes.h" />
     <ClInclude Include="Parser.h" />
     <ClInclude Include="SrcLocation.h" />
+    <ClInclude Include="Timer.h" />
     <ClInclude Include="Token.h" />
   </ItemGroup>
   <ItemGroup>
