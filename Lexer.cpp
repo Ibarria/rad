@@ -16,69 +16,71 @@ struct StringToken {
     const char *str;
     TOKEN_TYPE token;
 } strTok[] = {
-    { "<<=", LEFT_ASSIGN},
-    { "<<",  LSHIFT },
-    { "<=",  LEQ },
-    { "<",   LT },
+    { "<<=", TK_LEFT_ASSIGN},
+    { "<<",  TK_LSHIFT },
+    { "<=",  TK_LEQ },
+    { "<",   TK_LT },
 
-    { "==",  EQ },
-    { "=",   ASSIGN},
+    { "==",  TK_EQ },
+    { "=",   TK_ASSIGN},
 
-    { ">>=", RIGHT_ASSIGN },
-    { ">>",  RSHIFT },
-    { ">=",  GEQ },
-    { ">",   GT },
+    { ">>=", TK_RIGHT_ASSIGN },
+    { ">>",  TK_RSHIFT },
+    { ">=",  TK_GEQ },
+    { ">",   TK_GT },
 
-    { "::",  DOUBLE_COLON },
-    { ":",   COLON },
+    { "::",  TK_DOUBLE_COLON },
+    { ":=",  TK_IMPLICIT_ASSIGN },
+    { ":",   TK_COLON },
 
-    { "*=",  MUL_ASSIGN },
-    { "*/",  CLOSE_BLOCK_COMMENT },
-    { "*",   STAR},
+    { "*=",  TK_MUL_ASSIGN },
+    { "*/",  TK_CLOSE_BLOCK_COMMENT },
+    { "*",   TK_STAR},
 
-    { "/=",  DIV_ASSIGN },
-    { "//",  LINE_COMMENT },
-    { "/*",  OPEN_BLOCK_COMMENT },
-    { "/",   DIV },
+    { "/=",  TK_DIV_ASSIGN },
+    { "//",  TK_LINE_COMMENT },
+    { "/*",  TK_OPEN_BLOCK_COMMENT },
+    { "/",   TK_DIV },
 
-    { "+=",  ADD_ASSIGN },
-    { "++",  DOUBLE_PLUS },
-    { "+",   PLUS },
+    { "+=",  TK_ADD_ASSIGN },
+    { "++",  TK_DOUBLE_PLUS },
+    { "+",   TK_PLUS },
 
-    { "---", TRIPLE_MINUS },
-    { "-=",  SUB_ASSIGN },
-    { "--",  DOUBLE_MINUS },
-    { "-",   MINUS },
+    { "---", TK_TRIPLE_MINUS },
+    { "-=",  TK_SUB_ASSIGN },
+    { "->",  TK_RETURN_ARROW },
+    { "--",  TK_DOUBLE_MINUS },
+    { "-",   TK_MINUS },
 
-    { "&=",  AND_ASSIGN },
-    { "&&",  DOUBLE_AMP },
-    { "&",   AMP },
+    { "&=",  TK_AND_ASSIGN },
+    { "&&",  TK_DOUBLE_AMP },
+    { "&",   TK_AMP },
 
-    { "^=",  XOR_ASSIGN },
-    { "^",   HAT },
+    { "^=",  TK_XOR_ASSIGN },
+    { "^",   TK_HAT },
 
-    { "|=",  OR_ASSIGN },
-    { "||",  DOUBLE_PIPE },
-    { "|",   PIPE },
+    { "|=",  TK_OR_ASSIGN },
+    { "||",  TK_DOUBLE_PIPE },
+    { "|",   TK_PIPE },
 
-    { "..",  DOUBLE_PERIOD},
-    { ".",   PERIOD},
+    { "..",  TK_DOUBLE_PERIOD },
+    { ".",   TK_PERIOD},
 
-    { "!=",  NEQ },
-    { "!",   BANG },
+    { "!=",  TK_NEQ },
+    { "!",   TK_BANG },
 
-    { ";",   SEMICOLON },
-    { "(",   OPEN_PAREN },
-    { ")",   CLOSE_PAREN },
-    { "[",   OPEN_SQBRACKET },
-    { "]",   CLOSE_SQBRACKET },
-    { "{",   OPEN_CURLYBRACKET },
-    { "}",   CLOSE_CURLYBRACKET },
-    { "#",   HASH },
-    { "%",   MOD },
-    { ",",   COMMA },
+    { ";",   TK_SEMICOLON },
+    { "(",   TK_OPEN_PAREN },
+    { ")",   TK_CLOSE_PAREN },
+    { "[",   TK_OPEN_SQBRACKET },
+    { "]",   TK_CLOSE_SQBRACKET },
+    { "{",   TK_OPEN_BRACKET },
+    { "}",   TK_CLOSE_BRACKET },
+    { "#",   TK_HASH },
+    { "%",   TK_MOD },
+    { ",",   TK_COMMA },
 
-    { nullptr, INVALID}
+    { nullptr, TK_INVALID}
 };
 
 bool Lexer::parseStringToken(char *input, Token &tok)
@@ -158,7 +160,7 @@ void Lexer::parseNumber(Token & tok, char c)
             if (base == 16) Error("Hex numbers cannot have a period in them\n");
             file.getc(c);
             decimal = true;
-            dtotal = total;
+            dtotal = (double)total;
             continue;
         }
         if ((base == 10) && !isNumber(c) && isAlpha(c)) {
@@ -187,10 +189,10 @@ void Lexer::parseNumber(Token & tok, char c)
     }
     if (decimal) {
         tok.pl.pf64 = dtotal;
-        tok.type = FNUMBER;
+        tok.type = TK_FNUMBER;
     } else {
         tok.pl.pu64 = total;
-        tok.type = NUMBER;
+        tok.type = TK_NUMBER;
     }
 }
 
@@ -231,7 +233,7 @@ bool Lexer::openFile(const char * filename)
 void Lexer::parseFile()
 {
     Token tok;
-    while (tok.type != LAST_TOKEN) {
+    while (tok.type != TK_LAST_TOKEN) {
         getNextTokenInternal(tok);
         tokens.push_back(tok);
     }
@@ -243,7 +245,7 @@ void Lexer::getNextToken(Token &tok)
 {
     if (token_index == tokens.size()) {
         tok.clear();
-        tok.type = LAST_TOKEN;
+        tok.type = TK_LAST_TOKEN;
         return;
     }
     tok = tokens[token_index++];
@@ -258,7 +260,7 @@ void Lexer::getNextTokenInternal(Token &tok)
 	while(1) {
 		consumeWhiteSpace();
 		if (!file.getc(c)) {
-			tok.type = LAST_TOKEN;
+			tok.type = TK_LAST_TOKEN;
 			return;
 		}
 
@@ -276,9 +278,16 @@ void Lexer::getNextTokenInternal(Token &tok)
 				buff[i++] = c;
 				file.getc(c);
 			}
-			tok.type = IDENTIFIER;
+			tok.type = TK_IDENTIFIER;
             buff[i] = 0;
 			tok.str = buff;
+            if (!strcmp("return", buff)) {
+                tok.type = TK_RETURN;
+            } else if (!strcmp("if", buff)) {
+                tok.type = TK_IF;
+            } else if (!strcmp("for", buff)) {
+                tok.type = TK_FOR;
+            }
 		} else if (c == '"') {
 			// this marks the start of a string
 			char *s = new char[1024];
@@ -295,7 +304,7 @@ void Lexer::getNextTokenInternal(Token &tok)
 				exit(1);
 			}
             s[i++] = 0;
-			tok.type = STRING;
+			tok.type = TK_STRING;
 			tok.str = s;
 			return;
         } else if (c == '\'') {
@@ -303,7 +312,7 @@ void Lexer::getNextTokenInternal(Token &tok)
             if (!file.getc(c)) {
                 Error("Character was not defined before end of file\n");
             }
-            tok.type = CHAR;
+            tok.type = TK_CHAR;
             tok.pl.pu32 = c;
             if (!file.getc(c)) {
                 Error("Character was not defined before end of file\n");
@@ -322,12 +331,14 @@ void Lexer::getNextTokenInternal(Token &tok)
                 Error("Token not recognized\n"); // @TODO: improve this error message
             }
 
-            if (tok.type == LINE_COMMENT) {
+            if (tok.type == TK_LINE_COMMENT) {
                 // we are in a comment situation, advance the pointer
                 file.getc(c);
                 // this will consume all characters until the newline is found, or end of file
                 while (file.getc(c) && !isNewLine(c));
-            } else if (tok.type == OPEN_BLOCK_COMMENT) {
+                tok.clear();
+                continue;
+            } else if (tok.type == TK_OPEN_BLOCK_COMMENT) {
                 // this is a multi line comment, move until we find a star (and then a slash)
                 bool cont = file.getc(c);
                 file.getLocation(nested_comment_stack[num_nested]);
@@ -335,7 +346,7 @@ void Lexer::getNextTokenInternal(Token &tok)
                 while (cont) {
                     while ((cont = file.getc(c)) && (c != '*') && (c != '/'));
                     if (!cont) {
-                        tok.type = LAST_TOKEN;
+                        tok.type = TK_LAST_TOKEN;
                         return;
                     }
                     if (c == '/') {
@@ -356,12 +367,14 @@ void Lexer::getNextTokenInternal(Token &tok)
                         }
                     }
                     // just fall through and parse a new token
-                    tok.clear();
                 }
-            } 
+                // just continue and parse a new token
+                tok.clear();
+                continue;
+            }
         }
                         
-		if (tok.type != INVALID) {
+		if (tok.type != TK_INVALID) {
 			return;
 			// if we have a valid token return it, otherwise continue. This handles comments, etc
 		}
@@ -372,10 +385,25 @@ void Lexer::lookaheadToken(Token & tok)
 {
     if (token_index == tokens.size()) {
         tok.clear();
-        tok.type = LAST_TOKEN;
+        tok.type = TK_LAST_TOKEN;
         return;
     }
     tok = tokens[token_index];
+}
+
+void Lexer::lookNaheadToken(Token & tok, unsigned int ahead)
+{
+    unsigned int index = token_index + ahead;
+    if (index < tokens.size()) {
+        tok = tokens[index];
+    } else {
+        tok.clear();
+    }
+}
+
+void Lexer::consumeToken()
+{
+    token_index++;
 }
 
 const char * Lexer::getFilename() const
@@ -385,7 +413,7 @@ const char * Lexer::getFilename() const
 
 void Lexer::getLocation(SrcLocation & loc) const
 {
-	file.getLocation(loc);
+    loc = tokens[token_index].loc;
 }
 
 unsigned int Lexer::getTokenStreamPosition() const

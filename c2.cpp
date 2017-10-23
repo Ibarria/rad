@@ -33,9 +33,8 @@ int main(int argc, char **argv)
 	std::vector<BaseAST *> vec = Parse(argv[1]);
 
 	for (auto ast : vec) {
-		ast->print();
+		ast->print(0);
 	}
-
 
     timer.stopTimer();
     timer.printTimeEllapsed();

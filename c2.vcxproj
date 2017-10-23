@@ -127,6 +127,7 @@
     <ClInclude Include="SrcLocation.h" />
     <ClInclude Include="Timer.h" />
     <ClInclude Include="Token.h" />
+    <ClInclude Include="TokenType.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Grammar.txt" />

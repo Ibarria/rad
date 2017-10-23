@@ -24,6 +24,8 @@ public:
     void parseFile();
 	void getNextToken(Token &tok);
     void lookaheadToken(Token &tok);
+    void lookNaheadToken(Token &tok, unsigned int ahead);
+    void consumeToken();
 	void getLocation(SrcLocation &loc) const;
     unsigned int getTokenStreamPosition() const;
     void setTokenStreamPosition(unsigned int index);
