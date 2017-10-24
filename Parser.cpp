@@ -54,6 +54,41 @@ static bool isBinOperator(const Token &t)
         || (t.type == TK_MINUS);
 }
 
+static u32 getPrecedence(TOKEN_TYPE t)
+{
+    switch (t) {
+    case TK_STAR:
+    case TK_DIV:
+    case TK_MOD:
+        return 1;
+    case TK_MINUS:
+    case TK_PLUS:
+        return 2;
+    case TK_LSHIFT:
+    case TK_RSHIFT:
+        return 3;
+    case TK_LT:
+    case TK_GT:
+    case TK_LEQ:
+    case TK_GEQ:
+        return 4;
+    case TK_EQ:
+    case TK_NEQ:
+        return 5;
+    case TK_AMP:
+        return 6;
+    case TK_HAT:
+        return 7;
+    case TK_PIPE:
+        return 8;
+    case TK_DOUBLE_AMP:
+        return 9;
+    case TK_DOUBLE_PIPE:
+        return 10;
+    }
+    return 0;
+}
+
 TypeAST *parseDirectType(Lexer &lex)
 {
     // @TODO: support pointer, arrays, etc
@@ -255,181 +290,51 @@ ExprAST * parseCastExpression(Lexer &lex)
     return nullptr;
 }
 
-ExprAST *parseMultiplicativeExpression(Lexer &lex)
+ExprAST *parseBinOpExpressionRecursive(Lexer &lex, u32 oldprec, ExprAST *lhs)
+{
+    Token t;
+    TOKEN_TYPE type;
+
+    while (1) {
+        lex.lookaheadToken(t);
+        if (isBinOperator(t)) {
+            u32 cur_prec = getPrecedence(t.type);
+            if (cur_prec < oldprec) {
+                return lhs;
+            } else {
+                type = t.type;
+                lex.consumeToken();
+                ExprAST *rhs = parseCastExpression(lex);
+                lex.lookaheadToken(t);
+                if (isBinOperator(t)) {
+                    u32 newprec = getPrecedence(t.type);
+                    if (cur_prec < newprec) {
+                        rhs = parseBinOpExpressionRecursive(lex, cur_prec + 1, rhs);
+                    }
+                } 
+                BinOpAST *bin = new BinOpAST();
+                bin->lhs = lhs;
+                bin->rhs = rhs;
+                bin->op = type;
+                lhs = bin;
+            }
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+ExprAST *parseBinOpExpression(Lexer &lex)
 {
     ExprAST *lhs = parseCastExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if ((t.type == TK_STAR) || (t.type == TK_DIV)
-        || (t.type == TK_MOD)) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseMultiplicativeExpression(lex);
-        return bin;
-    }
-    return lhs;
-}
-
-ExprAST *parseAdditiveExpression(Lexer &lex)
-{
-    ExprAST *lhs = parseMultiplicativeExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if ((t.type == TK_PLUS) || (t.type == TK_MINUS)) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseAdditiveExpression(lex);
-        return bin;
-    }
-    return lhs;
-}
-
-ExprAST *parseShiftExpression(Lexer &lex)
-{
-    ExprAST *lhs = parseAdditiveExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if ((t.type == TK_LSHIFT) || (t.type == TK_RSHIFT)) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseShiftExpression(lex);
-        return bin;
-    }
-    return lhs;
-}
-
-ExprAST *parseRelationalExpression(Lexer &lex)
-{
-    ExprAST *lhs = parseShiftExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if ((t.type == TK_LEQ) || (t.type == TK_GEQ)
-        || (t.type == TK_LT) || (t.type == TK_GT)) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseRelationalExpression(lex);
-        return bin;
-    }
-    return lhs;
-}
-
-ExprAST *parseEqualityExpression(Lexer &lex)
-{
-    ExprAST *lhs = parseRelationalExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if ((t.type == TK_EQ) || (t.type == TK_NEQ)) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseEqualityExpression(lex);
-        return bin;
-    }
-    return lhs;
-}
-
-ExprAST *parseBinaryAndExpression(Lexer &lex)
-{
-    ExprAST *lhs = parseEqualityExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if (t.type == TK_AMP) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseBinaryAndExpression(lex);
-        return bin;
-    }
-    return lhs;
-}
-
-ExprAST *parseBinaryXorExpression(Lexer &lex)
-{
-    ExprAST *lhs = parseBinaryAndExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if (t.type == TK_HAT) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseBinaryXorExpression(lex);
-        return bin;
-    }
-    return lhs;
-}
-
-ExprAST *parseBinaryOrExpression(Lexer &lex)
-{
-    ExprAST *lhs = parseBinaryXorExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if (t.type == TK_PIPE) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseBinaryOrExpression(lex);
-        return bin;
-    }
-    return lhs;
-}
-
-ExprAST *parseLogicalAndExpression(Lexer &lex)
-{
-    ExprAST *lhs = parseBinaryOrExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if (t.type == TK_DOUBLE_AMP) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseLogicalAndExpression(lex);
-        return bin;
-    }
-    return lhs;
-}
-
-ExprAST *parseLogicalOrExpression(Lexer &lex)
-{
-    ExprAST *lhs = parseLogicalAndExpression(lex);
-    Token t;
-
-    lex.lookaheadToken(t);
-    if (t.type == TK_DOUBLE_PIPE) {
-        BinOpAST *bin = new BinOpAST();
-        bin->lhs = lhs;
-        bin->op = t.type;
-        lex.consumeToken();
-        bin->rhs = parseLogicalOrExpression(lex);
-        return bin;
-    }
-    return lhs;
+    return parseBinOpExpressionRecursive(lex, 0, lhs);
 }
 
 ExprAST * parseAssignmentExpression(Lexer &lex)
 {
-    ExprAST *lhs = parseLogicalOrExpression(lex);
+//    ExprAST *lhs = parseLogicalOrExpression(lex);
+    ExprAST *lhs = parseBinOpExpression(lex);
     Token t;
 
     lex.lookaheadToken(t);

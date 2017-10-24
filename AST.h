@@ -19,6 +19,9 @@ enum BasicType {
 
 struct BaseAST
 {
+    const char *filename;
+    unsigned int line_num;
+    unsigned int char_num;
 	virtual void print(int ident) {}
 };
 
