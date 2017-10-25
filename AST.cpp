@@ -63,7 +63,7 @@ void AssignAST::print(int ident)
 
 void DeclAST::print(int ident)
 {
-    printf("%*sDeclAST varname: [%s] is_constant: %s\n", ident, "", varname.c_str(),
+    printf("%*sDeclAST varname: [%s] is_constant: %s\n", ident, "", varname,
         (is_constant ? "YES" : "NO"));
     printf("%*s SpecifiedType: ", ident, "");
     if (specified_type) {
@@ -90,7 +90,7 @@ void DeclAST::print(int ident)
 
 void DirectTypeAST::print(int ident)
 {
-    printf("%*sDirectTypeAST name: [%s]", ident, "", name.c_str());
+    printf("%*sDirectTypeAST name: [%s]", ident, "", name);
     if (isString) {
         printf(" type: STRING\n");
     } else {
@@ -100,7 +100,7 @@ void DirectTypeAST::print(int ident)
 
 void ArgumentDeclarationAST::print(int ident)
 {
-    printf("%*sArgumentDeclarationAST name: %s\n", ident, "", name.c_str());
+    printf("%*sArgumentDeclarationAST name: %s\n", ident, "", name);
     if (type) type->print(ident + 3);
 }
 
@@ -137,10 +137,10 @@ void FunctionDefinitionAST::print(int ident)
 
 void IdentAST::print(int ident)
 {
-    printf("%*sIdentAST name: [%s]\n", ident, "", name.c_str());
+    printf("%*sIdentAST name: [%s]\n", ident, "", name);
 }
 
 void ConstStringAST::print(int ident)
 {
-    printf("%*sConstStringAST name: [%s]\n", ident, "", str.c_str());
+    printf("%*sConstStringAST name: [%s]\n", ident, "", str);
 }

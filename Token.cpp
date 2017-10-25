@@ -11,7 +11,7 @@
 void Token::clear()
 {
 	type = TK_INVALID;
-    str.clear();
+    string = nullptr;
 }
 
 //Token::Token(const Token & rhs)
@@ -69,7 +69,7 @@ void Token::print()
         break;
     case TK_IDENTIFIER:
 	case TK_STRING:
-		printf(" %s", str.c_str());
+		printf(" %s", string);
 		break;
 	case TK_CHAR:
 		printf(" %c", pl.pu32);

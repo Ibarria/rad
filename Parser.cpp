@@ -1,6 +1,6 @@
 #include "Parser.h"
 #include "Lexer.h"
-#include <string>
+#include "PoolAllocator.h"
 
 FunctionDeclarationAST *parseFunctionDeclaration(Lexer &lex);
 FunctionDefinitionAST *parseFunctionDefinition(Lexer &lex);
@@ -17,41 +17,41 @@ static void Error(const Lexer &lex, const char *msg)
 	exit(1);
 }
 
-static bool isAssignmentOperator(const Token &t)
+static bool isAssignmentOperator(TOKEN_TYPE type)
 {
-    return (t.type == TK_ASSIGN)
-        || (t.type == TK_MUL_ASSIGN)
-        || (t.type == TK_DIV_ASSIGN)
-        || (t.type == TK_MOD_ASSIGN)
-        || (t.type == TK_ADD_ASSIGN)
-        || (t.type == TK_SUB_ASSIGN)
-        || (t.type == TK_LEFT_ASSIGN)
-        || (t.type == TK_RIGHT_ASSIGN)
-        || (t.type == TK_AND_ASSIGN)
-        || (t.type == TK_XOR_ASSIGN)
-        || (t.type == TK_OR_ASSIGN);
+    return (type == TK_ASSIGN)
+        || (type == TK_MUL_ASSIGN)
+        || (type == TK_DIV_ASSIGN)
+        || (type == TK_MOD_ASSIGN)
+        || (type == TK_ADD_ASSIGN)
+        || (type == TK_SUB_ASSIGN)
+        || (type == TK_LEFT_ASSIGN)
+        || (type == TK_RIGHT_ASSIGN)
+        || (type == TK_AND_ASSIGN)
+        || (type == TK_XOR_ASSIGN)
+        || (type == TK_OR_ASSIGN);
 }
 
-static bool isBinOperator(const Token &t)
+static bool isBinOperator(TOKEN_TYPE type)
 {
-    return (t.type == TK_EQ)
-        || (t.type == TK_LEQ)
-        || (t.type == TK_GEQ)
-        || (t.type == TK_NEQ)
-        || (t.type == TK_LT)
-        || (t.type == TK_GT)
-        || (t.type == TK_RSHIFT)
-        || (t.type == TK_LSHIFT)
-        || (t.type == TK_STAR)
-        || (t.type == TK_DIV)
-        || (t.type == TK_MOD)
-        || (t.type == TK_PIPE)
-        || (t.type == TK_DOUBLE_PIPE)
-        || (t.type == TK_HAT)
-        || (t.type == TK_AMP)
-        || (t.type == TK_DOUBLE_AMP)
-        || (t.type == TK_PLUS)
-        || (t.type == TK_MINUS);
+    return (type == TK_EQ)
+        || (type == TK_LEQ)
+        || (type == TK_GEQ)
+        || (type == TK_NEQ)
+        || (type == TK_LT)
+        || (type == TK_GT)
+        || (type == TK_RSHIFT)
+        || (type == TK_LSHIFT)
+        || (type == TK_STAR)
+        || (type == TK_DIV)
+        || (type == TK_MOD)
+        || (type == TK_PIPE)
+        || (type == TK_DOUBLE_PIPE)
+        || (type == TK_HAT)
+        || (type == TK_AMP)
+        || (type == TK_DOUBLE_AMP)
+        || (type == TK_PLUS)
+        || (type == TK_MINUS);
 }
 
 static u32 getPrecedence(TOKEN_TYPE t)
@@ -98,28 +98,28 @@ TypeAST *parseDirectType(Lexer &lex)
         Error(lex, "Type can only be an identifier, for now\n");
     }
     DirectTypeAST *type = new DirectTypeAST();
-    type->name = t.str;
-    if (t.str == "string") {
+    type->name = t.string;
+    if (!strcmp(t.string, "string")) {
         type->isString = true;
-    } else if (t.str == "int") {
+    } else if (!strcmp(t.string, "int")) {
         type->type = I64;
-    } else if (t.str == "float") {
+    } else if (!strcmp(t.string, "float")) {
         type->type = F32;
-    } else if (t.str == "i8") {
+    } else if (!strcmp(t.string, "i8")) {
         type->type = I8;
-    } else if (t.str == "i16") {
+    } else if (!strcmp(t.string, "i16")) {
         type->type = I16;
-    } else if (t.str == "i32") {
+    } else if (!strcmp(t.string, "i32")) {
         type->type = I32;
-    } else if (t.str == "i64") {
+    } else if (!strcmp(t.string, "i64")) {
         type->type = I64;
-    } else if (t.str == "u8") {
+    } else if (!strcmp(t.string, "u8")) {
         type->type = U8;
-    } else if (t.str == "u16") {
+    } else if (!strcmp(t.string, "u16")) {
         type->type = U16;
-    } else if (t.str == "u32") {
+    } else if (!strcmp(t.string, "u32")) {
         type->type = U32;
-    } else if (t.str == "u64") {
+    } else if (!strcmp(t.string, "u64")) {
         type->type = U64;
     } 
     // @TODO: support custom types
@@ -129,9 +129,7 @@ TypeAST *parseDirectType(Lexer &lex)
 
 TypeAST * parseType(Lexer &lex)
 {
-    Token t;
-    lex.lookaheadToken(t);
-    if (t.type == TK_OPEN_PAREN) {
+    if (lex.checkToken(TK_OPEN_PAREN)) {
         return parseFunctionDeclaration(lex);
     }
 
@@ -146,12 +144,12 @@ ArgumentDeclarationAST *parseArgumentDeclaration(Lexer &lex)
     if (t.type != TK_IDENTIFIER) {
         Error(lex, "Argument declaration needs to start with an identifier\n");
     }
-    arg->name = t.str;
+    arg->name = t.string;
 
-    lex.getNextToken(t);
-    if (t.type != TK_COLON) {
+    if (!lex.checkToken(TK_COLON)) {
         Error(lex, "Argument declaration needs a colon between identifier and type\n");
     }
+    lex.consumeToken();
 
     arg->type = parseType(lex);
     return arg;
@@ -159,25 +157,23 @@ ArgumentDeclarationAST *parseArgumentDeclaration(Lexer &lex)
 
 FunctionDeclarationAST *parseFunctionDeclaration(Lexer &lex)
 {
-    Token t;
-    lex.getNextToken(t);
-    if (t.type != TK_OPEN_PAREN) {
+    if (!lex.checkToken(TK_OPEN_PAREN)) {
         Error(lex, "Function declarations need a parenthesis\n");
     }
+    lex.consumeToken();
     FunctionDeclarationAST *fundec = new FunctionDeclarationAST();
-    lex.lookaheadToken(t);
-    while (t.type != TK_CLOSE_PAREN) {
+    while (!lex.checkToken(TK_CLOSE_PAREN)) {
         ArgumentDeclarationAST *arg = parseArgumentDeclaration(lex);
         fundec->arguments.push_back(arg);
-        lex.lookaheadToken(t);
-        if (t.type == TK_COMMA) {
+        if (lex.checkToken(TK_COMMA)) {
             lex.consumeToken();
+        } else if (!lex.checkToken(TK_CLOSE_PAREN)) {
+            Error(lex, "Comma must be used in between parameters in a function\n");
         }
     }
     lex.consumeToken();
     // Now do the return value, which can be empty
-    lex.lookaheadToken(t);
-    if (t.type == TK_RETURN_ARROW) {
+    if (lex.checkToken(TK_RETURN_ARROW)) {
         lex.consumeToken();
         fundec->return_type = parseType(lex);
     }
@@ -187,40 +183,38 @@ FunctionDeclarationAST *parseFunctionDeclaration(Lexer &lex)
 ReturnStatementAST *parseReturnStatement(Lexer &lex)
 {
     ReturnStatementAST *ret = new ReturnStatementAST();
-    Token t;
-    lex.getNextToken(t);
-    if (t.type != TK_RETURN) {
+    if (!lex.checkToken(TK_RETURN)) {
         Error(lex, "A return statement needs the 'return' keyword at the start\n");
     }
+    lex.consumeToken();
+
     ret->ret = parseExpression(lex);
-    lex.getNextToken(t);
-    if (t.type != TK_SEMICOLON) {
+    if (!lex.checkToken(TK_SEMICOLON)) {
         Error(lex, "Statement needs to end in semicolon\n");
     }
+    lex.consumeToken();
     return ret;
 }
 
 StatementAST *parseStatement(Lexer &lex)
 {
-    Token t;
-    lex.lookaheadToken(t);
+    TOKEN_TYPE cur_type;
     StatementAST *statement = nullptr;
 
-    if (t.type == TK_IDENTIFIER) {
+    cur_type = lex.getTokenType();
+    if (cur_type == TK_IDENTIFIER) {
         // could be a variable definition or a statement
-        Token tnext;
-        lex.lookNaheadToken(tnext, 1);
-        if ((tnext.type == TK_COLON)
-            || (tnext.type == TK_DOUBLE_COLON)
-            || (tnext.type == TK_IMPLICIT_ASSIGN)) {
+        if (lex.checkAheadToken(TK_COLON,1)
+            || lex.checkAheadToken(TK_DOUBLE_COLON, 1)
+            || lex.checkAheadToken(TK_IMPLICIT_ASSIGN, 1)) {
             statement = parseDeclaration(lex);
         } else {
             statement = parseExpression(lex);
         }
         return statement;
-    } else if (t.type == TK_OPEN_BRACKET) {
+    } else if (cur_type == TK_OPEN_BRACKET) {
         return parseStatementBlock(lex);
-    } else if (t.type == TK_RETURN) {
+    } else if (cur_type == TK_RETURN) {
         return parseReturnStatement(lex);
     } else {
         return parseExpression(lex);
@@ -230,23 +224,20 @@ StatementAST *parseStatement(Lexer &lex)
 
 StatementBlockAST *parseStatementBlock(Lexer &lex)
 {
-    Token t;
-    lex.getNextToken(t);
-    if (t.type != TK_OPEN_BRACKET) {
+    if (!lex.checkToken(TK_OPEN_BRACKET)) {
         Error(lex, "Was expecting an open bracket\n");
     }
+    lex.consumeToken(); // consume the {
     StatementBlockAST *block = new StatementBlockAST();
-    lex.lookaheadToken(t);
-    while (t.type != TK_CLOSE_BRACKET) {
+    while (!lex.checkToken(TK_CLOSE_BRACKET)) {
         StatementAST *statement = nullptr;
         statement = parseStatement(lex);
         block->statements.push_back(statement);
-        lex.lookaheadToken(t);
-        if (t.type == TK_LAST_TOKEN) {
+        if (lex.checkToken(TK_LAST_TOKEN)) {
             Error(lex, "Failed to find a matching close bracket");
         }
     }
-    lex.getNextToken(t);
+    lex.consumeToken(); // match }
 
     return block;
 }
@@ -268,7 +259,7 @@ ExprAST * parseCastExpression(Lexer &lex)
 
     if (t.type == TK_IDENTIFIER) {
         IdentAST *ex = new IdentAST();
-        ex->name = t.str;
+        ex->name = t.string;
         return ex;
     } else if ((t.type == TK_NUMBER) || (t.type == TK_FNUMBER)) {
         ConstNumAST *ex = new ConstNumAST();
@@ -282,7 +273,7 @@ ExprAST * parseCastExpression(Lexer &lex)
         return ex;
     } else if ((t.type == TK_STRING)) {
         ConstStringAST *str = new ConstStringAST();
-        str->str = t.str;
+        str->str = t.string;
         return str;
     }
     //@TODO: have an error message here
@@ -292,22 +283,19 @@ ExprAST * parseCastExpression(Lexer &lex)
 
 ExprAST *parseBinOpExpressionRecursive(Lexer &lex, u32 oldprec, ExprAST *lhs)
 {
-    Token t;
-    TOKEN_TYPE type;
+    TOKEN_TYPE cur_type;
 
     while (1) {
-        lex.lookaheadToken(t);
-        if (isBinOperator(t)) {
-            u32 cur_prec = getPrecedence(t.type);
+        cur_type = lex.getTokenType();
+        if (isBinOperator(cur_type)) {
+            u32 cur_prec = getPrecedence(cur_type);
             if (cur_prec < oldprec) {
                 return lhs;
             } else {
-                type = t.type;
                 lex.consumeToken();
                 ExprAST *rhs = parseCastExpression(lex);
-                lex.lookaheadToken(t);
-                if (isBinOperator(t)) {
-                    u32 newprec = getPrecedence(t.type);
+                if (isBinOperator(lex.getTokenType())) {
+                    u32 newprec = getPrecedence(lex.getTokenType());
                     if (cur_prec < newprec) {
                         rhs = parseBinOpExpressionRecursive(lex, cur_prec + 1, rhs);
                     }
@@ -315,7 +303,7 @@ ExprAST *parseBinOpExpressionRecursive(Lexer &lex, u32 oldprec, ExprAST *lhs)
                 BinOpAST *bin = new BinOpAST();
                 bin->lhs = lhs;
                 bin->rhs = rhs;
-                bin->op = type;
+                bin->op = cur_type;
                 lhs = bin;
             }
         } else {
@@ -333,16 +321,15 @@ ExprAST *parseBinOpExpression(Lexer &lex)
 
 ExprAST * parseAssignmentExpression(Lexer &lex)
 {
-//    ExprAST *lhs = parseLogicalOrExpression(lex);
     ExprAST *lhs = parseBinOpExpression(lex);
-    Token t;
+    TOKEN_TYPE type;
 
-    lex.lookaheadToken(t);
-    if (isAssignmentOperator(t)) {
+    type = lex.getTokenType();
+    if (isAssignmentOperator(type)) {
         // @TODO : we would need to have here a RHS evaluation
         AssignAST *assign = new AssignAST();
         assign->lhs = lhs;
-        assign->op = t.type;
+        assign->op = type;
         assign->rhs = parseAssignmentExpression(lex);
         return assign;
     } 
@@ -397,7 +384,7 @@ DeclAST * parseDeclaration(Lexer &lex)
         Error(lex, "Identifier expected but not found\n");
     }
 
-    decl->varname = t.str;
+    decl->varname = t.string;
     lex.lookaheadToken(t);
     if (t.type == TK_COLON) {
         lex.consumeToken();
@@ -430,23 +417,21 @@ DeclAST * parseDeclaration(Lexer &lex)
 }
 
 // first version, just return a list of AST
-std::vector<BaseAST *> Parse(const char *filename)
+std::vector<BaseAST *> Parse(const char *filename, PoolAllocator *pool)
 {
 	Lexer lex;
-	Token t;
 	std::vector<BaseAST *> vec;
+    
+    lex.setPoolAllocator(pool);
 
 	lex.openFile(filename);
     lex.parseFile();
-	lex.lookaheadToken(t);
 
-	while (t.type != TK_LAST_TOKEN) {
+	while (!lex.checkToken(TK_LAST_TOKEN)) {
 		// we got a token, figure out what AST to build
         DeclAST *d = parseDeclaration(lex);
         vec.push_back(d);
-        
-        lex.lookaheadToken(t);
-        
+                
         //lex.getNextToken(t);
         //t.print();
 	}

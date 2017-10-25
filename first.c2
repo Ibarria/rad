@@ -12,7 +12,7 @@ another := "c";
           Block */ 
               Comment */ 
 
-delta : string = "d";
+delta : string = "This is a pretty long string, at least a line";
 
 some_global_int: int;
 
@@ -20,6 +20,6 @@ a := 3;
 b : string = "Hello there";
 c : float = 3.0;
 
-square := (x: float) -> float { return x * x; }
+square :: (x: float) -> float { return x * x; }
 multiply := (x: float, y: float) -> float { return x + y * 3; }
 

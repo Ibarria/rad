@@ -1,9 +1,9 @@
 #pragma once
 
-#include <string>
 #include <vector>
 #include "mytypes.h"
 #include "TokenType.h"
+#include "TextType.h"
 
 struct BaseAST;
 struct TypeAST;
@@ -43,7 +43,7 @@ struct TypeAST : BaseAST
 
 struct ArgumentDeclarationAST : BaseAST
 {
-    std::string name;
+    TextType name;
     TypeAST *type;
     virtual void print(int ident);
 };
@@ -87,13 +87,13 @@ struct DirectTypeAST : TypeAST
     bool isString;
 	bool isArray;
 	bool isPointer;
-	std::string name;
+	TextType name;
 };
 
 struct IdentAST : ExprAST
 {
     DeclAST *decl;
-    std::string name;
+    TextType name;
     virtual void print(int ident);
 };
 
@@ -113,7 +113,7 @@ struct ConstNumAST : ExprAST
 
 struct ConstStringAST : ExprAST
 {
-    std::string str;
+    TextType str;
     virtual void print(int ident);
 };
 
@@ -142,7 +142,7 @@ struct AssignAST : ExprAST
 
 struct DeclAST : StatementAST
 {
-    std::string varname;
+    TextType varname;
 	TypeAST *specified_type;
     TypeAST *inferred_type;
     DefinitionAST *definition;

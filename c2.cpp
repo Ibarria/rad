@@ -30,7 +30,9 @@ int main(int argc, char **argv)
     Timer timer;
     timer.startTimer();
 
-	std::vector<BaseAST *> vec = Parse(argv[1]);
+    PoolAllocator pool;    
+
+	std::vector<BaseAST *> vec = Parse(argv[1], &pool);
 
 	for (auto ast : vec) {
 		ast->print(0);

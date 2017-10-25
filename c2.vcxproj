@@ -115,6 +115,8 @@
     <ClCompile Include="FileData.cpp" />
     <ClCompile Include="Lexer.cpp" />
     <ClCompile Include="Parser.cpp" />
+    <ClCompile Include="PoolAllocator.cpp" />
+    <ClCompile Include="TextType.cpp" />
     <ClCompile Include="Timer.cpp" />
     <ClCompile Include="Token.cpp" />
   </ItemGroup>
@@ -124,7 +126,9 @@
     <ClInclude Include="Lexer.h" />
     <ClInclude Include="mytypes.h" />
     <ClInclude Include="Parser.h" />
+    <ClInclude Include="PoolAllocator.h" />
     <ClInclude Include="SrcLocation.h" />
+    <ClInclude Include="TextType.h" />
     <ClInclude Include="Timer.h" />
     <ClInclude Include="Token.h" />
     <ClInclude Include="TokenType.h" />

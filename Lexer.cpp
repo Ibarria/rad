@@ -219,6 +219,7 @@ void Lexer::Error(const char * msg)
 Lexer::Lexer()
 {
     num_nested = 0;
+    pool = nullptr;
 }
 
 Lexer::~Lexer()
@@ -239,6 +240,11 @@ void Lexer::parseFile()
     }
     file.close();
     token_index = 0;
+    // this is a small optimization to not check for
+    // indices on tokens
+    tokens.push_back(tok);
+    tokens.push_back(tok);
+    tokens.push_back(tok);
 }
 
 void Lexer::getNextToken(Token &tok)
@@ -280,7 +286,7 @@ void Lexer::getNextTokenInternal(Token &tok)
 			}
 			tok.type = TK_IDENTIFIER;
             buff[i] = 0;
-			tok.str = buff;
+			tok.string = CreateTextType(pool, buff);
             if (!strcmp("return", buff)) {
                 tok.type = TK_RETURN;
             } else if (!strcmp("if", buff)) {
@@ -290,8 +296,8 @@ void Lexer::getNextTokenInternal(Token &tok)
             }
 		} else if (c == '"') {
 			// this marks the start of a string
-			char *s = new char[1024];
-			u32 i = 0;
+            char *s = new char[1024];
+            u32 i = 0;
 			while (file.getc(c) && (c != '"') && (!isNewLine(c))) {
 				s[i++] = c;
 				if (i >= 1024 - 1) {
@@ -305,8 +311,9 @@ void Lexer::getNextTokenInternal(Token &tok)
 			}
             s[i++] = 0;
 			tok.type = TK_STRING;
-			tok.str = s;
-			return;
+            tok.string = CreateTextType(pool, s);
+            delete s;
+            return;
         } else if (c == '\'') {
             // this marks a character
             if (!file.getc(c)) {
@@ -394,11 +401,7 @@ void Lexer::lookaheadToken(Token & tok)
 void Lexer::lookNaheadToken(Token & tok, unsigned int ahead)
 {
     unsigned int index = token_index + ahead;
-    if (index < tokens.size()) {
-        tok = tokens[index];
-    } else {
-        tok.clear();
-    }
+    tok = tokens[index];
 }
 
 void Lexer::consumeToken()
