@@ -1,4 +1,5 @@
 #include "AST.h"
+#include <stdio.h>
 
 static const char *BasicTypeToStr(BasicType t)
 {
@@ -18,7 +19,7 @@ static const char *BasicTypeToStr(BasicType t)
     return "UNKNOWN";
 }
 
-void ConstNumAST::print(int ident)
+void ConstNumAST::print(int ident) const
 {
     printf("%*sConstNumAST type: %s", ident, "", BasicTypeToStr(type));
     switch (type)
@@ -39,7 +40,7 @@ void ConstNumAST::print(int ident)
     printf("\n");
 }
 
-void BinOpAST::print(int ident)
+void BinOpAST::print(int ident) const
 {
     printf("%*sBinOpAST op: %s\n", ident, "", TokenTypeToStr(op));
     printf("%*s LHS:\n", ident, "");
@@ -48,11 +49,11 @@ void BinOpAST::print(int ident)
     rhs->print(ident + 3);
 }
 
-void UnOpAST::print()
+void UnOpAST::print() const
 {
 }
 
-void AssignAST::print(int ident)
+void AssignAST::print(int ident) const
 {
     printf("%*sAssignAST op: %s\n", ident, "", TokenTypeToStr(op));
     printf("%*s LHS:\n", ident, "");
@@ -61,7 +62,7 @@ void AssignAST::print(int ident)
     rhs->print(ident + 3);
 }
 
-void DeclAST::print(int ident)
+void DeclAST::print(int ident) const
 {
     printf("%*sDeclAST varname: [%s] is_constant: %s\n", ident, "", varname,
         (is_constant ? "YES" : "NO"));
@@ -88,7 +89,7 @@ void DeclAST::print(int ident)
     }
 }
 
-void DirectTypeAST::print(int ident)
+void DirectTypeAST::print(int ident) const
 {
     printf("%*sDirectTypeAST name: [%s]", ident, "", name);
     if (isString) {
@@ -98,16 +99,16 @@ void DirectTypeAST::print(int ident)
     }
 }
 
-void ArgumentDeclarationAST::print(int ident)
+void ArgumentDeclarationAST::print(int ident) const
 {
     printf("%*sArgumentDeclarationAST name: %s\n", ident, "", name);
     if (type) type->print(ident + 3);
 }
 
-void FunctionDeclarationAST::print(int ident)
+void FunctionDeclarationAST::print(int ident) const
 {
     printf("%*sFunctionDeclarationAST with %d arguments\n", ident, "", (int)arguments.size());
-    for (auto arg : arguments) arg->print(ident + 3);
+    for (const auto & arg : arguments) arg->print(ident + 3);
     if (return_type) {
         printf(" and return type:\n");
         return_type->print(ident + 3);
@@ -116,31 +117,37 @@ void FunctionDeclarationAST::print(int ident)
     }
 }
 
-void StatementBlockAST::print(int ident)
+void StatementBlockAST::print(int ident) const
 {
     printf("%*sStatementBlockAST with %d statements\n", ident, "", (int)statements.size());
-    for (auto stmt : statements) stmt->print(ident + 3);
+    for (const auto & stmt : statements) stmt->print(ident + 3);
 }
 
-void ReturnStatementAST::print(int ident)
+void ReturnStatementAST::print(int ident) const
 {
     printf("%*sReturnStatementAST\n", ident, "");
     ret->print(ident + 3);
 }
 
-void FunctionDefinitionAST::print(int ident)
+void FunctionDefinitionAST::print(int ident) const
 {
     printf("%*sFunctionDefinitionAST\n", ident, "");
     declaration->print(ident + 3);
     function_body->print(ident + 3);
 }
 
-void IdentAST::print(int ident)
+void IdentAST::print(int ident) const
 {
     printf("%*sIdentAST name: [%s]\n", ident, "", name);
 }
 
-void ConstStringAST::print(int ident)
+void ConstStringAST::print(int ident) const
 {
     printf("%*sConstStringAST name: [%s]\n", ident, "", str);
+}
+
+void FunctionCallAST::print(int ident) const
+{
+    printf("%*sFunctionCall: %s with %d arguments\n", ident, "", function_name, (int)args.size());
+    for (auto arg: args) arg->print(ident + 3);
 }

@@ -3,7 +3,7 @@
 #include "Token.h"
 #include "FileData.h"
 #include "PoolAllocator.h"
-#include <vector>
+#include "Array.h"
 
 class Lexer
 {
@@ -11,7 +11,7 @@ class Lexer
 	FileData file;
     SrcLocation nested_comment_stack[MAX_NESTED_COMMENT];
     u8 num_nested;
-    std::vector<Token> tokens;
+    Array<Token> tokens;
     unsigned int token_index;
 	void consumeWhiteSpace();
 	void Error(const char *msg);

@@ -5,6 +5,7 @@
 #define MINOR_V 1
 
 #include <stdio.h>
+#include <stdlib.h>
 #include "Parser.h"
 #include "Timer.h"
 
@@ -31,16 +32,18 @@ int main(int argc, char **argv)
     timer.startTimer();
 
     PoolAllocator pool;    
+    Parser p;
 
-	std::vector<BaseAST *> vec = Parse(argv[1], &pool);
+	Array<BaseAST *> *vec = p.Parse(argv[1], &pool);
 
-	for (auto ast : vec) {
+	for (auto ast : *vec) {
 		ast->print(0);
 	}
 
     timer.stopTimer();
     timer.printTimeEllapsed();
 
+    delete vec;
     return 0;
 }
 

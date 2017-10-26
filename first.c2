@@ -23,3 +23,9 @@ c : float = 3.0;
 square :: (x: float) -> float { return x * x; }
 multiply := (x: float, y: float) -> float { return x + y * 3; }
 
+main :: ()
+{
+    square(2);
+    return 0;
+}
+
