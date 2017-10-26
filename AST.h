@@ -55,13 +55,6 @@ struct FunctionDeclarationAST : TypeAST
     virtual void print(int ident) const;
 };
 
-struct FunctionCallAST : StatementAST
-{
-    Array<StatementAST *>args;
-    TextType function_name;
-    virtual void print(int ident) const;
-};
-
 struct StatementBlockAST : StatementAST
 {
     Array<StatementAST *> statements;
@@ -84,6 +77,13 @@ struct FunctionDefinitionAST : DefinitionAST
 struct ExprAST : DefinitionAST
 {
     virtual void print(int ident) const {}
+};
+
+struct FunctionCallAST : ExprAST
+{
+    Array<StatementAST *>args;
+    TextType function_name;
+    virtual void print(int ident) const;
 };
 
 struct DirectTypeAST : TypeAST

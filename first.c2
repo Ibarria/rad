@@ -25,7 +25,8 @@ multiply := (x: float, y: float) -> float { return x + y * 3; }
 
 main :: ()
 {
-    square(2);
+    x := square(2);
+
     return 0;
 }
 

@@ -279,7 +279,7 @@ FunctionCallAST * Parser::parseFunctionCall()
     return funcall;
 }
 
-ExprAST * Parser::parseCastExpression()
+ExprAST * Parser::parseLiteral()
 {
     Token t;
     lex->getNextToken(t);
@@ -308,6 +308,19 @@ ExprAST * Parser::parseCastExpression()
     return nullptr;
 }
 
+ExprAST * Parser::parseUnaryExpression()
+{
+    Token t;
+    lex->lookaheadToken(t);
+
+    if (t.type == TK_IDENTIFIER) {
+        if (lex->checkAheadToken(TK_OPEN_PAREN, 1)) {
+            return parseFunctionCall();
+        }
+    } 
+    return parseLiteral();
+}
+
 ExprAST *Parser::parseBinOpExpressionRecursive(u32 oldprec, ExprAST *lhs)
 {
     TOKEN_TYPE cur_type;
@@ -320,7 +333,7 @@ ExprAST *Parser::parseBinOpExpressionRecursive(u32 oldprec, ExprAST *lhs)
                 return lhs;
             } else {
                 lex->consumeToken();
-                ExprAST *rhs = parseCastExpression();
+                ExprAST *rhs = parseUnaryExpression();
                 if (isBinOperator(lex->getTokenType())) {
                     u32 newprec = getPrecedence(lex->getTokenType());
                     if (cur_prec < newprec) {
@@ -342,7 +355,7 @@ ExprAST *Parser::parseBinOpExpressionRecursive(u32 oldprec, ExprAST *lhs)
 
 ExprAST *Parser::parseBinOpExpression()
 {
-    ExprAST *lhs = parseCastExpression();
+    ExprAST *lhs = parseUnaryExpression();
     return parseBinOpExpressionRecursive( 0, lhs);
 }
 

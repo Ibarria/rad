@@ -21,7 +21,8 @@ struct Parser {
     StatementBlockAST *parseStatementBlock();
     FunctionDefinitionAST *parseFunctionDefinition();
     FunctionCallAST *parseFunctionCall();
-    ExprAST * parseCastExpression();
+    ExprAST * parseLiteral();
+    ExprAST * parseUnaryExpression();
     ExprAST * parseBinOpExpressionRecursive(u32 oldprec, ExprAST *lhs);
     ExprAST * parseBinOpExpression();
     DefinitionAST * parseDefinition();
