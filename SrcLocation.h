@@ -4,6 +4,6 @@
 
 struct SrcLocation
 {
-	u64 line;
-	u64 col;
+	u32 line;
+	u32 col;
 };

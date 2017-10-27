@@ -34,16 +34,14 @@ int main(int argc, char **argv)
     PoolAllocator pool;    
     Parser p;
 
-	Array<BaseAST *> *vec = p.Parse(argv[1], &pool);
+	FileAST *parsedFile = p.Parse(argv[1], &pool);
 
-	for (auto ast : *vec) {
-		ast->print(0);
-	}
+    printAST(parsedFile, 0);
 
     timer.stopTimer();
     timer.printTimeEllapsed();
 
-    delete vec;
+    delete parsedFile;
     return 0;
 }
 

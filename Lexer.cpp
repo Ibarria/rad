@@ -213,7 +213,7 @@ void Lexer::Error(const char * msg)
 {
 	SrcLocation loc;
 	file.getLocation(loc);
-	printf("Error %s:%lld - %s", file.getFilename(), loc.line, msg);
+	printf("Error %s:%d - %s", file.getFilename(), loc.line, msg);
 	exit(1);
 }
 
@@ -235,6 +235,8 @@ bool Lexer::openFile(const char * filename)
 void Lexer::parseFile()
 {
     Token tok;
+    filename = CreateTextType(pool, file.getFilename());
+
     while (tok.type != TK_LAST_TOKEN) {
         getNextTokenInternal(tok);
         tokens.push_back(tok);
@@ -408,11 +410,6 @@ void Lexer::lookNaheadToken(Token & tok, unsigned int ahead)
 void Lexer::consumeToken()
 {
     token_index++;
-}
-
-const char * Lexer::getFilename() const
-{
-	return file.getFilename();
 }
 
 void Lexer::getLocation(SrcLocation & loc) const

@@ -2,6 +2,7 @@
 
 #include "mytypes.h"
 #include <assert.h>
+#include <stdlib.h>
 
 template <class T>
 class Array

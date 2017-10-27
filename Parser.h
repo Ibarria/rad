@@ -8,9 +8,11 @@
 struct Parser {
     Lexer *lex;
     char *errorString;
+    Scope *current_scope;
     void Error(const char *msg);
 
     void MustMatchToken(TOKEN_TYPE type, char *msg = nullptr);
+    void AddDeclarationToScope(DeclarationAST *decl);
 
     TypeAST *parseDirectType();
     TypeAST *parseType();
@@ -21,17 +23,17 @@ struct Parser {
     StatementBlockAST *parseStatementBlock();
     FunctionDefinitionAST *parseFunctionDefinition();
     FunctionCallAST *parseFunctionCall();
-    ExprAST * parseLiteral();
-    ExprAST * parseUnaryExpression();
-    ExprAST * parseBinOpExpressionRecursive(u32 oldprec, ExprAST *lhs);
-    ExprAST * parseBinOpExpression();
+    ExpressionAST * parseLiteral();
+    ExpressionAST * parseUnaryExpression();
+    ExpressionAST * parseBinOpExpressionRecursive(u32 oldprec, ExpressionAST *lhs);
+    ExpressionAST * parseBinOpExpression();
     DefinitionAST * parseDefinition();
-    DeclAST * parseDeclaration();
-    ExprAST * parseAssignmentExpression();
-    ExprAST * parseExpression();
+    DeclarationAST * parseDeclaration();
+    ExpressionAST * parseAssignmentExpression();
+    ExpressionAST * parseExpression();
 
 
-    Array<BaseAST *> * Parse(const char *filename, PoolAllocator *pool);
+    FileAST * Parse(const char *filename, PoolAllocator *pool);
 };
 
 

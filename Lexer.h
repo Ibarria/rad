@@ -19,6 +19,7 @@ class Lexer
     bool parseStringToken(char *input, Token &tok);
     void parseNumber(Token &tok, char c);
     PoolAllocator *pool;
+    TextType filename;
 public:
 	Lexer();
 	~Lexer();
@@ -35,5 +36,5 @@ public:
 	void getLocation(SrcLocation &loc) const;
     unsigned int getTokenStreamPosition() const;
     void setTokenStreamPosition(unsigned int index);
-	const char * getFilename() const;
+    TextType getFilename() { return filename; }
 };

@@ -76,8 +76,8 @@ bool FileData::peek(char & c)
 
 void FileData::getLocation(SrcLocation & loc) const
 {
-	loc.line = nline;
-	loc.col = ncol;
+	loc.line = (u32)nline;
+	loc.col = (u32)ncol;
 }
 
 void FileData::lookAheadTwo(char * in)

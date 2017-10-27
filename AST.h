@@ -7,8 +7,13 @@
 
 struct BaseAST;
 struct TypeAST;
-struct ExprAST;
-struct DeclAST;
+struct ExpressionAST;
+struct DeclarationAST;
+
+struct Scope {
+    Scope *parent;
+    Array<DeclarationAST *>decls;
+};
 
 enum BasicType {
     I8, I16, I32, I64,
@@ -16,79 +21,106 @@ enum BasicType {
     F32, F64
 };
 
+enum AST_CLASS_TYPE {
+    AST_UNKNOWN,
+    AST_FILE,
+    AST_STATEMENT,
+    AST_DEFINITION,
+    AST_TYPE,
+    AST_ARGUMENT_DECLARATION,
+    AST_FUNCTION_DECLARATION,
+    AST_STATEMENT_BLOCK,
+    AST_RETURN_STATEMENT,
+    AST_FUNCTION_DEFINITION,
+    AST_EXPRESSION,
+    AST_FUNCTION_CALL,
+    AST_DIRECT_TYPE,
+    AST_IDENTIFIER,
+    AST_CONSTANT_NUMBER,
+    AST_CONSTANT_STRING,
+    AST_BINARY_OPERATION,
+    AST_UNARY_OPERATION,
+    AST_ASSIGNMENT,
+    AST_DECLARATION
+};
 
 struct BaseAST
 {
-    const char *filename;
-    unsigned int line_num;
-    unsigned int char_num;
-	virtual void print(int ident) const {}
+    AST_CLASS_TYPE ast_type;
+    BaseAST() { ast_type = AST_UNKNOWN; filename = nullptr; line_num = char_num = 0; }
+    TextType filename;
+    u32 line_num;
+    u32 char_num;
+};
+
+struct FileAST : BaseAST
+{
+    FileAST() { ast_type = AST_FILE; }
+    Array<BaseAST *>items;
+    Scope scope;
 };
 
 struct StatementAST : BaseAST
 {
-    virtual void print(int ident) const {}
 };
 
 struct DefinitionAST : StatementAST
 {
     virtual bool needsSemiColon() const { return true; }
-    virtual void print(int ident) const {}
 };
 
 struct TypeAST : BaseAST
 {
-    virtual void print(int ident) const {}
 };
 
 struct ArgumentDeclarationAST : BaseAST
 {
+    ArgumentDeclarationAST() { ast_type = AST_ARGUMENT_DECLARATION; name = nullptr; type = nullptr; }
     TextType name;
     TypeAST *type;
-    virtual void print(int ident) const;
 };
 
 struct FunctionDeclarationAST : TypeAST
 {
+    FunctionDeclarationAST() { ast_type = AST_FUNCTION_DECLARATION; return_type = nullptr; }
     Array<ArgumentDeclarationAST *> arguments;
     TypeAST *return_type;
-    virtual void print(int ident) const;
 };
 
 struct StatementBlockAST : StatementAST
 {
+    StatementBlockAST() { ast_type = AST_STATEMENT_BLOCK; }
     Array<StatementAST *> statements;
-    virtual void print(int ident) const;
+    Scope scope;
 };
 
 struct ReturnStatementAST: StatementAST
 {
-    ExprAST *ret;
-    virtual void print(int ident) const;
+    ReturnStatementAST() { ast_type = AST_RETURN_STATEMENT; ret = nullptr; }
+    ExpressionAST *ret;
 };
 struct FunctionDefinitionAST : DefinitionAST
 {
+    FunctionDefinitionAST() { ast_type = AST_FUNCTION_DEFINITION; declaration = nullptr; function_body = nullptr; }
     FunctionDeclarationAST *declaration;
     StatementBlockAST *function_body;
     virtual bool needsSemiColon() const { return false; }
-    virtual void print(int ident) const;
 };
 
-struct ExprAST : DefinitionAST
+struct ExpressionAST : DefinitionAST
 {
-    virtual void print(int ident) const {}
 };
 
-struct FunctionCallAST : ExprAST
+struct FunctionCallAST : ExpressionAST
 {
+    FunctionCallAST() { ast_type = AST_FUNCTION_CALL; function_name = nullptr; }
     Array<StatementAST *>args;
     TextType function_name;
-    virtual void print(int ident) const;
 };
 
 struct DirectTypeAST : TypeAST
 {
-	virtual void print(int ident) const;
+    DirectTypeAST() { ast_type = AST_DIRECT_TYPE; isString = isArray = isPointer = false; name = nullptr; }
 
 	BasicType type;
     bool isString;
@@ -97,15 +129,16 @@ struct DirectTypeAST : TypeAST
 	TextType name;
 };
 
-struct IdentAST : ExprAST
+struct IdentifierAST : ExpressionAST
 {
-    DeclAST *decl;
+    IdentifierAST() { ast_type = AST_IDENTIFIER; decl = nullptr; name = nullptr; }
+    DeclarationAST *decl;
     TextType name;
-    virtual void print(int ident) const;
 };
 
-struct ConstNumAST : ExprAST
+struct ConstantNumberAST : ExpressionAST
 {
+    ConstantNumberAST() { ast_type = AST_CONSTANT_NUMBER; pl.pu64 = 0; }
     union payload {
         u32 pu32;
         u64 pu64;
@@ -115,45 +148,47 @@ struct ConstNumAST : ExprAST
         f64 pf64;
     } pl;
     BasicType type;
-	virtual void print(int ident) const;
 };
 
-struct ConstStringAST : ExprAST
+struct ConstantStringAST : ExpressionAST
 {
+    ConstantStringAST() { ast_type = AST_CONSTANT_STRING; str = nullptr; }
     TextType str;
-    virtual void print(int ident) const;
 };
 
-struct BinOpAST : ExprAST
+struct BinaryOperationAST : ExpressionAST
 {
-    ExprAST *lhs;
-    ExprAST *rhs;
+    BinaryOperationAST() { ast_type = AST_BINARY_OPERATION; ; lhs = rhs = nullptr; op = TK_INVALID; }
+    ExpressionAST *lhs;
+    ExpressionAST *rhs;
     TOKEN_TYPE op;
-	virtual void print(int ident) const;
 };
 
-struct UnOpAST : ExprAST
+struct UnaryOperationAST : ExpressionAST
 {
-	UnOpAST();
-	~UnOpAST();
-	virtual void print() const;
+    UnaryOperationAST() { ast_type = AST_UNARY_OPERATION; }
 };
 
-struct AssignAST : ExprAST
+struct AssignmentAST : ExpressionAST
 {
-    ExprAST *lhs;
-    ExprAST *rhs;
+    AssignmentAST() { ast_type = AST_ASSIGNMENT; lhs = rhs = nullptr; op = TK_INVALID; }
+    ExpressionAST *lhs;
+    ExpressionAST *rhs;
     TOKEN_TYPE op;
-	virtual void print(int ident) const;
 };
 
-struct DeclAST : StatementAST
+struct DeclarationAST : StatementAST
 {
+    DeclarationAST() 
+    { 
+        ast_type = AST_DECLARATION; varname = nullptr; 
+        specified_type = inferred_type = nullptr; definition = nullptr; is_constant = false;
+    }
     TextType varname;
 	TypeAST *specified_type;
     TypeAST *inferred_type;
     DefinitionAST *definition;
     bool is_constant;
-	virtual void print(int ident) const;
 };
 
+void printAST(const BaseAST*ast, int ident);

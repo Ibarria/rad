@@ -6,11 +6,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+
+static void setASTloc(Parser *p, BaseAST *ast)
+{
+    SrcLocation loc;
+    p->lex->getLocation(loc);
+    ast->line_num = loc.line;
+    ast->char_num = loc.col;
+    ast->filename = p->lex->getFilename();
+}
+
 void Parser::Error(const char *msg)
 {
 	SrcLocation loc;
 	lex->getLocation(loc);
-	printf("Error %s:%lld - %s", lex->getFilename(), loc.line, msg);
+	printf("Error %s:%d - %s", lex->getFilename(), loc.line, msg);
 	exit(1);
 }
 
@@ -27,6 +37,18 @@ void Parser::MustMatchToken(TOKEN_TYPE type, char *msg)
         Error(err);
     }
     lex->consumeToken();
+}
+
+void Parser::AddDeclarationToScope(DeclarationAST * decl)
+{
+    for (auto d : current_scope->decls) {
+        if (!strcmp(d->varname, decl->varname)) {
+            char err[128];
+            snprintf(err, sizeof(err), "Error, variable [%s] is already defined in the scope", decl->varname);
+            Error(err);
+        }
+    }
+    current_scope->decls.push_back(decl);
 }
 
 
@@ -110,6 +132,7 @@ TypeAST *Parser::parseDirectType()
     MustMatchToken(TK_IDENTIFIER);
 
     DirectTypeAST *type = new DirectTypeAST();
+    setASTloc(this, type);
     type->name = t.string;
     if (!strcmp(t.string, "string")) {
         type->isString = true;
@@ -135,7 +158,6 @@ TypeAST *Parser::parseDirectType()
         type->type = U64;
     } 
     // @TODO: support custom types
-
     return type;
 }
 
@@ -153,6 +175,7 @@ ArgumentDeclarationAST *Parser::parseArgumentDeclaration()
     Token t;
     lex->lookaheadToken(t);
     ArgumentDeclarationAST *arg = new ArgumentDeclarationAST();
+    setASTloc(this, arg);
     MustMatchToken(TK_IDENTIFIER, "Argument declaration needs to start with an identifier");
     arg->name = t.string;
 
@@ -167,6 +190,8 @@ FunctionDeclarationAST *Parser::parseFunctionDeclaration()
     MustMatchToken(TK_OPEN_PAREN, "Function declarations need a parenthesis");
 
     FunctionDeclarationAST *fundec = new FunctionDeclarationAST();
+    setASTloc(this, fundec);
+
     while (!lex->checkToken(TK_CLOSE_PAREN)) {
         ArgumentDeclarationAST *arg = Parser::parseArgumentDeclaration();
         fundec->arguments.push_back(arg);
@@ -188,6 +213,7 @@ FunctionDeclarationAST *Parser::parseFunctionDeclaration()
 ReturnStatementAST *Parser::parseReturnStatement()
 {
     ReturnStatementAST *ret = new ReturnStatementAST();
+    setASTloc(this, ret);
     MustMatchToken(TK_RETURN);
 
     ret->ret = parseExpression();
@@ -233,6 +259,11 @@ StatementBlockAST *Parser::parseStatementBlock()
     }
     lex->consumeToken(); // consume the {
     StatementBlockAST *block = new StatementBlockAST();
+    setASTloc(this, block);
+    // push scope
+    block->scope.parent = current_scope;
+    current_scope = &block->scope;
+
     while (!lex->checkToken(TK_CLOSE_BRACKET)) {
         StatementAST *statement = nullptr;
         statement = parseStatement();
@@ -242,7 +273,8 @@ StatementBlockAST *Parser::parseStatementBlock()
         }
     }
     lex->consumeToken(); // match }
-
+    // pop scope
+    current_scope = current_scope->parent;
     return block;
 }
 
@@ -250,6 +282,7 @@ StatementBlockAST *Parser::parseStatementBlock()
 FunctionDefinitionAST *Parser::parseFunctionDefinition()
 {
     FunctionDefinitionAST *fundef = new FunctionDefinitionAST();
+    setASTloc(this, fundef);
 
     fundef->declaration = parseFunctionDeclaration();
     fundef->function_body = parseStatementBlock();
@@ -260,6 +293,7 @@ FunctionCallAST * Parser::parseFunctionCall()
 {
     FunctionCallAST *funcall = new FunctionCallAST();
     Token t;
+    setASTloc(this, funcall);
     lex->getNextToken(t);
 
     assert(t.type == TK_IDENTIFIER);
@@ -267,7 +301,7 @@ FunctionCallAST * Parser::parseFunctionCall()
 
     MustMatchToken(TK_OPEN_PAREN);
     while (!lex->checkToken(TK_CLOSE_PAREN)) {
-        ExprAST * expr = parseExpression();
+        ExpressionAST * expr = parseExpression();
         funcall->args.push_back(expr);
         if (lex->checkToken(TK_COMMA)) {
             lex->consumeToken();
@@ -279,17 +313,20 @@ FunctionCallAST * Parser::parseFunctionCall()
     return funcall;
 }
 
-ExprAST * Parser::parseLiteral()
+ExpressionAST * Parser::parseLiteral()
 {
     Token t;
     lex->getNextToken(t);
 
     if (t.type == TK_IDENTIFIER) {
-        IdentAST *ex = new IdentAST();
+        IdentifierAST *ex = new IdentifierAST();
+        setASTloc(this, ex);
         ex->name = t.string;
         return ex;
     } else if ((t.type == TK_NUMBER) || (t.type == TK_FNUMBER)) {
-        ConstNumAST *ex = new ConstNumAST();
+        ConstantNumberAST *ex = new ConstantNumberAST();
+        setASTloc(this, ex);
+
         if (t.type == TK_NUMBER) {
             ex->type = U64;
             ex->pl.pu64 = t.pl.pu64;
@@ -299,7 +336,9 @@ ExprAST * Parser::parseLiteral()
         }
         return ex;
     } else if ((t.type == TK_STRING)) {
-        ConstStringAST *str = new ConstStringAST();
+        ConstantStringAST *str = new ConstantStringAST();
+        setASTloc(this, str);
+
         str->str = t.string;
         return str;
     }
@@ -308,7 +347,7 @@ ExprAST * Parser::parseLiteral()
     return nullptr;
 }
 
-ExprAST * Parser::parseUnaryExpression()
+ExpressionAST * Parser::parseUnaryExpression()
 {
     Token t;
     lex->lookaheadToken(t);
@@ -321,7 +360,7 @@ ExprAST * Parser::parseUnaryExpression()
     return parseLiteral();
 }
 
-ExprAST *Parser::parseBinOpExpressionRecursive(u32 oldprec, ExprAST *lhs)
+ExpressionAST *Parser::parseBinOpExpressionRecursive(u32 oldprec, ExpressionAST *lhs)
 {
     TOKEN_TYPE cur_type;
 
@@ -333,14 +372,15 @@ ExprAST *Parser::parseBinOpExpressionRecursive(u32 oldprec, ExprAST *lhs)
                 return lhs;
             } else {
                 lex->consumeToken();
-                ExprAST *rhs = parseUnaryExpression();
+                ExpressionAST *rhs = parseUnaryExpression();
                 if (isBinOperator(lex->getTokenType())) {
                     u32 newprec = getPrecedence(lex->getTokenType());
                     if (cur_prec < newprec) {
                         rhs = parseBinOpExpressionRecursive(cur_prec + 1, rhs);
                     }
                 } 
-                BinOpAST *bin = new BinOpAST();
+                BinaryOperationAST *bin = new BinaryOperationAST();
+                setASTloc(this, bin);
                 bin->lhs = lhs;
                 bin->rhs = rhs;
                 bin->op = cur_type;
@@ -353,21 +393,22 @@ ExprAST *Parser::parseBinOpExpressionRecursive(u32 oldprec, ExprAST *lhs)
     return lhs;
 }
 
-ExprAST *Parser::parseBinOpExpression()
+ExpressionAST *Parser::parseBinOpExpression()
 {
-    ExprAST *lhs = parseUnaryExpression();
+    ExpressionAST *lhs = parseUnaryExpression();
     return parseBinOpExpressionRecursive( 0, lhs);
 }
 
-ExprAST * Parser::parseAssignmentExpression()
+ExpressionAST * Parser::parseAssignmentExpression()
 {
-    ExprAST *lhs = parseBinOpExpression();
+    ExpressionAST *lhs = parseBinOpExpression();
     TOKEN_TYPE type;
 
     type = lex->getTokenType();
     if (isAssignmentOperator(type)) {
         // @TODO : we would need to have here a RHS evaluation
-        AssignAST *assign = new AssignAST();
+        AssignmentAST *assign = new AssignmentAST();
+        setASTloc(this, assign);
         assign->lhs = lhs;
         assign->op = type;
         assign->rhs = parseAssignmentExpression();
@@ -376,13 +417,13 @@ ExprAST * Parser::parseAssignmentExpression()
     return lhs;
 }
 
-ExprAST * Parser::parseExpression()
+ExpressionAST * Parser::parseExpression()
 {
     Token t;
     lex->lookaheadToken(t);
     if (t.type == TK_OPEN_PAREN) {
         lex->getNextToken(t);
-        ExprAST *expr = parseExpression();
+        ExpressionAST *expr = parseExpression();
         lex->getNextToken(t);
         if (t.type != TK_CLOSE_PAREN) {
             Error("Cound not find a matching close parentesis\n");
@@ -414,11 +455,12 @@ DefinitionAST *Parser::parseDefinition()
     return parseExpression();
 }
 
-DeclAST * Parser::parseDeclaration()
+DeclarationAST * Parser::parseDeclaration()
 {
     Token t;
     lex->getNextToken(t);
-    DeclAST *decl = new DeclAST();
+    DeclarationAST *decl = new DeclarationAST();
+    setASTloc(this, decl);
 
     if (t.type != TK_IDENTIFIER) {
         Error("Identifier expected but not found\n");
@@ -453,30 +495,34 @@ DeclAST * Parser::parseDeclaration()
         }
         lex->getNextToken(t);
     }
+    AddDeclarationToScope(decl);
     return decl;
 }
 
 // first version, just return a list of AST
-Array<BaseAST *> *Parser::Parse(const char *filename, PoolAllocator *pool)
+FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
 {
 	Lexer lex;
     this->lex = &lex;
-    Array<BaseAST *> *vec = new Array<BaseAST *>(20);
+    FileAST *file_inst = new FileAST();
 
     lex.setPoolAllocator(pool);
 
 	lex.openFile(filename);
     lex.parseFile();
 
+    current_scope = &file_inst->scope;
+    current_scope->parent = nullptr;
+
 	while (!lex.checkToken(TK_LAST_TOKEN)) {
 		// we got a token, figure out what AST to build
-        DeclAST *d = parseDeclaration();
-        vec->push_back(d);
+        DeclarationAST *d = parseDeclaration();
+        file_inst->items.push_back(d);
                 
         //lex->getNextToken(t);
         //t.print();
 	}
 
     this->lex = nullptr;
-	return vec;
+	return file_inst;
 }
