@@ -14,6 +14,8 @@ struct Parser {
     void MustMatchToken(TOKEN_TYPE type, char *msg = nullptr);
     void AddDeclarationToScope(DeclarationAST *decl);
 
+    bool infer_types(DeclarationAST *decl);
+
     TypeAST *parseDirectType();
     TypeAST *parseType();
     ArgumentDeclarationAST *parseArgumentDeclaration();
@@ -35,5 +37,4 @@ struct Parser {
 
     FileAST * Parse(const char *filename, PoolAllocator *pool);
 };
-
 

@@ -5,16 +5,18 @@ static const char *BasicTypeToStr(BasicType t)
 {
     switch (t)
     {
-    case I8:  return "I8";
-    case I16: return "I16";
-    case I32: return "I32";
-    case I64: return "I64";
-    case U8:  return "U8";
-    case U16: return "U16";
-    case U32: return "U32";
-    case U64: return "U64";
-    case F32: return "F32";
-    case F64: return "F64";
+    case BASIC_TYPE_BOOL:  return "BOOL";
+    case BASIC_TYPE_STRING:  return "STRING";
+    case BASIC_TYPE_S8:  return "S8";
+    case BASIC_TYPE_S16: return "S16";
+    case BASIC_TYPE_S32: return "S32";
+    case BASIC_TYPE_S64: return "S64";
+    case BASIC_TYPE_U8:  return "U8";
+    case BASIC_TYPE_U16: return "U16";
+    case BASIC_TYPE_U32: return "U32";
+    case BASIC_TYPE_U64: return "U64";
+    case BASIC_TYPE_F32: return "F32";
+    case BASIC_TYPE_F64: return "F64";
     }
     return "UNKNOWN";
 }
@@ -29,16 +31,16 @@ void printAST(const BaseAST *ast, int ident)
         printf("%*sConstNumAST type: %s", ident, "", BasicTypeToStr(c->type));
         switch (c->type)
         {
-        case F32:
+        case BASIC_TYPE_F32:
             printf(" %f", c->pl.pf32);
             break;
-        case F64:
+        case BASIC_TYPE_F64:
             printf(" %lf", c->pl.pf64);
             break;
-        case U32:
+        case BASIC_TYPE_U32:
             printf(" %d", c->pl.pu32);
             break;
-        case U64:
+        case BASIC_TYPE_U64:
             printf(" %lld", c->pl.pu64);
             break;
         }
@@ -65,19 +67,12 @@ void printAST(const BaseAST *ast, int ident)
     }
     case AST_DECLARATION: {
         const DeclarationAST *a = (const DeclarationAST *)ast;
-        printf("%*sDeclAST varname: [%s] is_constant: %s\n", ident, "", a->varname,
-            (a->is_constant ? "YES" : "NO"));
+        printf("%*sDeclAST varname: [%s] flags: %x\n", ident, "", a->varname,
+            a->flags);
         printf("%*s SpecifiedType: ", ident, "");
         if (a->specified_type) {
             printf("\n");
             printAST(a->specified_type, ident + 3);
-        } else {
-            printf(" NONE\n");
-        }
-        printf("%*s InferredType: ", ident, "");
-        if (a->inferred_type) {
-            printf("\n");
-            printAST(a->inferred_type, ident + 3);
         } else {
             printf(" NONE\n");
         }
@@ -93,11 +88,7 @@ void printAST(const BaseAST *ast, int ident)
     case AST_DIRECT_TYPE: {
         const DirectTypeAST *a = (const DirectTypeAST *)ast;
         printf("%*sDirectTypeAST name: [%s]", ident, "", a->name);
-        if (a->isString) {
-            printf(" type: STRING\n");
-        } else {
-            printf(" type: %s\n", BasicTypeToStr(a->type));
-        }
+        printf(" type: %s\n", BasicTypeToStr(a->type));
         break;
     }
     case AST_ARGUMENT_DECLARATION: {

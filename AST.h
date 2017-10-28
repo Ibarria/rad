@@ -16,9 +16,18 @@ struct Scope {
 };
 
 enum BasicType {
-    I8, I16, I32, I64,
-    U8, U16, U32, U64,
-    F32, F64
+    BASIC_TYPE_BOOL,
+    BASIC_TYPE_STRING,
+    BASIC_TYPE_S8, 
+    BASIC_TYPE_S16, 
+    BASIC_TYPE_S32, 
+    BASIC_TYPE_S64,
+    BASIC_TYPE_U8, 
+    BASIC_TYPE_U16, 
+    BASIC_TYPE_U32, 
+    BASIC_TYPE_U64,
+    BASIC_TYPE_F32, 
+    BASIC_TYPE_F64
 };
 
 enum AST_CLASS_TYPE {
@@ -35,6 +44,7 @@ enum AST_CLASS_TYPE {
     AST_EXPRESSION,
     AST_FUNCTION_CALL,
     AST_DIRECT_TYPE,
+    AST_ARRAY_TYPE,
     AST_IDENTIFIER,
     AST_CONSTANT_NUMBER,
     AST_CONSTANT_STRING,
@@ -120,13 +130,20 @@ struct FunctionCallAST : ExpressionAST
 
 struct DirectTypeAST : TypeAST
 {
-    DirectTypeAST() { ast_type = AST_DIRECT_TYPE; isString = isArray = isPointer = false; name = nullptr; }
+    DirectTypeAST() { ast_type = AST_DIRECT_TYPE; isArray = isPointer = false; name = nullptr; }
 
 	BasicType type;
-    bool isString;
 	bool isArray;
 	bool isPointer;
 	TextType name;
+};
+
+struct ArrayTypeAST : TypeAST
+{
+    ArrayTypeAST() { ast_type = AST_ARRAY_TYPE; contained_type = nullptr; size = 0; isDynamic = false; }
+    TypeAST *contained_type;
+    u64 size;
+    bool isDynamic;
 };
 
 struct IdentifierAST : ExpressionAST
@@ -177,18 +194,21 @@ struct AssignmentAST : ExpressionAST
     TOKEN_TYPE op;
 };
 
+#define DECL_FLAG_IS_CONSTANT          0x1
+#define DECL_FLAG_HAS_BEEN_INFERRED    0x2
+#define DECL_FLAG_HAS_BEEN_GENERATED   0x4
+
 struct DeclarationAST : StatementAST
 {
     DeclarationAST() 
     { 
         ast_type = AST_DECLARATION; varname = nullptr; 
-        specified_type = inferred_type = nullptr; definition = nullptr; is_constant = false;
+        specified_type = nullptr; definition = nullptr; flags = 0;
     }
     TextType varname;
 	TypeAST *specified_type;
-    TypeAST *inferred_type;
     DefinitionAST *definition;
-    bool is_constant;
+    u32 flags;
 };
 
 void printAST(const BaseAST*ast, int ident);

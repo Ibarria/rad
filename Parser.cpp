@@ -6,6 +6,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+bool Parser::infer_types(DeclarationAST *decl)
+{
+    if (decl->specified_type) return true;
+    assert(decl->definition); // if we do not have a type we must have something to compare against
+    switch (decl->definition->ast_type) {
+    case AST_FUNCTION_DEFINITION: {
+        FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
+        decl->specified_type = fundef->declaration;
+        decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
+        break;
+    }
+    default: {
+        // expect this to be an expression, and the expression type needs to be deduced
+        // operation, literal, function call, etc
+    }
+    }
+    return false;
+}
 
 static void setASTloc(Parser *p, BaseAST *ast)
 {
@@ -124,39 +142,80 @@ static u32 getPrecedence(TOKEN_TYPE t)
     return 0;
 }
 
+static bool isVariableTypeToken(TOKEN_TYPE t)
+{
+    return (t == TK_BOOL)
+        || (t == TK_INT)
+        || (t == TK_U8)
+        || (t == TK_U16)
+        || (t == TK_U32)
+        || (t == TK_U64)
+        || (t == TK_S8)
+        || (t == TK_S16)
+        || (t == TK_S32)
+        || (t == TK_S64)
+        || (t == TK_FLOAT)
+        || (t == TK_F32)
+        || (t == TK_F64)
+        || (t == TK_STRING);
+}
+
 TypeAST *Parser::parseDirectType()
 {
     // @TODO: support pointer, arrays, etc
     Token t;
     lex->lookaheadToken(t);
-    MustMatchToken(TK_IDENTIFIER);
+    if ((t.type != TK_IDENTIFIER) && !isVariableTypeToken(t.type)) {
+        char err[128] = {};
+        snprintf(err, sizeof(err), "Variable type token could not be found, but we found: %s\n",
+            TokenTypeToStr(t.type));
+        Error(err);
+    }
+    lex->consumeToken();
 
     DirectTypeAST *type = new DirectTypeAST();
     setASTloc(this, type);
     type->name = t.string;
-    if (!strcmp(t.string, "string")) {
-        type->isString = true;
-    } else if (!strcmp(t.string, "int")) {
-        type->type = I64;
-    } else if (!strcmp(t.string, "float")) {
-        type->type = F32;
-    } else if (!strcmp(t.string, "i8")) {
-        type->type = I8;
-    } else if (!strcmp(t.string, "i16")) {
-        type->type = I16;
-    } else if (!strcmp(t.string, "i32")) {
-        type->type = I32;
-    } else if (!strcmp(t.string, "i64")) {
-        type->type = I64;
-    } else if (!strcmp(t.string, "u8")) {
-        type->type = U8;
-    } else if (!strcmp(t.string, "u16")) {
-        type->type = U16;
-    } else if (!strcmp(t.string, "u32")) {
-        type->type = U32;
-    } else if (!strcmp(t.string, "u64")) {
-        type->type = U64;
-    } 
+    switch (t.type) {
+    case TK_STRING:
+        type->type = BASIC_TYPE_STRING;
+        break;
+    case TK_U8:
+        type->type = BASIC_TYPE_U8;
+        break;
+    case TK_U16:
+        type->type = BASIC_TYPE_U16;
+        break;
+    case TK_U32:
+        type->type = BASIC_TYPE_U32;
+        break;
+    case TK_INT:
+    case TK_U64:
+        type->type = BASIC_TYPE_U64;
+        break;
+    case TK_S8:
+        type->type = BASIC_TYPE_S8;
+        break;
+    case TK_S16:
+        type->type = BASIC_TYPE_S16;
+        break;
+    case TK_S32:
+        type->type = BASIC_TYPE_S32;
+        break;
+    case TK_S64:
+        type->type = BASIC_TYPE_S64;
+        break;
+    case TK_F32:
+        type->type = BASIC_TYPE_F32;
+        break;
+    case TK_FLOAT:
+    case TK_F64:
+        type->type = BASIC_TYPE_F64;
+        break;
+    case TK_IDENTIFIER :
+        assert(!"Identifier types, custom types are not implemented");
+    }
+
     // @TODO: support custom types
     return type;
 }
@@ -328,10 +387,10 @@ ExpressionAST * Parser::parseLiteral()
         setASTloc(this, ex);
 
         if (t.type == TK_NUMBER) {
-            ex->type = U64;
+            ex->type = BASIC_TYPE_U64;
             ex->pl.pu64 = t.pl.pu64;
         } else {
-            ex->type = F64;
+            ex->type = BASIC_TYPE_F64;
             ex->pl.pf64 = t.pl.pf64;
         }
         return ex;
@@ -476,7 +535,7 @@ DeclarationAST * Parser::parseDeclaration()
     } 
     
     if (t.type == TK_DOUBLE_COLON) {
-        decl->is_constant = true;
+        decl->flags |= DECL_FLAG_IS_CONSTANT;
     }
 
     if ((t.type == TK_ASSIGN) || (t.type == TK_DOUBLE_COLON)

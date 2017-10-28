@@ -13,6 +13,42 @@ inline bool isWhiteSpace(char c)
 		(c == '\r'));
 }
 
+struct ReservedKeyword {
+    const char *keyword;
+    TOKEN_TYPE type;
+} reserved_keywords[] = {
+    { "return",   TK_RETURN},
+    { "if",       TK_IF },
+    { "for",      TK_FOR },
+    { "bool",     TK_BOOL },
+    { "string",   TK_STRING },
+    { "int",      TK_INT },
+    { "u8",       TK_U8 },
+    { "u16",      TK_U16 },
+    { "u32",      TK_U32 },
+    { "u64",      TK_U64 },
+    { "s8",       TK_S8 },
+    { "s16",      TK_S16 },
+    { "s32",      TK_S32 },
+    { "s64",      TK_S64 },
+    { "float",    TK_FLOAT },
+    { "f32",      TK_F32 },
+    { "f64",      TK_F64 },
+
+    { nullptr,    TK_INVALID}
+};
+
+static void ConvertIdentifierToReservedKeyword(Token &tok, char *buff)
+{
+    ReservedKeyword *k; 
+    for (k = reserved_keywords; k->keyword != nullptr; k++) {
+        if (!strcmp(k->keyword, buff)) {
+            tok.type = k->type;
+            return;
+        }
+    }
+}
+
 struct StringToken {
     const char *str;
     TOKEN_TYPE token;
@@ -289,15 +325,9 @@ void Lexer::getNextTokenInternal(Token &tok)
 			}
 			tok.type = TK_IDENTIFIER;
             buff[i] = 0;
-			tok.string = CreateTextType(pool, buff);
-            if (!strcmp("return", buff)) {
-                tok.type = TK_RETURN;
-            } else if (!strcmp("if", buff)) {
-                tok.type = TK_IF;
-            } else if (!strcmp("for", buff)) {
-                tok.type = TK_FOR;
-            }
-		} else if (c == '"') {
+            ConvertIdentifierToReservedKeyword(tok, buff);
+            if (tok.type == TK_IDENTIFIER) tok.string = CreateTextType(pool, buff);
+        } else if (c == '"') {
 			// this marks the start of a string
             char *s = new char[1024];
             u32 i = 0;

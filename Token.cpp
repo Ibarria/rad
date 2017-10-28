@@ -135,7 +135,23 @@ const char * TokenTypeToStr(TOKEN_TYPE type)
         CASE_TOKEN_TYPE(TK_BANG);
         CASE_TOKEN_TYPE(TK_STRING);
         CASE_TOKEN_TYPE(TK_CHAR);
-    }                   
+        CASE_TOKEN_TYPE(TK_IF);
+        CASE_TOKEN_TYPE(TK_FOR);
+        CASE_TOKEN_TYPE(TK_RETURN);
+        CASE_TOKEN_TYPE(TK_BOOL);
+        CASE_TOKEN_TYPE(TK_INT);
+        CASE_TOKEN_TYPE(TK_U8);
+        CASE_TOKEN_TYPE(TK_U16);
+        CASE_TOKEN_TYPE(TK_U32);
+        CASE_TOKEN_TYPE(TK_U64);
+        CASE_TOKEN_TYPE(TK_S8);
+        CASE_TOKEN_TYPE(TK_S16);
+        CASE_TOKEN_TYPE(TK_S32);
+        CASE_TOKEN_TYPE(TK_S64);
+        CASE_TOKEN_TYPE(TK_FLOAT);
+        CASE_TOKEN_TYPE(TK_F32);
+        CASE_TOKEN_TYPE(TK_F64);
+    }
         return "UNKNOWN";   
 }                       
 
