@@ -6,7 +6,6 @@ public:
     Timer();
     ~Timer();
     void startTimer();
-    void stopTimer();
-    void printTimeEllapsed();
+    double stopTimer();
 };
 

@@ -18,20 +18,16 @@ void Timer::startTimer()
     start_time = perfCount.QuadPart;
 }
 
-void Timer::stopTimer()
+double Timer::stopTimer()
 {
     LARGE_INTEGER perfCount;
-    QueryPerformanceCounter(&perfCount);
-    unsigned long long end_time = perfCount.QuadPart;
-
-    start_time = end_time - start_time;
-}
-
-void Timer::printTimeEllapsed()
-{
     LARGE_INTEGER li;
+    QueryPerformanceCounter(&perfCount);
     QueryPerformanceFrequency(&li);
 
+    unsigned long long end_time = perfCount.QuadPart;
+    start_time = end_time - start_time;
     double ellapsed_time = (double)start_time / (double)li.QuadPart;
-    printf("Time ellapsed: %lf seconds", ellapsed_time);
+    return ellapsed_time;
 }
+

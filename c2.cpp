@@ -9,6 +9,7 @@
 #include "Parser.h"
 #include "Timer.h"
 #include "c_generator.h"
+#include "os.h"
 
 void usage()
 {
@@ -26,9 +27,21 @@ void parseOptions(int argc, char **argv)
 	}
 }
 
+void printTime(const char *stage, double time_sec)
+{
+    double rectified_time = time_sec;
+    const char *units = "seconds";
+    if (time_sec < 0.01) {
+        rectified_time = time_sec * 1000.0;
+        units = "ms";
+    }
+    printf("%s took %lf %s\n", stage, rectified_time, units);
+}
+
 int main(int argc, char **argv)
 {
 	parseOptions(argc, argv);
+    double astBuildTime, codegenTime, binaryGenTime = 0.0;
     Timer timer;
     timer.startTimer();
 
@@ -39,12 +52,24 @@ int main(int argc, char **argv)
 
     traverseAST(parsedFile);
     
+    astBuildTime = timer.stopTimer();
+    timer.startTimer();
+
     c_generator gen;
     gen.generate_c_file("first.cpp", parsedFile);
     // printAST(parsedFile, 0);
 
-    timer.stopTimer();
-    timer.printTimeEllapsed();
+    codegenTime = timer.stopTimer();
+    
+    timer.startTimer();
+    
+    compile_c_into_binary("first.cpp");
+
+    binaryGenTime = timer.stopTimer();
+
+    printTime("AST building stage", astBuildTime);
+    printTime("C Code generation stage", codegenTime);
+    printTime("Binary generation stage", binaryGenTime);
 
     delete parsedFile;
     return 0;
