@@ -3,6 +3,7 @@
 #include <string.h>
 #include <assert.h>
 #include <math.h>
+#include <stdarg.h>
 #include "Lexer.h"
 
 inline bool isWhiteSpace(char c)
@@ -197,7 +198,7 @@ void Lexer::parseNumber(Token & tok, char c)
     file.peek(c);
     if (c == 'x') {
         if (total != 0) {
-            Error("Hex numbers must start with prefix 0x\n");
+            Error("Hex numbers must start with prefix 0x, the compiler saw %d%c\n", (int)total, c);
         }
         base = 16;
     }
@@ -256,11 +257,16 @@ void Lexer::consumeWhiteSpace()
 	}
 }
 
-void Lexer::Error(const char * msg)
+void Lexer::Error(const char * msg, ...)
 {
+    va_list args;
 	SrcLocation loc;
 	file.getLocation(loc);
-	printf("Error %s:%d - %s", file.getFilename(), loc.line, msg);
+	printf("Error %s:%d - ", file.getFilename(), loc.line);
+
+    va_start(args, msg);
+    vprintf(msg, args);
+    va_end(args);
 	exit(1);
 }
 
@@ -379,7 +385,7 @@ void Lexer::getNextTokenInternal(Token &tok)
             file.lookAheadTwo(&input[1]);
             if (!parseStringToken(input, tok)) {
                 // at this point, all other tokens must be in this form
-                Error("Token not recognized\n"); // @TODO: improve this error message
+                Error("Token not recognized : [%s]\n", input); 
             }
 
             if (tok.type == TK_LINE_COMMENT) {
@@ -405,7 +411,7 @@ void Lexer::getNextTokenInternal(Token &tok)
                         cont = file.getc(c);
                         if (cont && (c == '*')) {
                             if (num_nested + 1 >= MAX_NESTED_COMMENT) {
-                                Error("You have reached the maximum number of nested comments\n");
+                                Error("You have reached the maximum number of nested comments: %d\n", MAX_NESTED_COMMENT);
                             }
                             file.getLocation(nested_comment_stack[num_nested]);
                             num_nested++;

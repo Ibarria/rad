@@ -7,12 +7,13 @@
 
 struct Parser {
     Lexer *lex;
-    char *errorString;
+    char errorString[512];
     Scope *current_scope;
-    void Error(const char *msg);
+    bool success;
+    void Error(const char *msg, ...);
 
-    void MustMatchToken(TOKEN_TYPE type, char *msg = nullptr);
-    void AddDeclarationToScope(VariableDeclarationAST *decl);
+    bool MustMatchToken(TOKEN_TYPE type, char *msg = nullptr);
+    bool AddDeclarationToScope(VariableDeclarationAST *decl);
 
     TypeAST *parseDirectType();
     TypeAST *parseType();

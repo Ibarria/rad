@@ -5,11 +5,14 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 void traverseAST(FileAST *root);
 u32 process_scope_variables(Scope *scope);
 bool infer_types(VariableDeclarationAST *decl);
 TypeAST *deduceType(ExpressionAST *expr);
+
+extern bool option_printTokens;
 
 void ErrorAST(BaseAST *ast, const char *msg)
 {
@@ -167,39 +170,40 @@ static void setASTinfo(Parser *p, BaseAST *ast)
     ast->scope = p->current_scope;
 }
 
-void Parser::Error(const char *msg)
+void Parser::Error(const char *msg, ...)
 {
-	SrcLocation loc;
-	lex->getLocation(loc);
-	printf("Error %s:%d - %s", lex->getFilename(), loc.line, msg);
-	exit(1);
+    va_list args;
+    SrcLocation loc;
+    lex->getLocation(loc);
+    u32 off = sprintf_s(errorString, "Error %s:%d - ", lex->getFilename(), loc.line);
+
+    va_start(args, msg);
+    vsprintf_s(errorString + off, sizeof(errorString) - off, msg, args);
+    va_end(args);
+    success = false;
 }
 
-void Parser::MustMatchToken(TOKEN_TYPE type, char *msg)
+bool Parser::MustMatchToken(TOKEN_TYPE type, char *msg)
 {
     if (!lex->checkToken(type)) {
-        char err[128] = {};
-        u32 offset = 0;
-        if (msg) {
-            offset = snprintf(err, sizeof(err), "%s\n    ", msg);
-        }
-        snprintf(err + offset, sizeof(err) - offset, "Token %s was expected, but we found: %s\n", 
-            TokenTypeToStr(type), TokenTypeToStr(lex->getTokenType()));
-        Error(err);
+        Error("%s - Token %s was expected, but we found: %s\n", msg,
+            TokenTypeToStr(type), TokenTypeToStr(lex->getTokenType()) );
+        return false;
     }
     lex->consumeToken();
+    return true;
 }
 
-void Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
+bool Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
 {
     for (auto d : current_scope->decls) {
         if (!strcmp(d->varname, decl->varname)) {
-            char err[128];
-            snprintf(err, sizeof(err), "Error, variable [%s] is already defined in the scope", decl->varname);
-            Error(err);
+            Error("Error, variable [%s] is already defined in the scope", decl->varname);
+            return false;
         }
     }
     current_scope->decls.push_back(decl);
+    return true;
 }
 
 
@@ -299,10 +303,9 @@ TypeAST *Parser::parseDirectType()
     Token t;
     lex->lookaheadToken(t);
     if ((t.type != TK_IDENTIFIER) && !isVariableTypeToken(t.type)) {
-        char err[128] = {};
-        snprintf(err, sizeof(err), "Variable type token could not be found, but we found: %s\n",
+        Error( "Variable type token could not be found, but we found: %s\n",
             TokenTypeToStr(t.type));
-        Error(err);
+        return nullptr;
     }
     lex->consumeToken();
 
@@ -369,28 +372,52 @@ ArgumentDeclarationAST *Parser::parseArgumentDeclaration()
     ArgumentDeclarationAST *arg = new ArgumentDeclarationAST();
     setASTinfo(this, arg);
     MustMatchToken(TK_IDENTIFIER, "Argument declaration needs to start with an identifier");
+    if (!success) {
+        delete arg;
+        return nullptr;
+    }
     arg->name = t.string;
 
     MustMatchToken(TK_COLON, "Argument declaration needs a colon between identifier and type");
 
+    if (!success) {
+        delete arg;
+        return nullptr;
+    }
+
     arg->type = parseType();
+
+    if (!success) {
+        delete arg;
+        return nullptr;
+    }
     return arg;
 }
 
 FunctionTypeAST *Parser::parseFunctionDeclaration()
 {
-    MustMatchToken(TK_OPEN_PAREN, "Function declarations need a parenthesis");
+    MustMatchToken(TK_OPEN_PAREN, "Function declarations need to start with an open parenthesis");
+    if (!success) {
+        return nullptr;
+    }
 
     FunctionTypeAST *fundec = new FunctionTypeAST();
     setASTinfo(this, fundec);
 
     while (!lex->checkToken(TK_CLOSE_PAREN)) {
         ArgumentDeclarationAST *arg = Parser::parseArgumentDeclaration();
+        if (!success) {
+            delete fundec;
+            return nullptr;
+        }
+
         fundec->arguments.push_back(arg);
         if (lex->checkToken(TK_COMMA)) {
             lex->consumeToken();
         } else if (!lex->checkToken(TK_CLOSE_PAREN)) {
             Error("Comma must be used in between parameters in a function\n");
+            delete fundec;
+            return nullptr;
         }
     }
     lex->consumeToken();
@@ -398,6 +425,10 @@ FunctionTypeAST *Parser::parseFunctionDeclaration()
     if (lex->checkToken(TK_RETURN_ARROW)) {
         lex->consumeToken();
         fundec->return_type = parseType();
+    }
+    if (!success) {
+        delete fundec;
+        return nullptr;
     }
     return fundec;
 }
@@ -407,9 +438,21 @@ ReturnStatementAST *Parser::parseReturnStatement()
     ReturnStatementAST *ret = new ReturnStatementAST();
     setASTinfo(this, ret);
     MustMatchToken(TK_RETURN);
+    if (!success) {
+        delete ret;
+        return nullptr;
+    }
 
     ret->ret = parseExpression();
+    if (!success) {
+        delete ret;
+        return nullptr;
+    }
     MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");
+    if (!success) {
+        delete ret;
+        return nullptr;
+    }
     return ret;
 }
 
@@ -429,9 +472,15 @@ StatementAST *Parser::parseStatement()
             // this is a function call, parse it as such
             statement = parseFunctionCall();
             MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");
+            if (!success) {
+                return nullptr;
+            }
         } else {
             statement = parseExpression();
             MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");
+            if (!success) {
+                return nullptr;
+            }
         }
         return statement;
     } else if (cur_type == TK_OPEN_BRACKET) {
@@ -446,7 +495,8 @@ StatementAST *Parser::parseStatement()
 StatementBlockAST *Parser::parseStatementBlock()
 {
     if (!lex->checkToken(TK_OPEN_BRACKET)) {
-        Error("Was expecting an open bracket\n");
+        Error("We are trying to parse a statement block and it needs to start with an open bracket\n");
+        return nullptr;
     }
     lex->consumeToken(); // consume the {
     StatementBlockAST *block = new StatementBlockAST();
@@ -458,9 +508,17 @@ StatementBlockAST *Parser::parseStatementBlock()
     while (!lex->checkToken(TK_CLOSE_BRACKET)) {
         StatementAST *statement = nullptr;
         statement = parseStatement();
+        if (!success) {
+            delete block;
+            return nullptr;
+        }
         block->statements.push_back(statement);
         if (lex->checkToken(TK_LAST_TOKEN)) {
-            Error("Failed to find a matching close bracket");
+            Error("Failed to find a matching close bracket, open bracket at line %d\n", block->line_num);
+            if (!success) {
+                delete block;
+                return nullptr;
+            }
         }
     }
     lex->consumeToken(); // match }
@@ -476,7 +534,15 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
     setASTinfo(this, fundef);
 
     fundef->declaration = parseFunctionDeclaration();
+    if (!success) {
+        delete fundef;
+        return nullptr;
+    }
     fundef->function_body = parseStatementBlock();
+    if (!success) {
+        delete fundef;
+        return nullptr;
+    }
     return fundef;
 }
 
@@ -491,8 +557,16 @@ FunctionCallAST * Parser::parseFunctionCall()
     funcall->function_name = t.string;
 
     MustMatchToken(TK_OPEN_PAREN);
+    if (!success) {
+        delete funcall;
+        return nullptr;
+    }
     while (!lex->checkToken(TK_CLOSE_PAREN)) {
         ExpressionAST * expr = parseExpression();
+        if (!success) {
+            delete funcall;
+            return nullptr;
+        }
         funcall->args.push_back(expr);
         if (lex->checkToken(TK_COMMA)) {
             lex->consumeToken();
@@ -500,6 +574,10 @@ FunctionCallAST * Parser::parseFunctionCall()
     }
 
     MustMatchToken(TK_CLOSE_PAREN);
+    if (!success) {
+        delete funcall;
+        return nullptr;
+    }
 
     return funcall;
 }
@@ -533,8 +611,7 @@ ExpressionAST * Parser::parseLiteral()
         str->str = t.string;
         return str;
     }
-    //@TODO: have an error message here
-    printf("Could not parse a expression!");
+    Error("Could not parse a literal expression! Unknown token type: %s", TokenTypeToStr(t.type));
     return nullptr;
 }
 
@@ -597,7 +674,6 @@ ExpressionAST * Parser::parseAssignmentExpression()
 
     type = lex->getTokenType();
     if (isAssignmentOperator(type)) {
-        // @TODO : we would need to have here a RHS evaluation
         lex->consumeToken();
         AssignmentAST *assign = new AssignmentAST();
         setASTinfo(this, assign);
@@ -614,11 +690,17 @@ ExpressionAST * Parser::parseExpression()
     Token t;
     lex->lookaheadToken(t);
     if (t.type == TK_OPEN_PAREN) {
+        SrcLocation loc;
+        lex->getLocation(loc);
         lex->getNextToken(t);
         ExpressionAST *expr = parseExpression();
         lex->getNextToken(t);
         if (t.type != TK_CLOSE_PAREN) {
-            Error("Cound not find a matching close parentesis\n");
+            Error("Cound not find a matching close parentesis, open parenthesis was at %d:%d\n", 
+                loc.line, loc.col);
+            if (!success) {
+                return nullptr;
+            }
         }
         return expr;
     }
@@ -638,6 +720,8 @@ DefinitionAST *Parser::parseDefinition()
             return func_def;
         }
 
+        success = true;
+        errorString[0] = 0;
         // @TODO: use lookahead instead of token rewind
         // if we are here, means that we could not parse the function definition
         // it has to be an expression, but we need to reset the parsing stream
@@ -656,6 +740,10 @@ VariableDeclarationAST * Parser::parseDeclaration()
 
     if (t.type != TK_IDENTIFIER) {
         Error("Identifier expected but not found\n");
+        if (!success) {
+            delete decl;
+            return nullptr;
+        }
     }
 
     decl->varname = t.string;
@@ -664,6 +752,10 @@ VariableDeclarationAST * Parser::parseDeclaration()
         lex->consumeToken();
         // we are doing a variable declaration
         decl->specified_type = parseType();
+        if (!success) {
+            delete decl;
+            return nullptr;
+        }
         lex->lookaheadToken(t);
     } 
     
@@ -676,14 +768,26 @@ VariableDeclarationAST * Parser::parseDeclaration()
         lex->consumeToken();
         // we are doing an assignment or initial value
         decl->definition = parseDefinition();
+        if (!success) {
+            delete decl;
+            return nullptr;
+        }
         lex->lookaheadToken(t);
     } else if (t.type != TK_SEMICOLON) {
         Error("Declaration is malformed");
+        if (!success) {
+            delete decl;
+            return nullptr;
+        }
     }
     if (!decl->definition || decl->definition->needsSemiColon()) {
         // @TODO: support compiler flags and others here
         if (t.type != TK_SEMICOLON) {
             Error("Declaration needs to end with a semicolon\n");
+            if (!success) {
+                delete decl;
+                return nullptr;
+            }
         }
         lex->getNextToken(t);
     }
@@ -697,11 +801,24 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
 	Lexer lex;
     this->lex = &lex;
     FileAST *file_inst = new FileAST();
+    success = true;
 
     lex.setPoolAllocator(pool);
 
-	lex.openFile(filename);
+    if (!lex.openFile(filename)) {
+        sprintf_s(errorString, "Error: File [%s] could not be opened to be compiled\n", filename);
+        return nullptr;
+    }
     lex.parseFile();
+
+    if (option_printTokens) {
+        while (!lex.checkToken(TK_LAST_TOKEN)) {
+            Token t;
+            lex.getNextToken(t);
+            t.print();
+        }
+    }
+
 
     current_scope = &file_inst->scope;
     current_scope->parent = nullptr;
@@ -710,10 +827,12 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
 		// we got a token, figure out what AST to build
         VariableDeclarationAST *d = parseDeclaration();
         file_inst->items.push_back(d);
-                
-        //lex->getNextToken(t);
-        //t.print();
+
+        if (!success) {
+            return nullptr;
+        }
 	}
+
 
     this->lex = nullptr;
 	return file_inst;

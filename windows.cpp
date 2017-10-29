@@ -15,7 +15,7 @@ int compile_c_into_binary(const char *filename)
     sprintf_s(cmd_line, "cl.exe /nologo %s", filename);
 
     if (!CreateProcessA(NULL, cmd_line, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-        printf("Process creation failed\n");
+        printf("Process creation failed (%d)\n", GetLastError());
         return - 1;
     }
 
