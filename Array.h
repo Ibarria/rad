@@ -53,5 +53,6 @@ public:
         num_elems = new_size;
     }
     u32 size() const { return used_elems; }
+    void reset() { used_elems = 0; }
 };
 

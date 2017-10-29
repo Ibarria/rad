@@ -1,6 +1,7 @@
 #include "c_generator.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static inline bool isFunctionDeclaration(VariableDeclarationAST *decl)
 {
@@ -42,6 +43,19 @@ void c_generator::do_ident()
     if (ident > 0) fprintf(output_file, "%*s", ident, "");
 }
 
+void c_generator::generate_line_info(BaseAST * ast)
+{
+    fprintf(output_file, "#line %d \"%s\"\n", ast->line_num, ast->filename);
+}
+
+void c_generator::generate_dangling_functions()
+{
+    for (auto decl : dangling_functions) {
+        do_ident();
+        fprintf(output_file, "%s = %s_implementation;\n", decl->varname, decl->varname);
+    }
+}
+
 void c_generator::generate_function_prototype(VariableDeclarationAST * decl)
 {
     // no ident since prototypes are always top level
@@ -56,10 +70,17 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl)
         fprintf(output_file, "void");
     }
     if (decl->flags & DECL_FLAG_IS_CONSTANT) {
-        fprintf(output_file, " %s", decl->varname);
+        fprintf(output_file, " %s ", decl->varname);
     } else if (decl->definition) {
-        // if we have a definition, we need to write it somewhere
-        fprintf(output_file, " %s_implementation ", decl->varname);
+        if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
+
+            // if we have a definition, we need to write it somewhere
+            // only do this if the definition is a function body, not 
+            // for example a variable
+            fprintf(output_file, " %s_implementation ", decl->varname);
+        } else {
+            fprintf(output_file, " (*%s) ", decl->varname);
+        }
     }
     fprintf(output_file, "(");
     // now print the argument declarations here
@@ -74,13 +95,14 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl)
 
 void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
 {
+    generate_line_info(decl);
     do_ident();
 
     if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
         auto dt = (DirectTypeAST *)decl->specified_type;
         fprintf(output_file, BasicTypeToStr(dt->type));
         fprintf(output_file, " %s", decl->varname);
-
+        
         if (decl->definition) {
             fprintf(output_file, " = ");
 
@@ -96,6 +118,15 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         fprintf(output_file, ";\n");
     } else if (decl->specified_type->ast_type == AST_FUNCTION_TYPE) {
         auto ft = (FunctionTypeAST *)decl->specified_type;
+
+        // if this is a function ptr in C, it's been defined already in
+        // the prototypes section, skip it here
+        if (!(decl->flags & DECL_FLAG_IS_CONSTANT)) {
+            if (decl->definition->ast_type != AST_FUNCTION_DEFINITION) {
+                return;
+            }
+        }
+
         // first print the return type
         if (ft->return_type) {
             generate_type(ft->return_type);
@@ -125,6 +156,9 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
             // @TODO: think about prototypes
             assert(decl->definition);
             assert(decl->definition->ast_type == AST_FUNCTION_DEFINITION);
+            if (!strcmp(decl->varname, "main")) {
+                insert_dangling_funcs = true;
+            }
             auto fundef = (FunctionDefinitionAST *)decl->definition;
             generate_statement_block(fundef->function_body);
             fprintf(output_file, "\n");
@@ -132,6 +166,20 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
             // even if the function is not constant, for C uses we might need
             // to create an implementation and assign it
             fprintf(output_file, ";\n");
+
+            if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
+                // let's write here the actual implementation, now. 
+                // and later we assign it. 
+                VariableDeclarationAST impl;
+                char func_name[256];
+                sprintf_s(func_name, "%s_implementation", decl->varname);
+                memcpy(&impl, decl, sizeof(impl));
+                impl.flags ^= DECL_FLAG_IS_CONSTANT;
+                impl.varname = func_name;
+                generate_variable_declaration(&impl);
+
+                dangling_functions.push_back(decl);
+            }
         }
     } else {
         assert(!"Type not suported on C code generation yet");
@@ -149,9 +197,15 @@ void c_generator::generate_argument_declaration(ArgumentDeclarationAST * arg)
 
 void c_generator::generate_statement_block(StatementBlockAST * block)
 {
+    generate_line_info(block);
     do_ident();
     fprintf(output_file, "{\n");
     ident += 4;
+
+    if (insert_dangling_funcs) {
+        generate_dangling_functions();
+        insert_dangling_funcs = false;
+    }
 
     for (auto stmt : block->statements) generate_statement(stmt);
 
@@ -172,12 +226,14 @@ void c_generator::generate_statement(StatementAST * stmt)
         break;
     }
     case AST_ASSIGNMENT: {
+        generate_line_info(stmt);
         do_ident();
         generate_assignment((AssignmentAST *)stmt);
         fprintf(output_file, ";\n");
         break;
     }
     case AST_FUNCTION_CALL: {
+        generate_line_info(stmt);
         do_ident();
         generate_function_call((FunctionCallAST *)stmt);
         fprintf(output_file, ";\n");
@@ -190,6 +246,7 @@ void c_generator::generate_statement(StatementAST * stmt)
 
 void c_generator::generate_return_statement(ReturnStatementAST * ret)
 {
+    generate_line_info(ret);
     do_ident();
     fprintf(output_file, "return ");
     generate_expression(ret->ret);
@@ -268,10 +325,19 @@ void c_generator::generate_type(BaseAST * ast)
 
 void c_generator::generate_c_file(const char * filename, FileAST * root)
 {
-    output_file = fopen(filename, "w");
+     fopen_s(&output_file, filename, "w");
     ident = 0;
+    dangling_functions.reset();
+    insert_dangling_funcs = false;
+    // dangling functions have an issue with possible local functions
+    // also named main... but it is remote
+
     generate_preamble();
 
+    // when we have them, place custom types here, before prototypes
+    // maybe type prototypes (forward decls)
+
+    // write function prototypes
     for (auto &ast : root->items) {
         if (ast->ast_type == AST_VARIABLE_DECLARATION) {
             auto decl = (VariableDeclarationAST *)ast;
