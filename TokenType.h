@@ -80,3 +80,4 @@ enum TOKEN_TYPE {
 };
 
 const char * TokenTypeToStr(TOKEN_TYPE type);
+const char * TokenTypeToCOP(TOKEN_TYPE type);

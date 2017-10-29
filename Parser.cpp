@@ -6,7 +6,127 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-bool Parser::infer_types(DeclarationAST *decl)
+void traverseAST(FileAST *root);
+u32 process_scope_variables(Scope *scope);
+bool infer_types(VariableDeclarationAST *decl);
+TypeAST *deduceType(ExpressionAST *expr);
+
+void ErrorAST(BaseAST *ast, const char *msg)
+{
+    printf("Error %s:%d - %s", ast->filename, ast->line_num, msg);
+    exit(1);
+}
+
+static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
+{
+    // trivial recursive case, could not be found
+    if (scope == nullptr) return nullptr; 
+
+    for (auto d : scope->decls) {
+        if (!strcmp(name, d->varname)) return d;
+    }
+    return findVariable(name, scope->parent);
+}
+
+void copyASTloc(BaseAST *src, BaseAST *dst)
+{
+    dst->filename = src->filename;
+    dst->line_num = src->line_num;
+}
+
+TypeAST * deduceType(ExpressionAST *expr) 
+{
+    switch (expr->ast_type) {
+    case AST_FUNCTION_CALL: {
+        FunctionCallAST *a = (FunctionCallAST *)expr;
+        VariableDeclarationAST *decl = findVariable(a->function_name, a->scope);
+
+        if (decl == nullptr) {
+            ErrorAST(expr, "Function name could not be found on this scope\n");
+        }
+        // do not recurse on inferring types as this could cause infinite recursion
+        if (decl->specified_type == nullptr) {
+            return nullptr;
+        }
+
+        if (decl->specified_type->ast_type != AST_FUNCTION_TYPE) {
+            ErrorAST(expr, "Cannot perform a function call on a variable that is not a function\n");
+        }
+        FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
+        if (!fundecl->return_type) {
+            ErrorAST(expr, "Cannot use the return value of a void function\n");
+        }
+        return fundecl->return_type;
+    }
+    case AST_IDENTIFIER: {
+        IdentifierAST *a = (IdentifierAST *)expr;
+        VariableDeclarationAST *decl = findVariable(a->name, a->scope);
+
+        if (decl == nullptr) {
+            ErrorAST(expr, "Variable name could not be found on this scope\n");
+        }
+
+        if ((decl->filename == expr->filename) &&
+            (decl->line_num > expr->line_num) && 
+            !(decl->flags & DECL_FLAG_IS_CONSTANT) )
+        {
+            ErrorAST(expr, "The variable used in this declaration appears after the current declaration, this is only allowed for constants\n");
+        }
+
+        // do not recurse on inferring types as this could cause infinite recursion
+        return decl->specified_type; 
+    }
+    case AST_CONSTANT_NUMBER: {
+        ConstantNumberAST *cons = (ConstantNumberAST *)expr;
+        DirectTypeAST *direct_type = new DirectTypeAST();
+        copyASTloc(expr, direct_type);
+        direct_type->type = cons->type;
+        return direct_type;
+    }
+    case AST_CONSTANT_STRING: {
+        DirectTypeAST *direct_type = new DirectTypeAST();
+        copyASTloc(expr, direct_type);
+        direct_type->type = BASIC_TYPE_STRING;
+        return direct_type;
+    }
+    case AST_BINARY_OPERATION: {
+        return deduceType(((BinaryOperationAST *)expr)->lhs);
+    }
+    default:
+        assert("We should never be here, we could not parse this type\n");
+    }
+    return nullptr;
+}
+
+u32 process_scope_variables(Scope * scope)
+{
+    u32 untyped_vars = 0;
+    for (auto &decl : scope->decls) {
+        if (decl->specified_type == nullptr) {
+            if (!infer_types(decl)) {
+                untyped_vars++;
+            }
+        }
+    }
+    return untyped_vars;
+}
+
+void process_all_scope_variables(Scope *scope)
+{
+    u32 untyped_vars, prev_vars = 0;
+
+    do {
+        untyped_vars = process_scope_variables(scope);
+        if (prev_vars == 0) {
+            prev_vars = untyped_vars;
+        } else if ((prev_vars == untyped_vars) && prev_vars > 0) {
+            printf("Could not resolve types for variables\n");
+            exit(1);
+        }
+    } while (untyped_vars > 0);
+}
+
+bool infer_types(VariableDeclarationAST *decl)
 {
     if (decl->specified_type) return true;
     assert(decl->definition); // if we do not have a type we must have something to compare against
@@ -15,11 +135,18 @@ bool Parser::infer_types(DeclarationAST *decl)
         FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
         decl->specified_type = fundef->declaration;
         decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
-        break;
+        return true;
     }
     default: {
         // expect this to be an expression, and the expression type needs to be deduced
         // operation, literal, function call, etc
+        TypeAST *t = deduceType((ExpressionAST *)decl->definition);
+        if (t != nullptr) {
+            decl->specified_type = t;
+            decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
+            return true;
+        }
+        break;
     }
     }
     return false;
@@ -32,6 +159,12 @@ static void setASTloc(Parser *p, BaseAST *ast)
     ast->line_num = loc.line;
     ast->char_num = loc.col;
     ast->filename = p->lex->getFilename();
+}
+
+static void setASTinfo(Parser *p, BaseAST *ast)
+{
+    setASTloc(p, ast);
+    ast->scope = p->current_scope;
 }
 
 void Parser::Error(const char *msg)
@@ -57,7 +190,7 @@ void Parser::MustMatchToken(TOKEN_TYPE type, char *msg)
     lex->consumeToken();
 }
 
-void Parser::AddDeclarationToScope(DeclarationAST * decl)
+void Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
 {
     for (auto d : current_scope->decls) {
         if (!strcmp(d->varname, decl->varname)) {
@@ -174,7 +307,7 @@ TypeAST *Parser::parseDirectType()
     lex->consumeToken();
 
     DirectTypeAST *type = new DirectTypeAST();
-    setASTloc(this, type);
+    setASTinfo(this, type);
     type->name = t.string;
     switch (t.type) {
     case TK_STRING:
@@ -234,7 +367,7 @@ ArgumentDeclarationAST *Parser::parseArgumentDeclaration()
     Token t;
     lex->lookaheadToken(t);
     ArgumentDeclarationAST *arg = new ArgumentDeclarationAST();
-    setASTloc(this, arg);
+    setASTinfo(this, arg);
     MustMatchToken(TK_IDENTIFIER, "Argument declaration needs to start with an identifier");
     arg->name = t.string;
 
@@ -244,12 +377,12 @@ ArgumentDeclarationAST *Parser::parseArgumentDeclaration()
     return arg;
 }
 
-FunctionDeclarationAST *Parser::parseFunctionDeclaration()
+FunctionTypeAST *Parser::parseFunctionDeclaration()
 {
     MustMatchToken(TK_OPEN_PAREN, "Function declarations need a parenthesis");
 
-    FunctionDeclarationAST *fundec = new FunctionDeclarationAST();
-    setASTloc(this, fundec);
+    FunctionTypeAST *fundec = new FunctionTypeAST();
+    setASTinfo(this, fundec);
 
     while (!lex->checkToken(TK_CLOSE_PAREN)) {
         ArgumentDeclarationAST *arg = Parser::parseArgumentDeclaration();
@@ -272,7 +405,7 @@ FunctionDeclarationAST *Parser::parseFunctionDeclaration()
 ReturnStatementAST *Parser::parseReturnStatement()
 {
     ReturnStatementAST *ret = new ReturnStatementAST();
-    setASTloc(this, ret);
+    setASTinfo(this, ret);
     MustMatchToken(TK_RETURN);
 
     ret->ret = parseExpression();
@@ -308,7 +441,6 @@ StatementAST *Parser::parseStatement()
     } else {
         return parseExpression();
     }
-
 }
 
 StatementBlockAST *Parser::parseStatementBlock()
@@ -318,7 +450,7 @@ StatementBlockAST *Parser::parseStatementBlock()
     }
     lex->consumeToken(); // consume the {
     StatementBlockAST *block = new StatementBlockAST();
-    setASTloc(this, block);
+    setASTinfo(this, block);
     // push scope
     block->scope.parent = current_scope;
     current_scope = &block->scope;
@@ -341,7 +473,7 @@ StatementBlockAST *Parser::parseStatementBlock()
 FunctionDefinitionAST *Parser::parseFunctionDefinition()
 {
     FunctionDefinitionAST *fundef = new FunctionDefinitionAST();
-    setASTloc(this, fundef);
+    setASTinfo(this, fundef);
 
     fundef->declaration = parseFunctionDeclaration();
     fundef->function_body = parseStatementBlock();
@@ -352,7 +484,7 @@ FunctionCallAST * Parser::parseFunctionCall()
 {
     FunctionCallAST *funcall = new FunctionCallAST();
     Token t;
-    setASTloc(this, funcall);
+    setASTinfo(this, funcall);
     lex->getNextToken(t);
 
     assert(t.type == TK_IDENTIFIER);
@@ -379,12 +511,12 @@ ExpressionAST * Parser::parseLiteral()
 
     if (t.type == TK_IDENTIFIER) {
         IdentifierAST *ex = new IdentifierAST();
-        setASTloc(this, ex);
+        setASTinfo(this, ex);
         ex->name = t.string;
         return ex;
     } else if ((t.type == TK_NUMBER) || (t.type == TK_FNUMBER)) {
         ConstantNumberAST *ex = new ConstantNumberAST();
-        setASTloc(this, ex);
+        setASTinfo(this, ex);
 
         if (t.type == TK_NUMBER) {
             ex->type = BASIC_TYPE_U64;
@@ -396,7 +528,7 @@ ExpressionAST * Parser::parseLiteral()
         return ex;
     } else if ((t.type == TK_STRING)) {
         ConstantStringAST *str = new ConstantStringAST();
-        setASTloc(this, str);
+        setASTinfo(this, str);
 
         str->str = t.string;
         return str;
@@ -439,7 +571,7 @@ ExpressionAST *Parser::parseBinOpExpressionRecursive(u32 oldprec, ExpressionAST 
                     }
                 } 
                 BinaryOperationAST *bin = new BinaryOperationAST();
-                setASTloc(this, bin);
+                setASTinfo(this, bin);
                 bin->lhs = lhs;
                 bin->rhs = rhs;
                 bin->op = cur_type;
@@ -466,8 +598,9 @@ ExpressionAST * Parser::parseAssignmentExpression()
     type = lex->getTokenType();
     if (isAssignmentOperator(type)) {
         // @TODO : we would need to have here a RHS evaluation
+        lex->consumeToken();
         AssignmentAST *assign = new AssignmentAST();
-        setASTloc(this, assign);
+        setASTinfo(this, assign);
         assign->lhs = lhs;
         assign->op = type;
         assign->rhs = parseAssignmentExpression();
@@ -514,12 +647,12 @@ DefinitionAST *Parser::parseDefinition()
     return parseExpression();
 }
 
-DeclarationAST * Parser::parseDeclaration()
+VariableDeclarationAST * Parser::parseDeclaration()
 {
     Token t;
     lex->getNextToken(t);
-    DeclarationAST *decl = new DeclarationAST();
-    setASTloc(this, decl);
+    VariableDeclarationAST *decl = new VariableDeclarationAST();
+    setASTinfo(this, decl);
 
     if (t.type != TK_IDENTIFIER) {
         Error("Identifier expected but not found\n");
@@ -575,7 +708,7 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
 
 	while (!lex.checkToken(TK_LAST_TOKEN)) {
 		// we got a token, figure out what AST to build
-        DeclarationAST *d = parseDeclaration();
+        VariableDeclarationAST *d = parseDeclaration();
         file_inst->items.push_back(d);
                 
         //lex->getNextToken(t);
@@ -584,4 +717,31 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
 
     this->lex = nullptr;
 	return file_inst;
+}
+
+void traverseAST(StatementBlockAST *root)
+{
+    process_all_scope_variables(&root->scope);
+    for (auto stmt : root->statements) {
+        if (stmt->ast_type == AST_VARIABLE_DECLARATION) {
+            auto decl = (VariableDeclarationAST *)stmt;
+            if ((decl->definition) && (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
+                FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
+                traverseAST(fundef->function_body);
+            }
+        } else if (stmt->ast_type == AST_STATEMENT_BLOCK) {
+            traverseAST((StatementBlockAST *)stmt);
+        }
+    }
+}
+
+void traverseAST(FileAST *root)
+{
+    process_all_scope_variables(&root->scope);
+    for (auto &decl : root->items) {
+        if ((decl->definition) && (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
+            FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
+            traverseAST(fundef->function_body);
+        }
+    }
 }

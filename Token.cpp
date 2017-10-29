@@ -59,7 +59,7 @@ void Token::clear()
 
 void Token::print()
 {
-	printf("Token %03lld:%03lld type %s", loc.line, loc.col, TokenTypeToStr(type));
+	printf("Token %03d:%03d type %s", loc.line, loc.col, TokenTypeToStr(type));
 	switch (type) {
 	case TK_NUMBER:
 		printf(" %lld", pl.pu64);

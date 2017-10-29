@@ -8,11 +8,11 @@
 struct BaseAST;
 struct TypeAST;
 struct ExpressionAST;
-struct DeclarationAST;
+struct VariableDeclarationAST;
 
 struct Scope {
     Scope *parent;
-    Array<DeclarationAST *>decls;
+    Array<VariableDeclarationAST *>decls;
 };
 
 enum BasicType {
@@ -37,7 +37,7 @@ enum AST_CLASS_TYPE {
     AST_DEFINITION,
     AST_TYPE,
     AST_ARGUMENT_DECLARATION,
-    AST_FUNCTION_DECLARATION,
+    AST_FUNCTION_TYPE,
     AST_STATEMENT_BLOCK,
     AST_RETURN_STATEMENT,
     AST_FUNCTION_DEFINITION,
@@ -51,14 +51,15 @@ enum AST_CLASS_TYPE {
     AST_BINARY_OPERATION,
     AST_UNARY_OPERATION,
     AST_ASSIGNMENT,
-    AST_DECLARATION
+    AST_VARIABLE_DECLARATION
 };
 
 struct BaseAST
 {
     AST_CLASS_TYPE ast_type;
-    BaseAST() { ast_type = AST_UNKNOWN; filename = nullptr; line_num = char_num = 0; }
+    BaseAST() { ast_type = AST_UNKNOWN; filename = nullptr; line_num = char_num = 0; scope = nullptr; }
     TextType filename;
+    Scope *scope;
     u32 line_num;
     u32 char_num;
 };
@@ -66,7 +67,7 @@ struct BaseAST
 struct FileAST : BaseAST
 {
     FileAST() { ast_type = AST_FILE; }
-    Array<BaseAST *>items;
+    Array<VariableDeclarationAST *>items;
     Scope scope;
 };
 
@@ -90,9 +91,9 @@ struct ArgumentDeclarationAST : BaseAST
     TypeAST *type;
 };
 
-struct FunctionDeclarationAST : TypeAST
+struct FunctionTypeAST : TypeAST
 {
-    FunctionDeclarationAST() { ast_type = AST_FUNCTION_DECLARATION; return_type = nullptr; }
+    FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; return_type = nullptr; }
     Array<ArgumentDeclarationAST *> arguments;
     TypeAST *return_type;
 };
@@ -112,7 +113,7 @@ struct ReturnStatementAST: StatementAST
 struct FunctionDefinitionAST : DefinitionAST
 {
     FunctionDefinitionAST() { ast_type = AST_FUNCTION_DEFINITION; declaration = nullptr; function_body = nullptr; }
-    FunctionDeclarationAST *declaration;
+    FunctionTypeAST *declaration;
     StatementBlockAST *function_body;
     virtual bool needsSemiColon() const { return false; }
 };
@@ -124,7 +125,7 @@ struct ExpressionAST : DefinitionAST
 struct FunctionCallAST : ExpressionAST
 {
     FunctionCallAST() { ast_type = AST_FUNCTION_CALL; function_name = nullptr; }
-    Array<StatementAST *>args;
+    Array<ExpressionAST *>args;
     TextType function_name;
 };
 
@@ -149,7 +150,7 @@ struct ArrayTypeAST : TypeAST
 struct IdentifierAST : ExpressionAST
 {
     IdentifierAST() { ast_type = AST_IDENTIFIER; decl = nullptr; name = nullptr; }
-    DeclarationAST *decl;
+    VariableDeclarationAST *decl;
     TextType name;
 };
 
@@ -198,11 +199,11 @@ struct AssignmentAST : ExpressionAST
 #define DECL_FLAG_HAS_BEEN_INFERRED    0x2
 #define DECL_FLAG_HAS_BEEN_GENERATED   0x4
 
-struct DeclarationAST : StatementAST
+struct VariableDeclarationAST : StatementAST
 {
-    DeclarationAST() 
+    VariableDeclarationAST() 
     { 
-        ast_type = AST_DECLARATION; varname = nullptr; 
+        ast_type = AST_VARIABLE_DECLARATION; varname = nullptr; 
         specified_type = nullptr; definition = nullptr; flags = 0;
     }
     TextType varname;
@@ -212,3 +213,4 @@ struct DeclarationAST : StatementAST
 };
 
 void printAST(const BaseAST*ast, int ident);
+const char *BasicTypeToStr(BasicType t);

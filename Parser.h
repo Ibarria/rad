@@ -12,14 +12,12 @@ struct Parser {
     void Error(const char *msg);
 
     void MustMatchToken(TOKEN_TYPE type, char *msg = nullptr);
-    void AddDeclarationToScope(DeclarationAST *decl);
-
-    bool infer_types(DeclarationAST *decl);
+    void AddDeclarationToScope(VariableDeclarationAST *decl);
 
     TypeAST *parseDirectType();
     TypeAST *parseType();
     ArgumentDeclarationAST *parseArgumentDeclaration();
-    FunctionDeclarationAST *parseFunctionDeclaration();
+    FunctionTypeAST *parseFunctionDeclaration();
     ReturnStatementAST *parseReturnStatement();
     StatementAST *parseStatement();
     StatementBlockAST *parseStatementBlock();
@@ -30,11 +28,12 @@ struct Parser {
     ExpressionAST * parseBinOpExpressionRecursive(u32 oldprec, ExpressionAST *lhs);
     ExpressionAST * parseBinOpExpression();
     DefinitionAST * parseDefinition();
-    DeclarationAST * parseDeclaration();
+    VariableDeclarationAST * parseDeclaration();
     ExpressionAST * parseAssignmentExpression();
     ExpressionAST * parseExpression();
 
-
     FileAST * Parse(const char *filename, PoolAllocator *pool);
 };
+
+void traverseAST(FileAST *root);
 

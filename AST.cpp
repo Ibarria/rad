@@ -1,24 +1,37 @@
 #include "AST.h"
 #include <stdio.h>
 
-static const char *BasicTypeToStr(BasicType t)
+const char *BasicTypeToStr(BasicType t)
 {
     switch (t)
     {
-    case BASIC_TYPE_BOOL:  return "BOOL";
-    case BASIC_TYPE_STRING:  return "STRING";
-    case BASIC_TYPE_S8:  return "S8";
-    case BASIC_TYPE_S16: return "S16";
-    case BASIC_TYPE_S32: return "S32";
-    case BASIC_TYPE_S64: return "S64";
-    case BASIC_TYPE_U8:  return "U8";
-    case BASIC_TYPE_U16: return "U16";
-    case BASIC_TYPE_U32: return "U32";
-    case BASIC_TYPE_U64: return "U64";
-    case BASIC_TYPE_F32: return "F32";
-    case BASIC_TYPE_F64: return "F64";
+    case BASIC_TYPE_BOOL:  return "bool";
+    case BASIC_TYPE_STRING:  return "string";
+    case BASIC_TYPE_S8:  return "s8";
+    case BASIC_TYPE_S16: return "s16";
+    case BASIC_TYPE_S32: return "s32";
+    case BASIC_TYPE_S64: return "s64";
+    case BASIC_TYPE_U8:  return "u8";
+    case BASIC_TYPE_U16: return "u16";
+    case BASIC_TYPE_U32: return "u32";
+    case BASIC_TYPE_U64: return "u64";
+    case BASIC_TYPE_F32: return "f32";
+    case BASIC_TYPE_F64: return "f64";
     }
     return "UNKNOWN";
+}
+
+static void printDeclarationASTFlags(u32 flags)
+{
+    if (flags & DECL_FLAG_HAS_BEEN_GENERATED) {
+        printf("DECL_FLAG_HAS_BEEN_GENERATED ");
+    }
+    if (flags & DECL_FLAG_HAS_BEEN_INFERRED) {
+        printf("DECL_FLAG_HAS_BEEN_INFERRED ");
+    }
+    if (flags & DECL_FLAG_IS_CONSTANT) {
+        printf("DECL_FLAG_IS_CONSTANT ");
+    }
 }
 
 void printAST(const BaseAST *ast, int ident)
@@ -65,11 +78,11 @@ void printAST(const BaseAST *ast, int ident)
         printAST(a->rhs, ident + 3);
         break;
     }
-    case AST_DECLARATION: {
-        const DeclarationAST *a = (const DeclarationAST *)ast;
-        printf("%*sDeclAST varname: [%s] flags: %x\n", ident, "", a->varname,
-            a->flags);
-        printf("%*s SpecifiedType: ", ident, "");
+    case AST_VARIABLE_DECLARATION: {
+        const VariableDeclarationAST *a = (const VariableDeclarationAST *)ast;
+        printf("%*sDeclAST varname: [%s] flags: ", ident, "", a->varname);
+        printDeclarationASTFlags(a->flags);     
+        printf("\n%*s SpecifiedType: ", ident, "");
         if (a->specified_type) {
             printf("\n");
             printAST(a->specified_type, ident + 3);
@@ -87,8 +100,7 @@ void printAST(const BaseAST *ast, int ident)
     }
     case AST_DIRECT_TYPE: {
         const DirectTypeAST *a = (const DirectTypeAST *)ast;
-        printf("%*sDirectTypeAST name: [%s]", ident, "", a->name);
-        printf(" type: %s\n", BasicTypeToStr(a->type));
+        printf("%*sDirectTypeAST %s\n", ident, "", BasicTypeToStr(a->type));
         break;
     }
     case AST_ARGUMENT_DECLARATION: {
@@ -97,15 +109,15 @@ void printAST(const BaseAST *ast, int ident)
         printAST(a->type, ident + 3);
         break;
     }
-    case AST_FUNCTION_DECLARATION: {
-        const FunctionDeclarationAST *a = (const FunctionDeclarationAST *)ast;
+    case AST_FUNCTION_TYPE: {
+        const FunctionTypeAST *a = (const FunctionTypeAST *)ast;
         printf("%*sFunctionDeclarationAST with %d arguments\n", ident, "", (int)a->arguments.size());
         for (const auto & arg : a->arguments) printAST(arg, ident + 3);
         if (a->return_type) {
-            printf(" and return type:\n");
+            printf("%*s and return type:\n", ident, "");
             printAST(a->return_type, ident + 3);
         } else {
-            printf(" and no return type, void inferred\n");
+            printf("%*s  and no return type, void inferred\n", ident, "");
         }
         break;
     }

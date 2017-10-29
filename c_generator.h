@@ -8,11 +8,17 @@ class c_generator
     u32 ident;
     void generate_preamble();
     void do_ident();
-    void generate_declaration(BaseAST *ast);
+    void generate_function_prototype(VariableDeclarationAST *decl);
+    void generate_variable_declaration(VariableDeclarationAST *decl);
+    void generate_argument_declaration(ArgumentDeclarationAST *arg);
+    void generate_statement_block(StatementBlockAST *block);
+    void generate_statement(StatementAST *stmt);
+    void generate_return_statement(ReturnStatementAST *ret);
+    void generate_assignment(AssignmentAST *assign);
+    void generate_expression(ExpressionAST *expr);
+    void generate_function_call(FunctionCallAST *call);
     void generate_type(BaseAST *ast);
 public:
-    c_generator();
-    ~c_generator();
     void generate_c_file(const char *filename, FileAST *root);
 };
 

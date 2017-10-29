@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include "Parser.h"
 #include "Timer.h"
+#include "c_generator.h"
 
 void usage()
 {
@@ -36,7 +37,11 @@ int main(int argc, char **argv)
 
 	FileAST *parsedFile = p.Parse(argv[1], &pool);
 
-    printAST(parsedFile, 0);
+    traverseAST(parsedFile);
+    
+    c_generator gen;
+    gen.generate_c_file("first.cpp", parsedFile);
+    // printAST(parsedFile, 0);
 
     timer.stopTimer();
     timer.printTimeEllapsed();

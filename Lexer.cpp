@@ -120,6 +120,17 @@ struct StringToken {
     { nullptr, TK_INVALID}
 };
 
+const char * TokenTypeToCOP(TOKEN_TYPE type)
+{
+    for (auto &st : strTok) {
+        if (st.token == type) {
+            return st.str;
+        }
+    }
+    assert("We should never be here, using this function wrong");
+    return nullptr;
+}
+
 bool Lexer::parseStringToken(char *input, Token &tok)
 {
     // find the first existence of the first character of input in our array

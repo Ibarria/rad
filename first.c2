@@ -1,3 +1,6 @@
+
+
+
 // Single line comment
 alpha := "a";
 
@@ -16,6 +19,8 @@ delta : string = "This is a pretty long string, at least a line";
 
 some_global_int: int;
 
+d := square;
+
 a := 3;
 b : string = "Hello there";
 c : float = 3.0;
@@ -25,8 +30,9 @@ multiply := (x: float, y: float) -> float { return x + y * 3; }
 
 main :: ()
 {
-    x := square(multiply(2,3));
+//    x := square(multiply(2,3));
+    x := square(2+3*5/2);
+    // x = square(multiply(2,3));
     printf("Hello here, this is: %f\n", x);
-    return 0;
 }
 
