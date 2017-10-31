@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -94,9 +94,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="AST.cpp" />
-    <ClCompile Include="bytecode_generator.cpp" />
-    <ClCompile Include="c2.cpp">
+    <ClCompile Include="src/AST.cpp" />
+    <ClCompile Include="src/bytecode_generator.cpp" />
+    <ClCompile Include="src/c2.cpp">
       <DebugInformationFormat Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ProgramDatabase</DebugInformationFormat>
       <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SDLCheck>
       <MinimalRebuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</MinimalRebuild>
@@ -113,35 +113,35 @@
       <BufferSecurityCheck Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</BufferSecurityCheck>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="c_generator.cpp" />
-    <ClCompile Include="FileData.cpp" />
-    <ClCompile Include="Interpreter.cpp" />
-    <ClCompile Include="Lexer.cpp" />
-    <ClCompile Include="Parser.cpp" />
-    <ClCompile Include="PoolAllocator.cpp" />
-    <ClCompile Include="TextType.cpp" />
-    <ClCompile Include="Timer.cpp" />
-    <ClCompile Include="Token.cpp" />
-    <ClCompile Include="windows.cpp" />
+    <ClCompile Include="src/c_generator.cpp" />
+    <ClCompile Include="src/FileData.cpp" />
+    <ClCompile Include="src/Interpreter.cpp" />
+    <ClCompile Include="src/Lexer.cpp" />
+    <ClCompile Include="src/Parser.cpp" />
+    <ClCompile Include="src/PoolAllocator.cpp" />
+    <ClCompile Include="src/TextType.cpp" />
+    <ClCompile Include="src/Timer.cpp" />
+    <ClCompile Include="src/Token.cpp" />
+    <ClCompile Include="src/windows.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Array.h" />
-    <ClInclude Include="AST.h" />
-    <ClInclude Include="bytecode_generator.h" />
-    <ClInclude Include="bytecode_instructions.h" />
-    <ClInclude Include="c_generator.h" />
-    <ClInclude Include="FileData.h" />
-    <ClInclude Include="Interpreter.h" />
-    <ClInclude Include="Lexer.h" />
-    <ClInclude Include="mytypes.h" />
-    <ClInclude Include="os.h" />
-    <ClInclude Include="Parser.h" />
-    <ClInclude Include="PoolAllocator.h" />
-    <ClInclude Include="SrcLocation.h" />
-    <ClInclude Include="TextType.h" />
-    <ClInclude Include="Timer.h" />
-    <ClInclude Include="Token.h" />
-    <ClInclude Include="TokenType.h" />
+    <ClInclude Include="src/Array.h" />
+    <ClInclude Include="src/AST.h" />
+    <ClInclude Include="src/bytecode_generator.h" />
+    <ClInclude Include="src/bytecode_instructions.h" />
+    <ClInclude Include="src/c_generator.h" />
+    <ClInclude Include="src/FileData.h" />
+    <ClInclude Include="src/Interpreter.h" />
+    <ClInclude Include="src/Lexer.h" />
+    <ClInclude Include="src/mytypes.h" />
+    <ClInclude Include="src/os.h" />
+    <ClInclude Include="src/Parser.h" />
+    <ClInclude Include="src/PoolAllocator.h" />
+    <ClInclude Include="src/SrcLocation.h" />
+    <ClInclude Include="src/TextType.h" />
+    <ClInclude Include="src/Timer.h" />
+    <ClInclude Include="src/Token.h" />
+    <ClInclude Include="src/TokenType.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Grammar.txt" />

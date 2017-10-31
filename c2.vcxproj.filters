@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Source Files">
@@ -15,96 +15,96 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="c2.cpp">
+    <ClCompile Include="src/c2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="FileData.cpp">
+    <ClCompile Include="src/FileData.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Lexer.cpp">
+    <ClCompile Include="src/Lexer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Token.cpp">
+    <ClCompile Include="src/Token.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="AST.cpp">
+    <ClCompile Include="src/AST.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Parser.cpp">
+    <ClCompile Include="src/Parser.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Timer.cpp">
+    <ClCompile Include="src/Timer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="PoolAllocator.cpp">
+    <ClCompile Include="src/PoolAllocator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TextType.cpp">
+    <ClCompile Include="src/TextType.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="c_generator.cpp">
+    <ClCompile Include="src/c_generator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Interpreter.cpp">
+    <ClCompile Include="src/Interpreter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="windows.cpp">
+    <ClCompile Include="src/windows.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="bytecode_generator.cpp">
+    <ClCompile Include="src/bytecode_generator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="FileData.h">
+    <ClInclude Include="src/FileData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Lexer.h">
+    <ClInclude Include="src/Lexer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="mytypes.h">
+    <ClInclude Include="src/mytypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Token.h">
+    <ClInclude Include="src/Token.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="AST.h">
+    <ClInclude Include="src/AST.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Parser.h">
+    <ClInclude Include="src/Parser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Timer.h">
+    <ClInclude Include="src/Timer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="PoolAllocator.h">
+    <ClInclude Include="src/PoolAllocator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="SrcLocation.h">
+    <ClInclude Include="src/SrcLocation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="TextType.h">
+    <ClInclude Include="src/TextType.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Array.h">
+    <ClInclude Include="src/Array.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="c_generator.h">
+    <ClInclude Include="src/c_generator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Interpreter.h">
+    <ClInclude Include="src/Interpreter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="TokenType.h">
+    <ClInclude Include="src/TokenType.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="os.h">
+    <ClInclude Include="src/os.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="bytecode_generator.h">
+    <ClInclude Include="src/bytecode_generator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="bytecode_instructions.h">
+    <ClInclude Include="src/bytecode_instructions.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
