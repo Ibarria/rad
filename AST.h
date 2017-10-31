@@ -57,11 +57,11 @@ enum AST_CLASS_TYPE {
 struct BaseAST
 {
     AST_CLASS_TYPE ast_type;
-    BaseAST() { ast_type = AST_UNKNOWN; filename = nullptr; line_num = char_num = 0; scope = nullptr; }
-    TextType filename;
-    Scope *scope;
-    u32 line_num;
-    u32 char_num;
+    BaseAST() { ast_type = AST_UNKNOWN; }
+    TextType filename = nullptr;
+    Scope *scope = nullptr;
+    u32 line_num = 0;
+    u32 char_num = 0;
 };
 
 struct FileAST : BaseAST
@@ -86,16 +86,16 @@ struct TypeAST : BaseAST
 
 struct ArgumentDeclarationAST : BaseAST
 {
-    ArgumentDeclarationAST() { ast_type = AST_ARGUMENT_DECLARATION; name = nullptr; type = nullptr; }
-    TextType name;
-    TypeAST *type;
+    ArgumentDeclarationAST() { ast_type = AST_ARGUMENT_DECLARATION; }
+    TextType name = nullptr;
+    TypeAST *type = nullptr;
 };
 
 struct FunctionTypeAST : TypeAST
 {
-    FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; return_type = nullptr; }
+    FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; }
     Array<ArgumentDeclarationAST *> arguments;
-    TypeAST *return_type;
+    TypeAST *return_type = nullptr;
 };
 
 struct StatementBlockAST : StatementAST
@@ -107,14 +107,14 @@ struct StatementBlockAST : StatementAST
 
 struct ReturnStatementAST: StatementAST
 {
-    ReturnStatementAST() { ast_type = AST_RETURN_STATEMENT; ret = nullptr; }
-    ExpressionAST *ret;
+    ReturnStatementAST() { ast_type = AST_RETURN_STATEMENT; }
+    ExpressionAST *ret = nullptr;
 };
 struct FunctionDefinitionAST : DefinitionAST
 {
-    FunctionDefinitionAST() { ast_type = AST_FUNCTION_DEFINITION; declaration = nullptr; function_body = nullptr; }
-    FunctionTypeAST *declaration;
-    StatementBlockAST *function_body;
+    FunctionDefinitionAST() { ast_type = AST_FUNCTION_DEFINITION; }
+    FunctionTypeAST *declaration = nullptr;
+    StatementBlockAST *function_body = nullptr;
     virtual bool needsSemiColon() const { return false; }
 };
 
@@ -124,34 +124,34 @@ struct ExpressionAST : DefinitionAST
 
 struct FunctionCallAST : ExpressionAST
 {
-    FunctionCallAST() { ast_type = AST_FUNCTION_CALL; function_name = nullptr; }
+    FunctionCallAST() { ast_type = AST_FUNCTION_CALL; }
     Array<ExpressionAST *>args;
-    TextType function_name;
+    TextType function_name = nullptr;
 };
 
 struct DirectTypeAST : TypeAST
 {
-    DirectTypeAST() { ast_type = AST_DIRECT_TYPE; isArray = isPointer = false; name = nullptr; }
+    DirectTypeAST() { ast_type = AST_DIRECT_TYPE; }
 
 	BasicType type;
-	bool isArray;
-	bool isPointer;
-	TextType name;
+	bool isArray = false;
+	bool isPointer = false;
+	TextType name = nullptr;
 };
 
 struct ArrayTypeAST : TypeAST
 {
-    ArrayTypeAST() { ast_type = AST_ARRAY_TYPE; contained_type = nullptr; size = 0; isDynamic = false; }
-    TypeAST *contained_type;
-    u64 size;
-    bool isDynamic;
+    ArrayTypeAST() { ast_type = AST_ARRAY_TYPE; }
+    TypeAST *contained_type = nullptr;
+    u64 num_elems = 0;
+    bool isDynamic = false;
 };
 
 struct IdentifierAST : ExpressionAST
 {
-    IdentifierAST() { ast_type = AST_IDENTIFIER; decl = nullptr; name = nullptr; }
-    VariableDeclarationAST *decl;
-    TextType name;
+    IdentifierAST() { ast_type = AST_IDENTIFIER; }
+    VariableDeclarationAST *decl = nullptr;
+    TextType name = nullptr;
 };
 
 struct ConstantNumberAST : ExpressionAST
@@ -170,16 +170,16 @@ struct ConstantNumberAST : ExpressionAST
 
 struct ConstantStringAST : ExpressionAST
 {
-    ConstantStringAST() { ast_type = AST_CONSTANT_STRING; str = nullptr; }
-    TextType str;
+    ConstantStringAST() { ast_type = AST_CONSTANT_STRING; }
+    TextType str = nullptr;
 };
 
 struct BinaryOperationAST : ExpressionAST
 {
-    BinaryOperationAST() { ast_type = AST_BINARY_OPERATION; ; lhs = rhs = nullptr; op = TK_INVALID; }
-    ExpressionAST *lhs;
-    ExpressionAST *rhs;
-    TOKEN_TYPE op;
+    BinaryOperationAST() { ast_type = AST_BINARY_OPERATION; }
+    ExpressionAST *lhs = nullptr;
+    ExpressionAST *rhs = nullptr;
+    TOKEN_TYPE op = TK_INVALID;
 };
 
 struct UnaryOperationAST : ExpressionAST
@@ -189,10 +189,10 @@ struct UnaryOperationAST : ExpressionAST
 
 struct AssignmentAST : ExpressionAST
 {
-    AssignmentAST() { ast_type = AST_ASSIGNMENT; lhs = rhs = nullptr; op = TK_INVALID; }
-    ExpressionAST *lhs;
-    ExpressionAST *rhs;
-    TOKEN_TYPE op;
+    AssignmentAST() { ast_type = AST_ASSIGNMENT; }
+    ExpressionAST *lhs = nullptr;
+    ExpressionAST *rhs = nullptr;
+    TOKEN_TYPE op = TK_INVALID;
 };
 
 #define DECL_FLAG_IS_CONSTANT          0x1
@@ -201,15 +201,11 @@ struct AssignmentAST : ExpressionAST
 
 struct VariableDeclarationAST : StatementAST
 {
-    VariableDeclarationAST() 
-    { 
-        ast_type = AST_VARIABLE_DECLARATION; varname = nullptr; 
-        specified_type = nullptr; definition = nullptr; flags = 0;
-    }
-    TextType varname;
-	TypeAST *specified_type;
-    DefinitionAST *definition;
-    u32 flags;
+    VariableDeclarationAST() { ast_type = AST_VARIABLE_DECLARATION; }
+    TextType varname = nullptr;
+	TypeAST *specified_type = nullptr;
+    DefinitionAST *definition = nullptr;
+    u32 flags = 0;
 };
 
 void printAST(const BaseAST*ast, int ident);

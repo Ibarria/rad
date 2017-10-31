@@ -51,6 +51,9 @@
     <ClCompile Include="windows.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="bytecode_generator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileData.h">
@@ -96,6 +99,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="os.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="bytecode_generator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="bytecode_instructions.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

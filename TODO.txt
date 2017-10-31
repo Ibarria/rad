@@ -1,9 +1,37 @@
+* Have an Interpreter class for
+** Pool allocation of AST
+** Predefined types (INT, FLOAT, STRING, BOOL)
+* Support pointers
+* Write bytecode instruction specification
+* Write bytecode generator
+* write bytecode interpreter
+* write cast function (built in)
+* do check for types when calling a function
+* check the type of return values in a function, and the existence of a return statement
+* check that a function call is a variable of type function
+* do check for size when doing explicit declaration (s8 x := 512)
+* do check for types on assignment
+* create `true` and `false` basic types for bool
+* do conditionals
+* do for loop (with it)
+* struct support
+* enum support
+* support default initializers (implicit to 0)
+* support for explicit defaults
+* support to skip default initialization
+* support for new and delete
+* support for defined size arrays
+* support for dynamic arrays
+* support for parameters of type array, string
+* support for return type of array, string
+* support 'import' directive, where structs, enums, vars and functions are declared tied to a dll/lib
+* support  'load' directive, where the Parser will try to load a new text file and put things together
 
 #####  LEXER  #####
-* Number to support float (period)
-* Support numbers of differnt precision
 * Support _ in numbers for clarity
 
+- Number to support float (period)
+- Support numbers of differnt precision
 - Handle line comments
 - We need a way to know what line, column we're parsing when there is an error
 - Lexer.cpp needs a way to handle errors and print to screen
@@ -11,11 +39,11 @@
 - Handle multiline comments
 
 #####   PARSER  #####
+* Be able to parse conditionals
 - Create Basic AST hierarchy
 - Be able to parse variable declaration
 - Be able to parse functions
 - Be able to parse blocks
 - Be able to parse assignments
 - Be able to parse Math expressions
-- Be able to parse conditionals
 - Print AST on the screen

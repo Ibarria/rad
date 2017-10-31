@@ -33,6 +33,6 @@ main :: ()
 //    x := square(multiply(2,3));
     x := square(2+3*5/2);
     x = square(multiply(2,3));
-    printf("Hello here, this is: %f\n", x);
+    printf("Hello here, this is: %f %d\n", x, zeta);
 }
 

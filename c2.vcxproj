@@ -95,6 +95,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AST.cpp" />
+    <ClCompile Include="bytecode_generator.cpp" />
     <ClCompile Include="c2.cpp">
       <DebugInformationFormat Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ProgramDatabase</DebugInformationFormat>
       <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SDLCheck>
@@ -126,6 +127,8 @@
   <ItemGroup>
     <ClInclude Include="Array.h" />
     <ClInclude Include="AST.h" />
+    <ClInclude Include="bytecode_generator.h" />
+    <ClInclude Include="bytecode_instructions.h" />
     <ClInclude Include="c_generator.h" />
     <ClInclude Include="FileData.h" />
     <ClInclude Include="Interpreter.h" />
