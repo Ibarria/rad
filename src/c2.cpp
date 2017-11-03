@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "Interpreter.h"
 #include "Parser.h"
 #include "Timer.h"
 #include "c_generator.h"
@@ -56,6 +57,30 @@ void printTime(const char *stage, double time_sec)
     printf("%s took %7.2lf %s\n", stage, rectified_time, units);
 }
 
+static char c_filename[256];
+
+char *getCfilename(const char *jai_name)
+{
+    strcpy(c_filename, jai_name);
+    char *s = c_filename + strlen(c_filename);
+    while ((*s != '.') && (s != c_filename)) s--;
+    if (*s == '.') {
+        *(++s) = 'c';
+        *(++s) = 'p';
+        *(++s) = 'p';
+        *(++s) = 0;
+        return c_filename;
+    } else {
+        char *s = c_filename + strlen(c_filename);
+        *(++s) = '.';
+        *(++s) = 'c';
+        *(++s) = 'p';
+        *(++s) = 'p';
+        *(++s) = 0;
+        return c_filename;
+    }
+}
+
 int main(int argc, char **argv)
 {
 	parseOptions(argc, argv);
@@ -63,23 +88,30 @@ int main(int argc, char **argv)
     Timer timer;
     timer.startTimer();
 
-    PoolAllocator pool;    
+    Interpreter interp;
     Parser p;
 
-	FileAST *parsedFile = p.Parse(argv[1], &pool);
+	FileAST *parsedFile = p.Parse(root_file, &interp.pool);
 
     if (!parsedFile) {
         printf("Error during Lexical and Syntactic parsing:\n%s", p.errorString);
         exit(1);
     }
 
-    traverseAST(parsedFile);
-    
+    interp.traverseAST(parsedFile);
+
     astBuildTime = timer.stopTimer();
     timer.startTimer();
 
+    if (!interp.success) {
+        interp.printErrors();
+        printf("There were errors during the semantic analysis. Exiting...\n");
+        exit(1);
+    }
+
     c_generator gen;
-    gen.generate_c_file("first.cpp", parsedFile);
+    char *c_filename = getCfilename(root_file);
+    gen.generate_c_file(c_filename, parsedFile);
 
     if (option_printAST) {
         printAST(parsedFile, 0);
@@ -89,9 +121,13 @@ int main(int argc, char **argv)
     
     timer.startTimer();
     
-    compile_c_into_binary("first.cpp");
+    int res = compile_c_into_binary(c_filename);
 
     binaryGenTime = timer.stopTimer();
+
+    if (res != 0) {
+        printf("The C compilation failed with error code: %d\n", res);
+    }
 
     printTime("     AST building stage", astBuildTime);
     printTime("C Code generation stage", codegenTime);

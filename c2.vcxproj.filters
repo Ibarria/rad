@@ -116,4 +116,9 @@
       <Filter>Source Files</Filter>
     </Text>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="test\first.c2">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
 </Project>

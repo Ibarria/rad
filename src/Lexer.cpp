@@ -262,7 +262,7 @@ void Lexer::Error(const char * msg, ...)
     va_list args;
 	SrcLocation loc;
 	file.getLocation(loc);
-	printf("Error %s:%d - ", file.getFilename(), loc.line);
+	printf("%s(%d): error: ", file.getFilename(), loc.line);
 
     va_start(args, msg);
     vprintf(msg, args);

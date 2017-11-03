@@ -63,6 +63,7 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl)
     assert(decl->specified_type->ast_type == AST_FUNCTION_TYPE);
 
     auto ft = (FunctionTypeAST *)decl->specified_type;
+
     // first print the return type
     if (ft->return_type) {
         generate_type(ft->return_type);
@@ -81,6 +82,8 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl)
         } else {
             fprintf(output_file, " (*%s) ", decl->varname);
         }
+    } else {
+        fprintf(output_file, " (*%s) ", decl->varname);
     }
     fprintf(output_file, "(");
     // now print the argument declarations here
@@ -106,13 +109,17 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         if (decl->definition) {
             fprintf(output_file, " = ");
 
-            // special use for strings since they are a struct
-            if (isStringDeclaration(decl)) {
-                fprintf(output_file, "{ ");
-            }
-            generate_expression((ExpressionAST *)decl->definition);
-            if (isStringDeclaration(decl)) {
-                fprintf(output_file, ", 0 }");
+            if (decl->definition->ast_type == AST_CONSTANT_STRING) {
+                // special use for strings since they are a struct
+                if (isStringDeclaration(decl)) {
+                    fprintf(output_file, "{ ");
+                }
+                generate_expression((ExpressionAST *)decl->definition);
+                if (isStringDeclaration(decl)) {
+                    fprintf(output_file, ", 0 }");
+                }
+            } else {
+                generate_expression((ExpressionAST *)decl->definition);
             }
         }
         fprintf(output_file, ";\n");
@@ -122,7 +129,11 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         // if this is a function ptr in C, it's been defined already in
         // the prototypes section, skip it here
         if (!(decl->flags & DECL_FLAG_IS_CONSTANT)) {
-            if (decl->definition->ast_type != AST_FUNCTION_DEFINITION) {
+            if (decl->definition && decl->definition->ast_type != AST_FUNCTION_DEFINITION) {
+                return;
+            }
+            if (!decl->definition) {
+                // a pure function pointer might not have a definition at all
                 return;
             }
         }
@@ -167,7 +178,7 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
             // to create an implementation and assign it
             fprintf(output_file, ";\n");
 
-            if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
+            if (decl->definition && decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
                 // let's write here the actual implementation, now. 
                 // and later we assign it. 
                 VariableDeclarationAST impl;

@@ -14,146 +14,6 @@ TypeAST *deduceType(ExpressionAST *expr);
 
 extern bool option_printTokens;
 
-void ErrorAST(BaseAST *ast, const char *msg)
-{
-    printf("Error %s:%d - %s", ast->filename, ast->line_num, msg);
-    exit(1);
-}
-
-static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
-{
-    // trivial recursive case, could not be found
-    if (scope == nullptr) return nullptr; 
-
-    for (auto d : scope->decls) {
-        if (!strcmp(name, d->varname)) return d;
-    }
-    return findVariable(name, scope->parent);
-}
-
-void copyASTloc(BaseAST *src, BaseAST *dst)
-{
-    dst->filename = src->filename;
-    dst->line_num = src->line_num;
-}
-
-TypeAST * deduceType(ExpressionAST *expr) 
-{
-    switch (expr->ast_type) {
-    case AST_FUNCTION_CALL: {
-        FunctionCallAST *a = (FunctionCallAST *)expr;
-        VariableDeclarationAST *decl = findVariable(a->function_name, a->scope);
-
-        if (decl == nullptr) {
-            ErrorAST(expr, "Function name could not be found on this scope\n");
-        }
-        // do not recurse on inferring types as this could cause infinite recursion
-        if (decl->specified_type == nullptr) {
-            return nullptr;
-        }
-
-        if (decl->specified_type->ast_type != AST_FUNCTION_TYPE) {
-            ErrorAST(expr, "Cannot perform a function call on a variable that is not a function\n");
-        }
-        FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
-        if (!fundecl->return_type) {
-            ErrorAST(expr, "Cannot use the return value of a void function\n");
-        }
-        return fundecl->return_type;
-    }
-    case AST_IDENTIFIER: {
-        IdentifierAST *a = (IdentifierAST *)expr;
-        VariableDeclarationAST *decl = findVariable(a->name, a->scope);
-
-        if (decl == nullptr) {
-            ErrorAST(expr, "Variable name could not be found on this scope\n");
-        }
-
-        if ((decl->filename == expr->filename) &&
-            (decl->line_num > expr->line_num) && 
-            !(decl->flags & DECL_FLAG_IS_CONSTANT) )
-        {
-            ErrorAST(expr, "The variable used in this declaration appears after the current declaration, this is only allowed for constants\n");
-        }
-
-        // do not recurse on inferring types as this could cause infinite recursion
-        return decl->specified_type; 
-    }
-    case AST_CONSTANT_NUMBER: {
-        ConstantNumberAST *cons = (ConstantNumberAST *)expr;
-        DirectTypeAST *direct_type = new DirectTypeAST();
-        copyASTloc(expr, direct_type);
-        direct_type->type = cons->type;
-        return direct_type;
-    }
-    case AST_CONSTANT_STRING: {
-        DirectTypeAST *direct_type = new DirectTypeAST();
-        copyASTloc(expr, direct_type);
-        direct_type->type = BASIC_TYPE_STRING;
-        return direct_type;
-    }
-    case AST_BINARY_OPERATION: {
-        return deduceType(((BinaryOperationAST *)expr)->lhs);
-    }
-    default:
-        assert("We should never be here, we could not parse this type\n");
-    }
-    return nullptr;
-}
-
-u32 process_scope_variables(Scope * scope)
-{
-    u32 untyped_vars = 0;
-    for (auto &decl : scope->decls) {
-        if (decl->specified_type == nullptr) {
-            if (!infer_types(decl)) {
-                untyped_vars++;
-            }
-        }
-    }
-    return untyped_vars;
-}
-
-void process_all_scope_variables(Scope *scope)
-{
-    u32 untyped_vars, prev_vars = 0;
-
-    do {
-        untyped_vars = process_scope_variables(scope);
-        if (prev_vars == 0) {
-            prev_vars = untyped_vars;
-        } else if ((prev_vars == untyped_vars) && prev_vars > 0) {
-            printf("Could not resolve types for variables\n");
-            exit(1);
-        }
-    } while (untyped_vars > 0);
-}
-
-bool infer_types(VariableDeclarationAST *decl)
-{
-    if (decl->specified_type) return true;
-    assert(decl->definition); // if we do not have a type we must have something to compare against
-    switch (decl->definition->ast_type) {
-    case AST_FUNCTION_DEFINITION: {
-        FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
-        decl->specified_type = fundef->declaration;
-        decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
-        return true;
-    }
-    default: {
-        // expect this to be an expression, and the expression type needs to be deduced
-        // operation, literal, function call, etc
-        TypeAST *t = deduceType((ExpressionAST *)decl->definition);
-        if (t != nullptr) {
-            decl->specified_type = t;
-            decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
-            return true;
-        }
-        break;
-    }
-    }
-    return false;
-}
 
 static void setASTloc(Parser *p, BaseAST *ast)
 {
@@ -175,7 +35,7 @@ void Parser::Error(const char *msg, ...)
     va_list args;
     SrcLocation loc;
     lex->getLocation(loc);
-    u32 off = sprintf_s(errorString, "Error %s:%d - ", lex->getFilename(), loc.line);
+    u32 off = sprintf_s(errorString, "%s(%d): error : ", lex->getFilename(), loc.line);
 
     va_start(args, msg);
     vsprintf_s(errorString + off, sizeof(errorString) - off, msg, args);
@@ -198,7 +58,7 @@ bool Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
 {
     for (auto d : current_scope->decls) {
         if (!strcmp(d->varname, decl->varname)) {
-            Error("Error, variable [%s] is already defined in the scope", decl->varname);
+            Error("Variable [%s] is already defined in the scope", decl->varname);
             return false;
         }
     }
@@ -303,7 +163,7 @@ TypeAST *Parser::parseDirectType()
     Token t;
     lex->lookaheadToken(t);
     if ((t.type != TK_IDENTIFIER) && !isVariableTypeToken(t.type)) {
-        Error( "Variable type token could not be found, but we found: %s\n",
+        Error("Variable type token could not be found, but we found: %s\n",
             TokenTypeToStr(t.type));
         return nullptr;
     }
@@ -488,7 +348,12 @@ StatementAST *Parser::parseStatement()
     } else if (cur_type == TK_RETURN) {
         return parseReturnStatement();
     } else {
-        return parseExpression();
+        statement =  parseExpression();
+        MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");
+        if (!success) {
+            return nullptr;
+        }
+        return statement;
     }
 }
 
@@ -693,7 +558,10 @@ ExpressionAST * Parser::parseExpression()
         SrcLocation loc;
         lex->getLocation(loc);
         lex->getNextToken(t);
+        
         ExpressionAST *expr = parseExpression();
+        if (!success) return nullptr;
+
         lex->getNextToken(t);
         if (t.type != TK_CLOSE_PAREN) {
             Error("Cound not find a matching close parentesis, open parenthesis was at %d:%d\n", 
@@ -712,21 +580,17 @@ DefinitionAST *Parser::parseDefinition()
     Token t;
     lex->lookaheadToken(t);
     if (t.type == TK_OPEN_PAREN) {
-        // ok, this could be an expression or a function definition!
-        // hard to tell, so we will try both and see which one produces a result
-        u32 lex_pos = lex->getTokenStreamPosition();
-        FunctionDefinitionAST *func_def = parseFunctionDefinition();
-        if (func_def != nullptr) {
-            return func_def;
-        }
+        bool oneArgument = (lex->checkAheadToken(TK_IDENTIFIER, 1) &&
+            lex->checkAheadToken(TK_COLON, 2));
+        bool noArguments = lex->checkAheadToken(TK_CLOSE_PAREN, 1);
 
-        success = true;
-        errorString[0] = 0;
-        // @TODO: use lookahead instead of token rewind
-        // if we are here, means that we could not parse the function definition
-        // it has to be an expression, but we need to reset the parsing stream
-        lex->setTokenStreamPosition(lex_pos);
-        // fall through to the normal expression parsing
+        if (oneArgument || noArguments) {
+            // if we encounter a [ ( IDENTIFER :  ] sequence, this is 
+            // a function and not an expression, as we do not use the COLON
+            // for anything else. When functions get more complex, this 
+            // check will be too. 
+            return parseFunctionDefinition();
+        }
     }
     return parseExpression();
 }
@@ -740,14 +604,21 @@ VariableDeclarationAST * Parser::parseDeclaration()
 
     if (t.type != TK_IDENTIFIER) {
         Error("Identifier expected but not found\n");
-        if (!success) {
-            delete decl;
-            return nullptr;
-        }
+        delete decl;
+        return nullptr;
     }
 
     decl->varname = t.string;
     lex->lookaheadToken(t);
+
+    if ((t.type != TK_COLON) &&
+        (t.type != TK_DOUBLE_COLON) &&
+        (t.type != TK_IMPLICIT_ASSIGN)) {
+        Error("Declaration needs a colon, but found token: %s\n", TokenTypeToStr(t.type));
+        delete decl;
+        return nullptr;
+    }
+
     if (t.type == TK_COLON) {
         lex->consumeToken();
         // we are doing a variable declaration
@@ -836,31 +707,4 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
 
     this->lex = nullptr;
 	return file_inst;
-}
-
-void traverseAST(StatementBlockAST *root)
-{
-    process_all_scope_variables(&root->scope);
-    for (auto stmt : root->statements) {
-        if (stmt->ast_type == AST_VARIABLE_DECLARATION) {
-            auto decl = (VariableDeclarationAST *)stmt;
-            if ((decl->definition) && (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
-                FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
-                traverseAST(fundef->function_body);
-            }
-        } else if (stmt->ast_type == AST_STATEMENT_BLOCK) {
-            traverseAST((StatementBlockAST *)stmt);
-        }
-    }
-}
-
-void traverseAST(FileAST *root)
-{
-    process_all_scope_variables(&root->scope);
-    for (auto &decl : root->items) {
-        if ((decl->definition) && (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
-            FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
-            traverseAST(fundef->function_body);
-        }
-    }
 }
