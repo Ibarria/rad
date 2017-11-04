@@ -68,11 +68,18 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl)
 
     auto ft = (FunctionTypeAST *)decl->specified_type;
 
+    bool isMain = !strcmp(decl->varname, "main");
+    
     // first print the return type
     if (ft->return_type) {
         generate_type(ft->return_type);
     } else {
-        fprintf(output_file, "void");
+        if (isMain) {
+            // main is a special case, to make the C compiler happy, allow void to be int
+            fprintf(output_file, "int");
+        } else {
+            fprintf(output_file, "void");           
+        }
     }
     if (decl->flags & DECL_FLAG_IS_CONSTANT) {
         fprintf(output_file, " %s ", decl->varname);
@@ -130,6 +137,8 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
     } else if (decl->specified_type->ast_type == AST_FUNCTION_TYPE) {
         auto ft = (FunctionTypeAST *)decl->specified_type;
 
+	    bool isMain = !strcmp(decl->varname, "main");
+
         // if this is a function ptr in C, it's been defined already in
         // the prototypes section, skip it here
         if (!(decl->flags & DECL_FLAG_IS_CONSTANT)) {
@@ -146,7 +155,12 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         if (ft->return_type) {
             generate_type(ft->return_type);
         } else {
-            fprintf(output_file, "void");
+	        if (isMain) {
+	            // main is a special case, to make the C compiler happy, allow void to be int
+	            fprintf(output_file, "int");
+	        } else {
+	            fprintf(output_file, "void");           
+	        }
         }
         if (decl->flags & DECL_FLAG_IS_CONSTANT) {
             fprintf(output_file, " %s ", decl->varname);
@@ -343,8 +357,8 @@ void c_generator::generate_c_file(const char * filename, FileAST * root)
 #ifdef WIN32
     fopen_s(&output_file, filename, "w");
 #else
-	output_file = fopen(filename, "w");
-#endif		
+    output_file = fopen(filename, "w");
+#endif      
     ident = 0;
     dangling_functions.reset();
     insert_dangling_funcs = false;

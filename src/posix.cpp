@@ -12,7 +12,7 @@ int compile_c_into_binary(const char *filename)
 	char *ext = strrchr(outfile, '.');
 	*ext = 0;
 
-    sprintf(cmd_line, "clang %s -o %s -lstdc++", filename, outfile);
+    sprintf(cmd_line, "clang %s -g -o %s -lstdc++", filename, outfile);
 
 	int exit_code = system(cmd_line);
 
