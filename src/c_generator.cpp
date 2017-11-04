@@ -3,6 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef WIN32
+# define sprintf_s sprintf
+#endif
+
 static inline bool isFunctionDeclaration(VariableDeclarationAST *decl)
 {
     return (decl->specified_type->ast_type == AST_FUNCTION_TYPE);
@@ -336,7 +340,11 @@ void c_generator::generate_type(BaseAST * ast)
 
 void c_generator::generate_c_file(const char * filename, FileAST * root)
 {
-     fopen_s(&output_file, filename, "w");
+#ifdef WIN32
+    fopen_s(&output_file, filename, "w");
+#else
+	output_file = fopen(filename, "w");
+#endif		
     ident = 0;
     dangling_functions.reset();
     insert_dangling_funcs = false;

@@ -7,6 +7,11 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+#ifndef WIN32
+# define sprintf_s sprintf
+# define vsprintf_s vsnprintf
+#endif
+
 void traverseAST(FileAST *root);
 u32 process_scope_variables(Scope *scope);
 bool infer_types(VariableDeclarationAST *decl);
@@ -43,7 +48,7 @@ void Parser::Error(const char *msg, ...)
     success = false;
 }
 
-bool Parser::MustMatchToken(TOKEN_TYPE type, char *msg)
+bool Parser::MustMatchToken(TOKEN_TYPE type, const char *msg)
 {
     if (!lex->checkToken(type)) {
         Error("%s - Token %s was expected, but we found: %s\n", msg,
@@ -469,7 +474,7 @@ ExpressionAST * Parser::parseLiteral()
             ex->pl.pf64 = t.pl.pf64;
         }
         return ex;
-    } else if ((t.type == TK_STRING)) {
+    } else if (t.type == TK_STRING) {
         ConstantStringAST *str = new ConstantStringAST();
         setASTinfo(this, str);
 

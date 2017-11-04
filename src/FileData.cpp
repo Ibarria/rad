@@ -1,5 +1,10 @@
 #include "FileData.h"
-#include <windows.h>
+#ifdef WIN32
+# include <windows.h>
+#else
+# define strncpy_s strncpy
+# include <string.h>
+#endif
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -20,7 +25,7 @@ FileData::~FileData()
 bool FileData::open(const char * filename)
 {
 	close();
-
+#ifdef WIN32
 	HANDLE hFile = CreateFileA(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
 	if (hFile == INVALID_HANDLE_VALUE) return false;
@@ -33,6 +38,17 @@ bool FileData::open(const char * filename)
 
 	BOOL b = ReadFile(hFile, data, (DWORD)size, &lo, NULL);
 	CloseHandle(hFile);
+#else
+	FILE *hFile = fopen(filename, "r");
+	if (!hFile) return false;
+	
+	fseek(hFile, 0, SEEK_END);
+	size = ftell(hFile);
+	data = (char *)malloc(size);
+	fseek(hFile, 0, SEEK_SET);
+	
+	bool b = (size == fread(data, 1, size, hFile));
+#endif	
 	if (!b) {
 		close();
 		return false;

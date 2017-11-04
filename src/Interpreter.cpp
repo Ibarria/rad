@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include "TextType.h"
 
+#ifndef WIN32
+# define sprintf_s sprintf
+# define vsprintf_s vsnprintf
+#endif
+
 void Interpreter::Error(BaseAST *ast, const char *msg, ...)
 {
     va_list args;

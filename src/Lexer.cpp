@@ -362,7 +362,7 @@ void Lexer::getNextTokenInternal(Token &tok)
             s[i++] = 0;
 			tok.type = TK_STRING;
             tok.string = CreateTextType(pool, s);
-            delete s;
+            delete [] s;
             return;
         } else if (c == '\'') {
             // this marks a character

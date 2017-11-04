@@ -1,12 +1,19 @@
 #include "PoolAllocator.h"
-#include <windows.h>
+#ifdef WIN32
+# include <windows.h>
+#endif
 #include <stdio.h>
+#include <stdlib.h>
 
 #define MEGABYTES (1024*1024)
 
 void PoolAllocator::allocateBlock(block * b)
 {
+#ifdef WIN32	
     b->start_address = (u8 *)VirtualAlloc(NULL, block_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#else
+	b->start_address = (u8 *)malloc(block_size);
+#endif		
     b->free_address = root_block.start_address;
     b->free_size = block_size;
     b->next = nullptr;
@@ -43,7 +50,11 @@ PoolAllocator::~PoolAllocator()
 {
     block *b, *f;
     for (b = &root_block; b != nullptr; ) {
+#ifdef WIN32		
         VirtualFree(b->start_address, 0, MEM_RELEASE);
+#else
+		free(b->start_address);
+#endif				
         f = b;
         b = b->next;
         if (f != &root_block) {

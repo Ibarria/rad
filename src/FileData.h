@@ -1,15 +1,16 @@
 #pragma once
 
+#include "mytypes.h"
 #include "SrcLocation.h"
 
 class FileData
 {
 	char *data;
 	char filename[256];
-	size_t index;
-	size_t size;
-	size_t nline;
-	size_t ncol;
+	u64 index;
+	u64 size;
+	u64 nline;
+	u64 ncol;
 public:
 	FileData();
 	~FileData();

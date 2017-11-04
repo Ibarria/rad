@@ -12,7 +12,7 @@ struct Parser {
     bool success;
     void Error(const char *msg, ...);
 
-    bool MustMatchToken(TOKEN_TYPE type, char *msg = nullptr);
+    bool MustMatchToken(TOKEN_TYPE type, const char *msg = nullptr);
     bool AddDeclarationToScope(VariableDeclarationAST *decl);
 
     TypeAST *parseDirectType();
