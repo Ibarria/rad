@@ -177,7 +177,7 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
         auto ldt = (DirectTypeAST *)lhs;
         // Modify this when pointer and array support is introduced
         assert(!(ldt->isArray || ldt->isPointer || rdt->isArray || rdt->isPointer));
-        return rdt->basic_type == ldt->basic_type;
+        return (rdt->basic_type == ldt->basic_type) && (rdt->isSigned == ldt->isSigned);
         break;
     }
     case AST_ARRAY_TYPE: {
@@ -378,6 +378,9 @@ void Interpreter::traverseAST(ExpressionAST *expr)
 
         // TODO: check for width of operands (in case of literals), like assigning 512 to an u8.
         // one of the hard things here is what to do on complex expressions with literals, promote?
+
+        // are there any checks to do on the left hand side?
+        traverseAST(assgn->rhs);
         break;
     }
     case AST_FUNCTION_CALL: {

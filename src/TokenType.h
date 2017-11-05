@@ -77,6 +77,16 @@ enum TOKEN_TYPE {
     TK_FLOAT,
     TK_F32,
     TK_F64,
+
+    // compiler directive tokens
+
+    TK_IMPORT,
+    TK_LOAD,
+    TK_RUN,
+    TK_FOREIGN,
+
+    // Comment tokens, not really used
+
     TK_OPEN_BLOCK_COMMENT,
     TK_CLOSE_BLOCK_COMMENT,
     TK_LINE_COMMENT

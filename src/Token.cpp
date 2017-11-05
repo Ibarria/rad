@@ -112,6 +112,10 @@ const char * TokenTypeToStr(TOKEN_TYPE type)
         CASE_TOKEN_TYPE(TK_FLOAT);
         CASE_TOKEN_TYPE(TK_F32);
         CASE_TOKEN_TYPE(TK_F64);
+        CASE_TOKEN_TYPE(TK_IMPORT);
+        CASE_TOKEN_TYPE(TK_LOAD);
+        CASE_TOKEN_TYPE(TK_RUN);
+        CASE_TOKEN_TYPE(TK_FOREIGN);
     }
         return "UNKNOWN";   
 }                       

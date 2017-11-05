@@ -7,6 +7,7 @@
 * write bytecode interpreter
 * write cast function (built in)
 * check that a variable exists before using it (assignment, expression, etc)
+* implement local functions on the C generator
 * do check for types when calling a function
 * check the type of return values in a function, and the existence of a return statement
 * check that a function call is a variable of type function

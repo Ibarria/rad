@@ -693,6 +693,21 @@ ExpressionAST * Parser::parseExpression()
     return parseAssignmentExpression();
 }
 
+void Parser::parseImportDirective()
+{
+    Token t;
+    lex->getNextToken(t);
+    
+}
+
+void Parser::parseLoadDirective()
+{
+}
+
+void Parser::parseRunDirective()
+{
+}
+
 DefinitionAST *Parser::parseDefinition()
 {
     Token t;
@@ -813,7 +828,15 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
     current_scope->parent = nullptr;
 
 	while (!lex.checkToken(TK_LAST_TOKEN)) {
-		// we got a token, figure out what AST to build
+        Token t;
+        lex.lookaheadToken(t);
+        if (t.type == TK_IMPORT) {
+            parseImportDirective();
+        } else if (t.type == TK_LOAD) {
+            parseLoadDirective();
+        } else if (t.type == TK_RUN) {
+            parseRunDirective();
+        }
         VariableDeclarationAST *d = parseDeclaration();
         file_inst->items.push_back(d);
 

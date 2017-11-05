@@ -14,6 +14,30 @@ inline bool isWhiteSpace(char c)
 		(c == '\r'));
 }
 
+struct CompilerDirective {
+    const char *directive;
+    TOKEN_TYPE type;
+} compiler_directives[] = {
+    { "import",  TK_IMPORT},
+    { "load",    TK_LOAD },
+    { "run",     TK_RUN },
+    { "foreign", TK_IMPORT },
+
+    { nullptr,    TK_INVALID }
+};
+
+static void ConvertIdentifierToCompilerDirective(Token &tok, char *buff)
+{
+    CompilerDirective *k;
+    for (k = compiler_directives; k->directive != nullptr; k++) {
+        if (!strcmp(k->directive, buff)) {
+            tok.type = k->type;
+            return;
+        }
+    }
+}
+
+
 struct ReservedKeyword {
     const char *keyword;
     TOKEN_TYPE type;
@@ -378,6 +402,20 @@ void Lexer::getNextTokenInternal(Token &tok)
             }
             if (c != '\'') {
                 Error("Character definitions can only be a single character\n");
+            }
+            return;
+        } else if (c == '#') {
+            char buff[256] = {};
+            unsigned int i = 0;
+            while (file.peek(c) && (isAlpha(c) || (c == '_')) && (i<255)) {
+                buff[i++] = c;
+                file.getc(c);
+            }
+            tok.type = TK_INVALID;
+            buff[i] = 0;
+            ConvertIdentifierToCompilerDirective(tok, buff);
+            if (tok.type == TK_INVALID) {
+                Error("Found invalid compiler directive: #%s\n", buff);
             }
             return;
         } else {

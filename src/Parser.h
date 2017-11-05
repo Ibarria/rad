@@ -32,7 +32,9 @@ struct Parser {
     VariableDeclarationAST * parseDeclaration();
     ExpressionAST * parseAssignmentExpression();
     ExpressionAST * parseExpression();
-
+    void parseImportDirective();
+    void parseLoadDirective();
+    void parseRunDirective();
     FileAST * Parse(const char *filename, PoolAllocator *pool);
 };
 
