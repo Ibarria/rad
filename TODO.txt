@@ -26,9 +26,13 @@
 * support for parameters of type array, string
 * support for return type of array, string
 * support 'import' directive, where structs, enums, vars and functions are declared tied to a dll/lib
+** ensure imports are separate libraries, do not use extension for imports, define what libs to 
+** link against (or make it implicit, with a custom dll)
 * support  'load' directive, where the Parser will try to load a new text file and put things together
+** protect against recursive loads
 
 - create `true` and `false` basic types for bool
+- basic 'import' support added
 
 #####  LEXER  #####
 * Support _ in numbers for clarity

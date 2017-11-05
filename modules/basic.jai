@@ -1,4 +1,4 @@
 
 // basic definition of printf
 
-printf :: (fmt: string, ...) #foreign
+printf :: (fmt: string, ..) #foreign ;

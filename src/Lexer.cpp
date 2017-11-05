@@ -21,7 +21,7 @@ struct CompilerDirective {
     { "import",  TK_IMPORT},
     { "load",    TK_LOAD },
     { "run",     TK_RUN },
-    { "foreign", TK_IMPORT },
+    { "foreign", TK_FOREIGN },
 
     { nullptr,    TK_INVALID }
 };
@@ -288,7 +288,8 @@ void Lexer::Error(const char * msg, ...)
     va_list args;
 	SrcLocation loc;
 	file.getLocation(loc);
-	printf("%s(%d): error: ", file.getFilename(), loc.line);
+	printf("%s:%d:%d: error: ", file.getFilename(), 
+        loc.line, loc.col);
 
     va_start(args, msg);
     vprintf(msg, args);

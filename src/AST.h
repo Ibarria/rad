@@ -87,6 +87,8 @@ struct FunctionTypeAST : TypeAST
     FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; }
     Array<ArgumentDeclarationAST *> arguments;
     TypeAST *return_type = nullptr;
+    bool isForeign = false;
+    bool hasVariableArguments = false;
 };
 
 struct StatementBlockAST : StatementAST

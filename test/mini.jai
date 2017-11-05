@@ -1,11 +1,12 @@
 
+#import "modules/basic.jai"
 
 main :: ()
 {
 //    x := -1;
     x : u64;
-    x = add(-3, 0);
-//     printf("X is %lld\n", x);
+    x = add(3, 0);
+    printf("X is %llu\n", x);
 
 
 }

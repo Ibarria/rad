@@ -42,7 +42,8 @@ static void printTypeToStr(char *s, TypeAST *type)
 void Interpreter::Error(BaseAST *ast, const char *msg, ...)
 {
     va_list args;
-    u32 off = sprintf_s(errorString, "%s(%d): error : ", ast->filename, ast->line_num);
+    u32 off = sprintf_s(errorString, "%s:%d:%d: error : ", ast->filename, 
+        ast->line_num, ast->char_num);
 
     va_start(args, msg);
     vsprintf_s(errorString + off, sizeof(errorString) - off, msg, args);
@@ -394,13 +395,22 @@ void Interpreter::traverseAST(ExpressionAST *expr)
         assert(decl->specified_type);
         assert(decl->specified_type->ast_type == AST_FUNCTION_TYPE);
         FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
-        if (fundecl->arguments.size() != funcall->args.size()) {
-            Error(funcall, "Function %s called with %d arguments but it expects %d\n",
-                funcall->function_name, funcall->args.size(), fundecl->arguments.size());
-            return;
+        if (fundecl->hasVariableArguments) {
+            // for variable number of argument functions we only need to check a lower bound
+            if (fundecl->arguments.size() > funcall->args.size()) {
+                Error(funcall, "Function %s called with %d arguments but it expects at least %d\n",
+                    funcall->function_name, funcall->args.size(), fundecl->arguments.size());
+                return;
+            }
+        } else {
+            if (fundecl->arguments.size() != funcall->args.size()) {
+                Error(funcall, "Function %s called with %d arguments but it expects %d\n",
+                    funcall->function_name, funcall->args.size(), fundecl->arguments.size());
+                return;
+            }
         }
 
-        for (u32 i = 0; i < funcall->args.size(); i++) {
+        for (u32 i = 0; i < fundecl->arguments.size(); i++) {
             TypeAST *lhsType, *rhsType;
             lhsType = deduceType(funcall->args[i]);
             rhsType = fundecl->arguments[i]->type;
@@ -421,6 +431,7 @@ void Interpreter::traverseAST(ExpressionAST *expr)
 
 void Interpreter::traverseAST(StatementBlockAST *root)
 {
+    if (root == nullptr) return; // this happens for foreign functions
     process_all_scope_variables(&root->scope);
 
     if (!success) return;

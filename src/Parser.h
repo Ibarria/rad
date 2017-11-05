@@ -7,8 +7,10 @@
 
 struct Parser {
     Lexer *lex;
+    PoolAllocator *pool = nullptr;
     char errorString[512];
-    Scope *current_scope;
+    Scope *current_scope = nullptr;
+    FileAST *top_level_ast = nullptr;
     bool success;
     void Error(const char *msg, ...);
 
@@ -35,7 +37,7 @@ struct Parser {
     void parseImportDirective();
     void parseLoadDirective();
     void parseRunDirective();
-    FileAST * Parse(const char *filename, PoolAllocator *pool);
+    FileAST * Parse(const char *filename, PoolAllocator *pool, FileAST *fast = nullptr);
 };
 
 void traverseAST(FileAST *root);

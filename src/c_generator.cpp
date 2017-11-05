@@ -170,6 +170,9 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
 
 	    bool isMain = !strcmp(decl->varname, "main");
 
+        // foreign functions are prototype only
+        if (ft->isForeign) return;
+
         // if this is a function ptr in C, it's been defined already in
         // the prototypes section, skip it here
         if (!(decl->flags & DECL_FLAG_IS_CONSTANT)) {

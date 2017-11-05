@@ -40,7 +40,8 @@ void Parser::Error(const char *msg, ...)
     va_list args;
     SrcLocation loc;
     lex->getLocation(loc);
-    u32 off = sprintf_s(errorString, "%s(%d): error : ", lex->getFilename(), loc.line);
+    u32 off = sprintf_s(errorString, "%s:%d:%d: error : ", lex->getFilename(), 
+        loc.line, loc.col);
 
     va_start(args, msg);
     vsprintf_s(errorString + off, sizeof(errorString) - off, msg, args);
@@ -304,6 +305,18 @@ FunctionTypeAST *Parser::parseFunctionDeclaration()
     setASTinfo(this, fundec);
 
     while (!lex->checkToken(TK_CLOSE_PAREN)) {
+        if (lex->checkToken(TK_DOUBLE_PERIOD)) {
+            // this is a special argument case, the variable lenght argument
+            lex->consumeToken();
+            fundec->hasVariableArguments = true;
+
+            if (!lex->checkToken(TK_CLOSE_PAREN)) {
+                Error("Variable lenght arguments must be the last parameter in a function\n");
+                delete fundec;
+                return nullptr;
+            }
+            continue;
+        }
         ArgumentDeclarationAST *arg = Parser::parseArgumentDeclaration();
         if (!success) {
             delete fundec;
@@ -441,6 +454,13 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
     if (!success) {
         delete fundef;
         return nullptr;
+    }
+    if (lex->checkToken(TK_FOREIGN)) {
+        // foreign functions are special, there is no body for them
+        fundef->declaration->isForeign = true;
+        lex->consumeToken();
+        MustMatchToken(TK_SEMICOLON, "Function definitions need to end in semicolon\n");
+        return fundef;
     }
     if (!lex->checkToken(TK_OPEN_BRACKET)) {
         Error("Function declaration needs to be followed by an implementation {} \n");
@@ -696,16 +716,83 @@ ExpressionAST * Parser::parseExpression()
 void Parser::parseImportDirective()
 {
     Token t;
-    lex->getNextToken(t);
     
+    // @TODO: make import be module based with module folders
+    // and appending extension, as well as figuring out libs to link against
+
+    MustMatchToken(TK_IMPORT);
+    if (!success) return;
+
+    lex->getNextToken(t);
+    if (t.type != TK_STRING) {
+        Error("When parsing an #import directive, a string needs to follow\n");
+        return;
+    }
+
+    // import directives can define new functions
+    // as well as new types, all in global scope / Or the current scope?
+
+    // things not allowed on an import
+    /*
+       - full function definition? (to be discussed)
+       - #run directives ? 
+       - #load directive
+    */
+    // things ONLY allowed on an import
+    /*
+    - #foreign
+    - 
+    */
+
+    // this could be done in parallel if needed be
+    Parser import_parser;
+    import_parser.current_scope = current_scope;
+    import_parser.Parse(t.string, pool, top_level_ast);
+
+    if (!import_parser.success) {
+        strncpy_s(errorString, import_parser.errorString, sizeof(errorString));
+        success = false;
+    }
 }
 
 void Parser::parseLoadDirective()
 {
+    Token t;
+    lex->getNextToken(t);
+
+    MustMatchToken(TK_LOAD);
+    if (!success) return;
+
+    lex->getNextToken(t);
+    if (t.type != TK_STRING) {
+        Error("When parsing an #load directive, a string needs to follow\n");
+        return;
+    }
+
+    // load directives can define new functions
+    // as well as new types, all in global scope / Or the current scope?
+
+    // this could be done in parallel if needed be
+    Parser import_parser;
+    import_parser.current_scope = current_scope;
+    import_parser.Parse(t.string, pool, top_level_ast);
+
+    if (!import_parser.success) {
+        strncpy_s(errorString, import_parser.errorString, sizeof(errorString));
+        success = false;
+    }
 }
 
 void Parser::parseRunDirective()
 {
+    Token t;
+    lex->getNextToken(t);
+
+    MustMatchToken(TK_RUN);
+
+    // After run, it is an expression in general. Run can appear anywhere, and affect (or not)
+    // the code and what is parsed. 
+    // if run produces output, it should be inserted (on a separate compilation phase)
 }
 
 DefinitionAST *Parser::parseDefinition()
@@ -800,17 +887,27 @@ VariableDeclarationAST * Parser::parseDeclaration()
 }
 
 // first version, just return a list of AST
-FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
+FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
 {
 	Lexer lex;
     this->lex = &lex;
-    FileAST *file_inst = new FileAST();
+    this->pool = pool;
+    FileAST *file_inst = nullptr;
+
+    if (fast != nullptr) {
+        file_inst = fast;
+    } else {
+        file_inst = new FileAST();
+        file_inst->scope.parent = nullptr;
+    }
+     
+    top_level_ast = file_inst;
     success = true;
 
     lex.setPoolAllocator(pool);
 
     if (!lex.openFile(filename)) {
-        sprintf_s(errorString, "Error: File [%s] could not be opened to be compiled\n", filename);
+        sprintf_s(errorString, "Error: File [%s] could not be opened to be processed\n", filename);
         return nullptr;
     }
     lex.parseFile();
@@ -823,9 +920,9 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
         }
     }
 
-
-    current_scope = &file_inst->scope;
-    current_scope->parent = nullptr;
+    if (current_scope == nullptr) {
+        current_scope = &file_inst->scope;        
+    }
 
 	while (!lex.checkToken(TK_LAST_TOKEN)) {
         Token t;
@@ -838,12 +935,13 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool)
             parseRunDirective();
         }
         VariableDeclarationAST *d = parseDeclaration();
-        file_inst->items.push_back(d);
 
         if (!success) {
             return nullptr;
         }
-	}
+
+        file_inst->items.push_back(d);
+    }
 
 
     this->lex = nullptr;
