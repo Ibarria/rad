@@ -154,6 +154,12 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
         return deduceType(un->expr);
         break;
     }
+    case AST_RUN_DIRECTIVE: {
+        auto run = (RunDirectiveAST *)expr;
+        // Run directives do not change the type of whatever they run, pass through
+        return deduceType(run->expr);
+        break;
+    }
     default:
         assert("We should never be here, we could not parse this type\n");
     }
@@ -309,6 +315,11 @@ bool Interpreter::checkVariablesInExpression(ExpressionAST *expr)
         auto un = (UnaryOperationAST *)expr;
         return checkVariablesInExpression(un->expr);
     }
+    case AST_RUN_DIRECTIVE: {
+        auto run = (RunDirectiveAST *)expr;
+        return checkVariablesInExpression(run->expr);
+        break;
+    }
     default:
         assert("We should never be here, we could not parse this type\n");
     }
@@ -347,6 +358,15 @@ bool Interpreter::isConstExpression(ExpressionAST *expr)
     return false;
 }
 
+/*
+    Responsibilities of traverseAST for Expressions
+
+    - Are variables declared in this scope?
+    - are the types of operands compatible?
+    - are function calls correct (name, ret type, arg types)
+
+    Are we doing duplicate work when we recurse?
+*/
 void Interpreter::traverseAST(ExpressionAST *expr)
 {
     if (!success) return;
@@ -426,6 +446,22 @@ void Interpreter::traverseAST(ExpressionAST *expr)
         }
         break;
     }
+    case AST_RUN_DIRECTIVE: {
+        // simple passthrough check
+        auto run = (RunDirectiveAST *)expr;
+        traverseAST(run->expr);
+        break;
+    }
+    case AST_BINARY_OPERATION: {
+        break;
+    }
+    case AST_UNARY_OPERATION: {
+        break;
+    }
+    case AST_LITERAL:
+        break;
+    default:
+        assert(!"Missing AST support types");
     }
 }
 
@@ -470,10 +506,24 @@ void Interpreter::traverseAST(FileAST *root)
 {
     process_all_scope_variables(&root->scope);
     current_scope = &root->scope;
-    for (auto &decl : root->items) {
-        if ((decl->definition) && (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
-            FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
-            traverseAST(fundef->function_body);
+    for (auto &ast : root->items) {
+        switch (ast->ast_type) {
+        case AST_VARIABLE_DECLARATION: {
+            auto decl = (VariableDeclarationAST *)ast;
+            if ((decl->definition) && (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
+                FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
+                traverseAST(fundef->function_body);
+            }
+            break;
+        }
+        case AST_RUN_DIRECTIVE: {
+            // @TODO: implement checks for run directive
+            // At some point we want to execute the run directive, after checks
+            // and sizes
+            break;
+        }
+        default:
+            assert(!"Unsupported type on top level expression");
         }
     }
 }

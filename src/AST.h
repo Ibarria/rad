@@ -42,7 +42,8 @@ enum AST_CLASS_TYPE {
     AST_BINARY_OPERATION,
     AST_UNARY_OPERATION,
     AST_ASSIGNMENT,
-    AST_VARIABLE_DECLARATION
+    AST_VARIABLE_DECLARATION,
+    AST_RUN_DIRECTIVE
 };
 
 struct BaseAST
@@ -58,7 +59,7 @@ struct BaseAST
 struct FileAST : BaseAST
 {
     FileAST() { ast_type = AST_FILE; }
-    Array<VariableDeclarationAST *>items;
+    Array<BaseAST *>items;
     Scope scope;
 };
 
@@ -115,6 +116,11 @@ struct ExpressionAST : DefinitionAST
 {
 };
 
+struct RunDirectiveAST : ExpressionAST
+{
+    RunDirectiveAST() { ast_type = AST_RUN_DIRECTIVE; }
+    ExpressionAST *expr = nullptr;
+};
 struct FunctionCallAST : ExpressionAST
 {
     FunctionCallAST() { ast_type = AST_FUNCTION_CALL; }

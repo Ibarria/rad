@@ -529,7 +529,24 @@ ExpressionAST * Parser::parseLiteral()
             ex->_bool = false;
         }
         return ex;
-    } 
+    } else if (t.type == TK_OPEN_PAREN) {
+        SrcLocation loc;
+        loc = t.loc;
+
+        ExpressionAST *expr = parseExpression();
+        if (!success) return nullptr;
+
+        lex->getNextToken(t);
+        if (t.type != TK_CLOSE_PAREN) {
+            Error("Cound not find a matching close parentesis, open parenthesis was at %d:%d\n",
+                loc.line, loc.col);
+            if (!success) {
+                return nullptr;
+            }
+        }
+
+        return expr;
+    }
     Error("Could not parse a literal expression! Unknown token type: %s", TokenTypeToStr(t.type));
     return nullptr;
 }
@@ -545,7 +562,7 @@ ExpressionAST * Parser::parseUnaryExpression()
         }
     } else if (isUnaryPrefixOperator(t.type)) {
         lex->consumeToken();
-        ExpressionAST *expr = parseLiteral();
+        ExpressionAST *expr = parseUnaryExpression();
         if (!success) return nullptr;
 
         // optimization, if expr is a real literal, merge the actual value
@@ -606,8 +623,10 @@ ExpressionAST * Parser::parseUnaryExpression()
         }
         UnaryOperationAST *un = NEW_AST(UnaryOperationAST);
         un->op = t.type;
-        un->expr = parseLiteral();
+        un->expr = expr;
         return un;
+    } else if (t.type == TK_RUN) {
+        return parseRunDirective();
     }
     // @TODO: Handle postfix operators after the parseLiteral
     return parseLiteral();
@@ -670,26 +689,6 @@ ExpressionAST * Parser::parseAssignmentExpression()
 
 ExpressionAST * Parser::parseExpression()
 {
-    Token t;
-    lex->lookaheadToken(t);
-    if (t.type == TK_OPEN_PAREN) {
-        SrcLocation loc;
-        lex->getLocation(loc);
-        lex->getNextToken(t);
-        
-        ExpressionAST *expr = parseExpression();
-        if (!success) return nullptr;
-
-        lex->getNextToken(t);
-        if (t.type != TK_CLOSE_PAREN) {
-            Error("Cound not find a matching close parentesis, open parenthesis was at %d:%d\n", 
-                loc.line, loc.col);
-            if (!success) {
-                return nullptr;
-            }
-        }
-        return expr;
-    }
     return parseAssignmentExpression();
 }
 
@@ -764,16 +763,26 @@ void Parser::parseLoadDirective()
     }
 }
 
-void Parser::parseRunDirective()
+RunDirectiveAST* Parser::parseRunDirective()
 {
-    Token t;
-    lex->getNextToken(t);
-
     MustMatchToken(TK_RUN);
-
+    
     // After run, it is an expression in general. Run can appear anywhere, and affect (or not)
     // the code and what is parsed. 
     // if run produces output, it should be inserted (on a separate compilation phase)
+    ExpressionAST *expr;
+
+    expr = parseUnaryExpression();
+    if (!success) {
+        return nullptr;
+    }
+
+    RunDirectiveAST *run = NEW_AST(RunDirectiveAST);
+    run->expr = expr;
+
+    // TODO: we might want to have a list of all run directives to process them later on
+
+    return run;
 }
 
 DefinitionAST *Parser::parseDefinition()
@@ -908,15 +917,21 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
         } else if (t.type == TK_LOAD) {
             parseLoadDirective();
         } else if (t.type == TK_RUN) {
-            parseRunDirective();
-        }
-        VariableDeclarationAST *d = parseDeclaration();
+            RunDirectiveAST *r = parseRunDirective();
+            if (!success) {
+                return nullptr;
+            }
 
-        if (!success) {
-            return nullptr;
-        }
+            file_inst->items.push_back(r);
+        } else {
+            VariableDeclarationAST *d = parseDeclaration();
 
-        file_inst->items.push_back(d);
+            if (!success) {
+                return nullptr;
+            }
+
+            file_inst->items.push_back(d);
+        }
     }
 
 

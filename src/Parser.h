@@ -37,7 +37,7 @@ struct Parser {
     ExpressionAST * parseExpression();
     void parseImportDirective();
     void parseLoadDirective();
-    void parseRunDirective();
+    RunDirectiveAST * parseRunDirective();
     FileAST * Parse(const char *filename, PoolAllocator *pool, FileAST *fast = nullptr);
 };
 

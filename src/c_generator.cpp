@@ -373,6 +373,11 @@ void c_generator::generate_expression(ExpressionAST * expr)
         generate_expression(unop->expr);
         break;
     }
+    case AST_RUN_DIRECTIVE: {
+        // we should never get here, do something crappy for now
+        fprintf(output_file, "0");
+        break;
+    }
     default:
         assert(!"We should never get here");
     }
@@ -432,7 +437,7 @@ void c_generator::generate_c_file(const char * filename, FileAST * root)
     for (auto &ast : root->items) {
         switch (ast->ast_type) {
         case AST_VARIABLE_DECLARATION: {
-            generate_variable_declaration(ast);
+            generate_variable_declaration((VariableDeclarationAST *)ast);
             break;
         }
         default:
