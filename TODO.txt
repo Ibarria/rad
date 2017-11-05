@@ -12,7 +12,6 @@
 * check that a function call is a variable of type function
 * do check for size when doing explicit declaration (s8 x := 512)
 * do check for types on assignment
-* create `true` and `false` basic types for bool
 * do conditionals
 * do for loop (with it)
 * struct support
@@ -27,6 +26,8 @@
 * support for return type of array, string
 * support 'import' directive, where structs, enums, vars and functions are declared tied to a dll/lib
 * support  'load' directive, where the Parser will try to load a new text file and put things together
+
+- create `true` and `false` basic types for bool
 
 #####  LEXER  #####
 * Support _ in numbers for clarity

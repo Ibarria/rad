@@ -100,14 +100,14 @@ int main(int argc, char **argv)
 
     interp.traverseAST(parsedFile);
 
-    astBuildTime = timer.stopTimer();
-    timer.startTimer();
-
     if (!interp.success) {
         interp.printErrors();
         printf("There were errors during the semantic analysis. Exiting...\n");
         exit(1);
     }
+
+    astBuildTime = timer.stopTimer();
+    timer.startTimer();
 
     c_generator gen;
     char *c_filename = getCfilename(root_file);

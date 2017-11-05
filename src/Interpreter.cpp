@@ -69,27 +69,62 @@ void copyASTloc(BaseAST *src, BaseAST *dst)
     dst->line_num = src->line_num;
 }
 
+VariableDeclarationAST *Interpreter::validateVariable(IdentifierAST *a)
+{
+    VariableDeclarationAST *decl = findVariable(a->name, a->scope);
+
+    if (decl == nullptr) {
+        Error(a, "Variable [%s] could not be found on this scope\n", a->name);
+        return nullptr;
+    }
+
+    if ((decl->line_num == a->line_num) && (decl->filename == a->filename)) {
+        Error(a, "Variable [%s] is declared in a recursive manner\n", a->name);
+    }
+
+    if ((decl->filename == a->filename) &&
+        (decl->line_num > a->line_num) &&
+        !(decl->flags & DECL_FLAG_IS_CONSTANT))
+    {
+        Error(a, "The variable [%s] used in this declaration appears after the current declaration, this is only allowed for constants\n",
+            a->name);
+        return nullptr;
+    }
+
+    return decl;
+}
+
+VariableDeclarationAST *Interpreter::validateFunctionCall(FunctionCallAST *a)
+{
+    VariableDeclarationAST *decl = findVariable(a->function_name, a->scope);
+
+    if (decl == nullptr) {
+        Error(a, "Function [%s] could not be found on this scope\n", a->function_name);
+        return nullptr;
+    }
+
+    if (decl->specified_type && decl->specified_type->ast_type != AST_FUNCTION_TYPE) {
+        Error(a, "Cannot perform a function call on a variable [%s] that is not a function\n",
+            a->function_name);
+        return nullptr;
+    }
+    return decl;
+}
+
+
 TypeAST * Interpreter::deduceType(ExpressionAST *expr)
 {
     switch (expr->ast_type) {
     case AST_FUNCTION_CALL: {
         FunctionCallAST *a = (FunctionCallAST *)expr;
-        VariableDeclarationAST *decl = findVariable(a->function_name, a->scope);
+        VariableDeclarationAST *decl = validateFunctionCall(a);
+        if (!decl) return nullptr;
 
-        if (decl == nullptr) {
-            Error(expr, "Function [%s] could not be found on this scope\n", a->function_name);
-            return nullptr;
-        }
         // do not recurse on inferring types as this could cause infinite recursion
         if (decl->specified_type == nullptr) {
             return nullptr;
         }
 
-        if (decl->specified_type->ast_type != AST_FUNCTION_TYPE) {
-            Error(expr, "Cannot perform a function call on a variable [%s] that is not a function\n",
-                a->function_name);
-            return nullptr;
-        }
         FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
         if (!fundecl->return_type) {
             Error(expr, "Cannot use the return value of a void function [%s]\n", a->function_name);
@@ -98,21 +133,8 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
     }
     case AST_IDENTIFIER: {
         IdentifierAST *a = (IdentifierAST *)expr;
-        VariableDeclarationAST *decl = findVariable(a->name, a->scope);
-
-        if (decl == nullptr) {
-            Error(expr, "Variable [%s] could not be found on this scope\n", a->name);
-            return nullptr;
-        }
-
-        if ((decl->filename == expr->filename) &&
-            (decl->line_num > expr->line_num) &&
-            !(decl->flags & DECL_FLAG_IS_CONSTANT))
-        {
-            Error(expr, "The variable [%s] used in this declaration appears after the current declaration, this is only allowed for constants\n",
-                a->name);
-            return nullptr;
-        }
+        VariableDeclarationAST *decl = validateVariable(a);
+        if (!decl) return nullptr;
 
         // do not recurse on inferring types as this could cause infinite recursion
         return decl->specified_type;
@@ -206,12 +228,14 @@ void Interpreter::process_all_scope_variables(Scope *scope)
         } else if ((prev_vars == untyped_vars) && prev_vars > 0) {
             return;
         }
-    } while (success && (untyped_vars > 0));
+   } while (success && (untyped_vars > 0));
 }
 
 bool Interpreter::infer_types(VariableDeclarationAST *decl)
 {
     if (decl->specified_type) return true;
+    current_identifier = decl->varname;
+
     assert(decl->definition); // if we do not have a type we must have something to compare against
     switch (decl->definition->ast_type) {
     case AST_FUNCTION_DEFINITION: {
@@ -322,6 +346,76 @@ bool Interpreter::isConstExpression(ExpressionAST *expr)
     return false;
 }
 
+void Interpreter::traverseAST(ExpressionAST *expr)
+{
+    if (!success) return;
+    switch (expr->ast_type) {
+    case AST_ASSIGNMENT: {
+        auto assgn = (AssignmentAST *)expr;
+        // Errors to check:
+        // any variable used in the assignment needs to be declared in the scope. To be checked here or recursively?
+        checkVariablesInExpression(assgn->lhs);
+
+        if (!success) {
+            return;
+        }
+
+        // lhs cannot be const (or a literal, same thing)
+        if (isConstExpression(assgn->lhs)) {
+            Error(assgn, "The left hand side of an assignment must be an l-value\n");
+        }
+
+        // lhs and rhs need to have the same type
+        TypeAST *lhsType, *rhsType;
+        lhsType = deduceType(assgn->lhs);
+        rhsType = deduceType(assgn->rhs);
+        if (!compatibleTypes(lhsType, rhsType)) {
+            char ltype[64] = {}, rtype[64] = {};
+            printTypeToStr(ltype, lhsType);
+            printTypeToStr(rtype, rhsType);
+            Error(assgn, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
+        }
+
+        // TODO: check for width of operands (in case of literals), like assigning 512 to an u8.
+        // one of the hard things here is what to do on complex expressions with literals, promote?
+        break;
+    }
+    case AST_FUNCTION_CALL: {
+        // normal checks are already satisfied on type deduction:
+        // [DONE] check that the function being called exists, and that it is a function
+        // [DONE] for each argument, check that the type of the argument matches that of the parameter
+        FunctionCallAST *funcall = (FunctionCallAST *)expr;
+        VariableDeclarationAST *decl = validateFunctionCall(funcall);
+        if (!decl) return;
+        assert(decl);
+        assert(decl->specified_type);
+        assert(decl->specified_type->ast_type == AST_FUNCTION_TYPE);
+        FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
+        if (fundecl->arguments.size() != funcall->args.size()) {
+            Error(funcall, "Function %s called with %d arguments but it expects %d\n",
+                funcall->function_name, funcall->args.size(), fundecl->arguments.size());
+            return;
+        }
+
+        for (u32 i = 0; i < funcall->args.size(); i++) {
+            TypeAST *lhsType, *rhsType;
+            lhsType = deduceType(funcall->args[i]);
+            rhsType = fundecl->arguments[i]->type;
+            if (!success) return;
+            if (!compatibleTypes(lhsType, rhsType)) {
+                char ltype[64] = {}, rtype[64] = {};
+                printTypeToStr(ltype, lhsType);
+                printTypeToStr(rtype, rhsType);
+                Error(funcall, "Incompatible types during function call: provided: %s and expected: %s\n",
+                    ltype, rtype);
+                return;
+            }
+        }
+        break;
+    }
+    }
+}
+
 void Interpreter::traverseAST(StatementBlockAST *root)
 {
     process_all_scope_variables(&root->scope);
@@ -333,39 +427,19 @@ void Interpreter::traverseAST(StatementBlockAST *root)
     for (auto stmt : root->statements) {
         if (stmt->ast_type == AST_VARIABLE_DECLARATION) {
             auto decl = (VariableDeclarationAST *)stmt;
-            if ((decl->definition) && (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
-                FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
-                traverseAST(fundef->function_body);
+            if (decl->definition) {
+                if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
+                    FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
+                    traverseAST(fundef->function_body);
+                } else {
+                    traverseAST((ExpressionAST *)decl->definition);
+                }
             }
         } else if (stmt->ast_type == AST_STATEMENT_BLOCK) {
             traverseAST((StatementBlockAST *)stmt);
-        } else if (stmt->ast_type == AST_ASSIGNMENT) {
-            auto assgn = (AssignmentAST *)stmt;
-            // Errors to check:
-            // any variable used in the assignment needs to be declared in the scope. To be checked here or recursively?
-            checkVariablesInExpression(assgn->lhs);
-
-            if (!success) {
-                return;
-            }
-
-            // lhs cannot be const (or a literal, same thing)
-            if (isConstExpression(assgn->lhs)) {
-                Error(assgn, "The left hand side of an assignment must be an l-value\n");
-            }
-
-            // lhs and rhs need to have the same type
-            TypeAST *lhsType, *rhsType;
-            lhsType = deduceType(assgn->lhs);
-            rhsType = deduceType(assgn->rhs);
-            if (!compatibleTypes(lhsType, rhsType)) {
-                char ltype[64] = {}, rtype[64] = {};
-                printTypeToStr(ltype, lhsType);
-                printTypeToStr(rtype, rhsType);
-                Error(assgn, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
-            }
-
-            // check for width of operands (in case of literals), like assigning 512 to an u8.
+        } else if ((stmt->ast_type == AST_ASSIGNMENT) ||
+            (stmt->ast_type == AST_FUNCTION_CALL)) {
+            traverseAST((ExpressionAST *)stmt);
         }
     }
     current_scope = previous_scope;

@@ -64,7 +64,11 @@ void c_generator::do_ident()
 
 void c_generator::generate_line_info(BaseAST * ast)
 {
-    fprintf(output_file, "#line %d \"%s\"\n", ast->line_num, ast->filename);
+    if ((last_filename != ast->filename) || (last_linenum != ast->line_num)) {
+        last_linenum = ast->line_num;
+        last_filename = ast->filename;
+        fprintf(output_file, "#line %d \"%s\"\n", ast->line_num, ast->filename);
+    }
 }
 
 void c_generator::generate_dangling_functions()
@@ -75,7 +79,7 @@ void c_generator::generate_dangling_functions()
     }
 }
 
-void c_generator::generate_function_prototype(VariableDeclarationAST * decl)
+void c_generator::generate_function_prototype(VariableDeclarationAST * decl, bool second_pass)
 {
     // no ident since prototypes are always top level
 
@@ -99,12 +103,19 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl)
     if (decl->flags & DECL_FLAG_IS_CONSTANT) {
         fprintf(output_file, " %s ", decl->varname);
     } else if (decl->definition) {
-        if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
+        if (!second_pass && decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
 
-            // if we have a definition, we need to write it somewhere
-            // only do this if the definition is a function body, not 
-            // for example a variable
+            /* if we have a definition, we need to write it somewhere
+               only do this if the definition is a function body, not 
+               for example a variable
+
+               The purpose of the second pass variable is to ensure that function pointers
+               do get a prototype in the prototype section
+
+            */
             fprintf(output_file, " %s_implementation ", decl->varname);
+            dangling_functions.push_back(decl);
+
         } else {
             fprintf(output_file, " (*%s) ", decl->varname);
         }
@@ -120,6 +131,11 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl)
         first = false;
     }
     fprintf(output_file, ");\n");
+
+    if (!second_pass && decl->definition && decl->definition->ast_type == AST_FUNCTION_DEFINITION &&
+        !(decl->flags & DECL_FLAG_IS_CONSTANT) && !isMain) 
+        generate_function_prototype(decl, true);
+    
 }
 
 void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
@@ -164,6 +180,19 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
                 // a pure function pointer might not have a definition at all
                 return;
             }
+            if (decl->definition && decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
+                // let's write here the actual implementation, now. 
+                // and later we assign it. 
+                VariableDeclarationAST impl;
+                char func_name[256];
+                sprintf_s(func_name, "%s_implementation", decl->varname);
+                memcpy(&impl, decl, sizeof(impl));
+                impl.flags ^= DECL_FLAG_IS_CONSTANT;
+                impl.varname = func_name;
+                generate_variable_declaration(&impl);
+                return;
+            }
+
         }
 
         // first print the return type
@@ -211,19 +240,6 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
             // to create an implementation and assign it
             fprintf(output_file, ";\n");
 
-            if (decl->definition && decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
-                // let's write here the actual implementation, now. 
-                // and later we assign it. 
-                VariableDeclarationAST impl;
-                char func_name[256];
-                sprintf_s(func_name, "%s_implementation", decl->varname);
-                memcpy(&impl, decl, sizeof(impl));
-                impl.flags ^= DECL_FLAG_IS_CONSTANT;
-                impl.varname = func_name;
-                generate_variable_declaration(&impl);
-
-                dangling_functions.push_back(decl);
-            }
         }
     } else {
         assert(!"Type not suported on C code generation yet");
@@ -387,6 +403,8 @@ void c_generator::generate_c_file(const char * filename, FileAST * root)
     output_file = fopen(filename, "w");
 #endif      
     ident = 0;
+    last_filename = nullptr;
+    last_linenum = 0;
     dangling_functions.reset();
     insert_dangling_funcs = false;
     // dangling functions have an issue with possible local functions

@@ -6,13 +6,16 @@ class c_generator
 {
     FILE *output_file;
     u32 ident;
+    TextType last_filename;
+    u32 last_linenum;
+
     Array<VariableDeclarationAST *> dangling_functions;
     bool insert_dangling_funcs;
     void generate_preamble();
     void do_ident();
     void generate_line_info(BaseAST *ast);
     void generate_dangling_functions();
-    void generate_function_prototype(VariableDeclarationAST *decl);
+    void generate_function_prototype(VariableDeclarationAST *decl, bool second_pass = false);
     void generate_variable_declaration(VariableDeclarationAST *decl);
     void generate_argument_declaration(ArgumentDeclarationAST *arg);
     void generate_statement_block(StatementBlockAST *block);
