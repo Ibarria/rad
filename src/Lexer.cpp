@@ -22,7 +22,9 @@ struct ReservedKeyword {
     { "if",       TK_IF },
     { "for",      TK_FOR },
     { "bool",     TK_BOOL },
-    { "string",   TK_STRING },
+    { "true",     TK_TRUE },
+    { "false",    TK_FALSE },
+    { "string",   TK_STRING_KEYWORD },
     { "int",      TK_INT },
     { "u8",       TK_U8 },
     { "u16",      TK_U16 },
@@ -237,10 +239,10 @@ void Lexer::parseNumber(Token & tok, char c)
         file.getc(c);
     }
     if (decimal) {
-        tok.pl.pf64 = dtotal;
+        tok._f64 = dtotal;
         tok.type = TK_FNUMBER;
     } else {
-        tok.pl.pu64 = total;
+        tok._u64 = total;
         tok.type = TK_NUMBER;
     }
 }
@@ -370,7 +372,7 @@ void Lexer::getNextTokenInternal(Token &tok)
                 Error("Character was not defined before end of file\n");
             }
             tok.type = TK_CHAR;
-            tok.pl.pu32 = c;
+            tok._u64 = c;
             if (!file.getc(c)) {
                 Error("Character was not defined before end of file\n");
             }

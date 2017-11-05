@@ -1,22 +1,41 @@
 #include "AST.h"
 #include <stdio.h>
 
-const char *BasicTypeToStr(BasicType t)
+const char *BasicTypeToStr(const DirectTypeAST *t)
 {
-    switch (t)
+    switch (t->basic_type)
     {
     case BASIC_TYPE_BOOL:  return "bool";
     case BASIC_TYPE_STRING:  return "string";
-    case BASIC_TYPE_S8:  return "s8";
-    case BASIC_TYPE_S16: return "s16";
-    case BASIC_TYPE_S32: return "s32";
-    case BASIC_TYPE_S64: return "s64";
-    case BASIC_TYPE_U8:  return "u8";
-    case BASIC_TYPE_U16: return "u16";
-    case BASIC_TYPE_U32: return "u32";
-    case BASIC_TYPE_U64: return "u64";
-    case BASIC_TYPE_F32: return "f32";
-    case BASIC_TYPE_F64: return "f64";
+    case BASIC_TYPE_INTEGER: {
+        if (t->isSigned) {
+            switch (t->size_in_bits) {
+            case 8: return "s8";
+            case 16: return "s16";
+            case 32: return "s32";
+            default:
+            case 64: return "s64";
+            }
+            assert(false);
+            return "UNKNOWN";
+        } else {
+            switch (t->size_in_bits) {
+            case 8: return "u8";
+            case 16: return "u16";
+            case 32: return "u32";
+            default:
+            case 64: return "u64";
+            }
+            assert(false);
+            return "UNKNOWN";
+        }
+    }
+    case BASIC_TYPE_FLOATING: 
+        if (t->size_in_bits == 32) return "f32";
+        if (t->size_in_bits == 64) return "f64";
+        return "f64";
+        // assert(false);
+        return "UNKNOWN";
     }
     return "UNKNOWN";
 }
@@ -39,23 +58,32 @@ void printAST(const BaseAST *ast, int ident)
     if (ast == nullptr) return;
 
     switch (ast->ast_type) {
-    case AST_CONSTANT_NUMBER: {
-        const ConstantNumberAST *c = (const ConstantNumberAST *)ast;
-        printf("%*sConstNumAST type: %s", ident, "", BasicTypeToStr(c->type.type));
-        switch (c->type.type)
+    case AST_LITERAL: {
+        const LiteralAST *c = (const LiteralAST *)ast;
+        printf("%*sLiteralAST type: %s", ident, "", 
+            BasicTypeToStr(&c->typeAST));
+        switch (c->typeAST.basic_type)
         {
-        case BASIC_TYPE_F32:
-            printf(" %f", c->pl.pf32);
+        case BASIC_TYPE_FLOATING:
+            printf(" %f", c->_f64);
             break;
-        case BASIC_TYPE_F64:
-            printf(" %lf", c->pl.pf64);
+        case BASIC_TYPE_BOOL:
+            if (c->_bool) printf(" true");
+            else printf(" false");
             break;
-        case BASIC_TYPE_U32:
-            printf(" %d", c->pl.pu32);
+        case BASIC_TYPE_STRING:
+            printf(" %s", c->str);
             break;
-        case BASIC_TYPE_U64:
-            printf(" %lld", c->pl.pu64);
+        case BASIC_TYPE_INTEGER:
+            // for ease of operation, everything else is assumed to be an integer
+            if (c->typeAST.isSigned) {
+                printf(" %lld", c->_s64);
+            } else {
+                printf(" %llu", c->_u64);
+            }
             break;
+        default:
+            assert(false);
         }
         printf("\n");
         break;
@@ -100,7 +128,7 @@ void printAST(const BaseAST *ast, int ident)
     }
     case AST_DIRECT_TYPE: {
         const DirectTypeAST *a = (const DirectTypeAST *)ast;
-        printf("%*sDirectTypeAST %s\n", ident, "", BasicTypeToStr(a->type));
+        printf("%*sDirectTypeAST %s\n", ident, "", BasicTypeToStr(a)); 
         break;
     }
     case AST_ARGUMENT_DECLARATION: {
@@ -143,11 +171,6 @@ void printAST(const BaseAST *ast, int ident)
     case AST_IDENTIFIER: {
         const IdentifierAST *a = (const IdentifierAST *)ast;
         printf("%*sIdentifierAST name: [%s]\n", ident, "", a->name);
-        break;
-    }
-    case AST_CONSTANT_STRING: {
-        const ConstantStringAST *a = (const ConstantStringAST *)ast;
-        printf("%*sConstantStringAST name: [%s]\n", ident, "", a->str);
         break;
     }
     case AST_FUNCTION_CALL: {

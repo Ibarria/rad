@@ -9,17 +9,12 @@
 class Token
 {
 public: 
-	TOKEN_TYPE type;
+	TOKEN_TYPE type = TK_INVALID;
 	SrcLocation loc;
-	union payload {
-		u32 pu32;
-		u64 pu64;
-		s32 ps32;
-		s64 ps64;
-		f32 pf32;
-		f64 pf64;
-	} pl;
-    TextType string;
+    u64 _u64 = 0;
+    f64 _f64 = 0.0;
+    TextType string = nullptr;
+    bool _bool = false;
 
     Token(TOKEN_TYPE t) : type(t) {}
     Token() : type(TK_INVALID) {}

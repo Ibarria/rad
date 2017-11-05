@@ -16,9 +16,24 @@ static inline bool isStringDeclaration(VariableDeclarationAST *decl)
 {
     if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
         auto dt = (DirectTypeAST *)decl->specified_type;
-        return dt->type == BASIC_TYPE_STRING;
+        return dt->basic_type == BASIC_TYPE_STRING;
     }
     return false;
+}
+
+static bool isStringDefinition(DefinitionAST *def)
+{
+    if (def->ast_type == AST_LITERAL) {
+        auto lit = (LiteralAST *)def;
+        return lit->typeAST.basic_type == BASIC_TYPE_STRING;
+    }
+    return false;
+}
+
+static const char *boolToStr(bool b)
+{
+    if (b) return "true";
+    return "false";
 }
 
 void c_generator::generate_preamble()
@@ -114,13 +129,13 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
 
     if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
         auto dt = (DirectTypeAST *)decl->specified_type;
-        fprintf(output_file, BasicTypeToStr(dt->type));
+        fprintf(output_file, BasicTypeToStr(dt));
         fprintf(output_file, " %s", decl->varname);
         
         if (decl->definition) {
             fprintf(output_file, " = ");
 
-            if (decl->definition->ast_type == AST_CONSTANT_STRING) {
+            if (isStringDefinition(decl->definition)) {
                 // special use for strings since they are a struct
                 if (isStringDeclaration(decl)) {
                     fprintf(output_file, "{ ");
@@ -220,7 +235,7 @@ void c_generator::generate_argument_declaration(ArgumentDeclarationAST * arg)
 {
     assert(arg->type->ast_type == AST_DIRECT_TYPE);
     auto dt = (DirectTypeAST *)arg->type;
-    fprintf(output_file, BasicTypeToStr(dt->type));
+    fprintf(output_file, BasicTypeToStr(dt));
     fprintf(output_file, " %s", arg->name);
 }
 
@@ -294,19 +309,24 @@ void c_generator::generate_assignment(AssignmentAST * assign)
 void c_generator::generate_expression(ExpressionAST * expr)
 {
     switch (expr->ast_type) {
-    case AST_CONSTANT_NUMBER: {
-        auto cn = (ConstantNumberAST *)expr;
-        if ((cn->type.type == BASIC_TYPE_F32) ||
-            (cn->type.type == BASIC_TYPE_F64)) {
-            fprintf(output_file, "%f", cn->pl.pf64);
-        } else if (cn->type.type == BASIC_TYPE_U64) {
-            fprintf(output_file, "%lld", cn->pl.pu64);
+    case AST_LITERAL: {
+        auto lit = (LiteralAST *)expr;
+        switch (lit->typeAST.basic_type) {
+        case BASIC_TYPE_FLOATING:
+            fprintf(output_file, "%f", lit->_f64);
+            break;
+        case BASIC_TYPE_BOOL:
+            fprintf(output_file, "%s", boolToStr(lit->_bool));
+            break;
+        case BASIC_TYPE_STRING:
+            fprintf(output_file, "\"%s\"", lit->str);
+            break;
+        case BASIC_TYPE_INTEGER:
+            if (lit->typeAST.isSigned) fprintf(output_file, "%lld", lit->_s64);
+            else fprintf(output_file, "%llu", lit->_u64);
+            break;
         }
-        break;
-    }
-    case AST_CONSTANT_STRING: {
-        auto cs = (ConstantStringAST *)expr;
-        fprintf(output_file, "\"%s\"", cs->str);
+
         break;
     }
     case AST_IDENTIFIER: {
@@ -325,6 +345,13 @@ void c_generator::generate_expression(ExpressionAST * expr)
     }
     case AST_FUNCTION_CALL: {
         generate_function_call((FunctionCallAST *)expr);
+        break;
+    }
+    case AST_UNARY_OPERATION: {
+        auto unop = (UnaryOperationAST *)expr;
+        fprintf(output_file, TokenTypeToCOP(unop->op));
+
+        generate_expression(unop->expr);
         break;
     }
     default:
@@ -348,7 +375,7 @@ void c_generator::generate_type(BaseAST * ast)
 {
     assert(ast->ast_type == AST_DIRECT_TYPE);
     auto dt = (DirectTypeAST *)ast;
-    fprintf(output_file, BasicTypeToStr(dt->type));
+    fprintf(output_file, BasicTypeToStr(dt));
 }
 
 

@@ -71,6 +71,22 @@ bool Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
     return true;
 }
 
+static bool isIntegerType(BasicType t)
+{
+    return (t == BASIC_TYPE_INTEGER);
+}
+
+static bool isFloatType(BasicType t)
+{
+    return (t == BASIC_TYPE_FLOATING);
+}
+
+static bool isUnaryPrefixOperator(TOKEN_TYPE type) 
+{
+    return (type == TK_PLUS)
+        || (type == TK_MINUS)
+        || (type == TK_BANG);
+}
 
 static bool isAssignmentOperator(TOKEN_TYPE type)
 {
@@ -159,7 +175,7 @@ static bool isVariableTypeToken(TOKEN_TYPE t)
         || (t == TK_FLOAT)
         || (t == TK_F32)
         || (t == TK_F64)
-        || (t == TK_STRING);
+        || (t == TK_STRING_KEYWORD);
 }
 
 TypeAST *Parser::parseDirectType()
@@ -178,42 +194,60 @@ TypeAST *Parser::parseDirectType()
     setASTinfo(this, type);
     type->name = t.string;
     switch (t.type) {
-    case TK_STRING:
-        type->type = BASIC_TYPE_STRING;
+    case TK_BOOL:
+        type->basic_type = BASIC_TYPE_BOOL;
+        break;
+    case TK_STRING_KEYWORD:
+        type->basic_type = BASIC_TYPE_STRING;
         break;
     case TK_U8:
-        type->type = BASIC_TYPE_U8;
+        type->basic_type = BASIC_TYPE_INTEGER;
+        type->size_in_bits = 8;
         break;
     case TK_U16:
-        type->type = BASIC_TYPE_U16;
+        type->basic_type = BASIC_TYPE_INTEGER;
+        type->size_in_bits = 16;
         break;
     case TK_U32:
-        type->type = BASIC_TYPE_U32;
+        type->basic_type = BASIC_TYPE_INTEGER;
+        type->size_in_bits = 32;
         break;
     case TK_INT:
     case TK_U64:
-        type->type = BASIC_TYPE_U64;
+        type->basic_type = BASIC_TYPE_INTEGER;
+        type->size_in_bits = 64;
         break;
     case TK_S8:
-        type->type = BASIC_TYPE_S8;
+        type->basic_type = BASIC_TYPE_INTEGER;
+        type->isSigned = true;
+        type->size_in_bits = 8;
         break;
     case TK_S16:
-        type->type = BASIC_TYPE_S16;
+        type->basic_type = BASIC_TYPE_INTEGER;
+        type->isSigned = true;
+        type->size_in_bits = 16;
         break;
     case TK_S32:
-        type->type = BASIC_TYPE_S32;
+        type->basic_type = BASIC_TYPE_INTEGER;
+        type->isSigned = true;
+        type->size_in_bits = 32;
         break;
     case TK_S64:
-        type->type = BASIC_TYPE_S64;
+        type->basic_type = BASIC_TYPE_INTEGER;
+        type->isSigned = true;
+        type->size_in_bits = 64;
         break;
     case TK_F32:
-        type->type = BASIC_TYPE_F32;
+        type->basic_type = BASIC_TYPE_FLOATING;
+        type->size_in_bits = 32;
         break;
     case TK_FLOAT:
     case TK_F64:
-        type->type = BASIC_TYPE_F64;
+        type->basic_type = BASIC_TYPE_FLOATING;
+        type->size_in_bits = 64;
         break;
     case TK_IDENTIFIER :
+    default:
         assert(!"Identifier types, custom types are not implemented");
     }
 
@@ -408,6 +442,11 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
         delete fundef;
         return nullptr;
     }
+    if (!lex->checkToken(TK_OPEN_BRACKET)) {
+        Error("Function declaration needs to be followed by an implementation {} \n");
+        delete fundef;
+        return nullptr;
+    }
     fundef->function_body = parseStatementBlock();
     if (!success) {
         delete fundef;
@@ -462,31 +501,32 @@ ExpressionAST * Parser::parseLiteral()
         setASTinfo(this, ex);
         ex->name = t.string;
         return ex;
-    } else if ((t.type == TK_NUMBER) || (t.type == TK_FNUMBER)) {
-        ConstantNumberAST *ex = new ConstantNumberAST();
+    } else if ((t.type == TK_NUMBER) || (t.type == TK_TRUE) ||
+        (t.type == TK_FNUMBER) || (t.type == TK_STRING) || (t.type == TK_FALSE)) {
+        auto ex = new LiteralAST();
         setASTinfo(this, ex);
-        setASTinfo(this, &ex->type);
+        setASTinfo(this, &ex->typeAST);
 
-        ex->type.isLiteral = true;
+        ex->typeAST.isLiteral = true;
 
         if (t.type == TK_NUMBER) {
-            ex->type.type = BASIC_TYPE_U64;
-            ex->pl.pu64 = t.pl.pu64;
-        } else {
-            ex->type.type = BASIC_TYPE_F64;
-            ex->pl.pf64 = t.pl.pf64;
+            ex->typeAST.basic_type = BASIC_TYPE_INTEGER;
+            ex->_u64 = t._u64;
+        } else if (t.type == TK_FNUMBER) {
+            ex->typeAST.basic_type = BASIC_TYPE_FLOATING;
+            ex->_f64 = t._f64;
+        } else if (t.type == TK_STRING) {
+            ex->typeAST.basic_type = BASIC_TYPE_STRING;
+            ex->str = t.string;
+        } else if (t.type == TK_TRUE) {
+            ex->typeAST.basic_type = BASIC_TYPE_BOOL;
+            ex->_bool = true;
+        } else if (t.type == TK_FALSE) {
+            ex->typeAST.basic_type = BASIC_TYPE_BOOL;
+            ex->_bool = false;
         }
         return ex;
-    } else if (t.type == TK_STRING) {
-        ConstantStringAST *str = new ConstantStringAST();
-        setASTinfo(this, str);
-        setASTinfo(this, &str->type);
-        str->type.isLiteral = true;
-        str->type.type = BASIC_TYPE_STRING;
-
-        str->str = t.string;
-        return str;
-    }
+    } 
     Error("Could not parse a literal expression! Unknown token type: %s", TokenTypeToStr(t.type));
     return nullptr;
 }
@@ -500,7 +540,74 @@ ExpressionAST * Parser::parseUnaryExpression()
         if (lex->checkAheadToken(TK_OPEN_PAREN, 1)) {
             return parseFunctionCall();
         }
-    } 
+    } else if (isUnaryPrefixOperator(t.type)) {
+        lex->consumeToken();
+        ExpressionAST *expr = parseLiteral();
+        if (!success) return nullptr;
+
+        // optimization, if expr is a real literal, merge the actual value
+        if (expr->ast_type == AST_LITERAL) {
+            auto lit = (LiteralAST *)expr;
+            switch (lit->typeAST.basic_type) {
+            case BASIC_TYPE_FLOATING:
+                if (t.type == TK_BANG) {
+                    Error("The bang operator cannot be used with floating point numbers");
+                    return nullptr;
+                } else if (t.type == TK_MINUS) {
+                    lit->_f64 = -lit->_f64;
+                    lit->typeAST.isSigned = true;
+                    return expr;
+                } else {
+                    assert(t.type == TK_PLUS);
+                    // a plus unary sign can be ignored
+                    return expr;
+                }
+                break;
+            case BASIC_TYPE_BOOL:
+                if (t.type == TK_BANG) {
+                    lit->_bool = !lit->_bool;
+                    return expr;
+                } else {
+                    Error("Operator %s cannot be used with boolean types", TokenTypeToStr(t.type));
+                    return nullptr;
+                }
+                break;
+            case BASIC_TYPE_STRING:
+                Error("The type string does not support unary operators");
+                return nullptr;
+                break;
+            case BASIC_TYPE_INTEGER:
+                if (t.type == TK_BANG) {
+                    Error("Operator ! cannot be used for integer types");
+                    return nullptr;
+                    //UnaryOperationAST *un = new UnaryOperationAST();
+                    //setASTinfo(this, un);
+                    //un->op = t.type;
+                    //un->expr = expr;                    
+                    //return un;
+                } else if (t.type == TK_MINUS) {
+                    if (lit->typeAST.isSigned) {
+                        lit->_s64 = -lit->_s64;
+                    } else {
+                        lit->_s64 = -(s64)lit->_u64;
+                        lit->typeAST.isSigned = true;
+                    }
+                    return expr;
+                } else {
+                    assert(t.type == TK_PLUS);
+                    // a plus unary sign can be ignored
+                    return expr;
+                }
+                break;
+            }
+        }
+        UnaryOperationAST *un = new UnaryOperationAST();
+        setASTinfo(this, un);
+        un->op = t.type;
+        un->expr = parseLiteral();
+        return un;
+    }
+    // @TODO: Handle postfix operators after the parseLiteral
     return parseLiteral();
 }
 

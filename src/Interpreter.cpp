@@ -15,7 +15,7 @@ static void printTypeToStr(char *s, TypeAST *type)
     switch (type->ast_type) {
     case AST_DIRECT_TYPE: {
         auto dt = (DirectTypeAST *)type;
-        sprintf(s, "%s ", BasicTypeToStr(dt->type));
+        sprintf(s, "%s ", BasicTypeToStr(dt));
         break;
     }
     case AST_FUNCTION_TYPE: {
@@ -117,16 +117,19 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
         // do not recurse on inferring types as this could cause infinite recursion
         return decl->specified_type;
     }
-    case AST_CONSTANT_NUMBER: {
-        ConstantNumberAST *cons = (ConstantNumberAST *)expr;
-        return &cons->type;
-    }
-    case AST_CONSTANT_STRING: {
-        auto str = (ConstantStringAST *)expr;
-        return &str->type;
+    case AST_LITERAL: {
+        auto lt = (LiteralAST *)expr;
+        return &lt->typeAST;
     }
     case AST_BINARY_OPERATION: {
+        // @TODO: the type should be a combination of both lhs and rhs?
         return deduceType(((BinaryOperationAST *)expr)->lhs);
+    }
+    case AST_UNARY_OPERATION: {
+        auto un = (UnaryOperationAST *)expr;
+        // @TODO: Use the operation in `un` to choose the type
+        return deduceType(un->expr);
+        break;
     }
     default:
         assert("We should never be here, we could not parse this type\n");
@@ -152,7 +155,7 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
         auto ldt = (DirectTypeAST *)lhs;
         // Modify this when pointer and array support is introduced
         assert(!(ldt->isArray || ldt->isPointer || rdt->isArray || rdt->isPointer));
-        return rdt->type == ldt->type;
+        return rdt->basic_type == ldt->basic_type;
         break;
     }
     case AST_ARRAY_TYPE: {
@@ -270,15 +273,16 @@ bool Interpreter::checkVariablesInExpression(ExpressionAST *expr)
 
         return true;
     }
-    case AST_CONSTANT_NUMBER: {
-        return true;
-    }
-    case AST_CONSTANT_STRING: {
+    case AST_LITERAL: {
         return true;
     }
     case AST_BINARY_OPERATION: {
         return checkVariablesInExpression(((BinaryOperationAST *)expr)->lhs) &&
             checkVariablesInExpression(((BinaryOperationAST *)expr)->rhs);
+    }
+    case AST_UNARY_OPERATION: {
+        auto un = (UnaryOperationAST *)expr;
+        return checkVariablesInExpression(un->expr);
     }
     default:
         assert("We should never be here, we could not parse this type\n");
@@ -303,13 +307,13 @@ bool Interpreter::isConstExpression(ExpressionAST *expr)
 
         return !!(decl->flags & DECL_FLAG_IS_CONSTANT);
     }
-    case AST_CONSTANT_NUMBER: {
-        return true;
-    }
-    case AST_CONSTANT_STRING: {
+    case AST_LITERAL: {
         return true;
     }
     case AST_BINARY_OPERATION: {
+        return true;
+    }
+    case AST_UNARY_OPERATION: {
         return true;
     }
     default:

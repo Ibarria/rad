@@ -14,65 +14,23 @@ void Token::clear()
     string = nullptr;
 }
 
-//Token::Token(const Token & rhs)
-//{
-//	*this = rhs;
-//}
-//
-//Token::Token(Token && rhs)
-//{
-//	*this = rhs;
-//}
-//
-//Token & Token::operator=(Token && rhs)
-//{
-//	if (type == STRING || type == IDENTIFIER) {
-//		if (pl.pstr) {
-//			free(pl.pstr);
-//			pl.pstr = nullptr;
-//		}
-//	}
-//	type = rhs.type;
-//	pl = rhs.pl;
-//	rhs.pl.pstr = nullptr;
-//	return *this;
-//}
-//
-//Token & Token::operator=(Token const & rhs)
-//{
-//	if (type == STRING || type == IDENTIFIER) {
-//		if (pl.pstr) {
-//			free(pl.pstr);
-//			pl.pstr = nullptr;
-//		}
-//	}
-//	type = rhs.type;
-//	if (type == STRING || type == IDENTIFIER) {
-//		u32 s = (u32)strlen(rhs.pl.pstr);
-//		pl.pstr = new char[s + 1];
-//		for (u32 i = 0; i < s; i++) pl.pstr[i] = rhs.pl.pstr[i];
-//	} else {
-//		pl = rhs.pl;
-//	}
-//	return *this;
-//}
 
 void Token::print()
 {
 	printf("Token %03d:%03d type %s", loc.line, loc.col, TokenTypeToStr(type));
 	switch (type) {
 	case TK_NUMBER:
-		printf(" %lld", pl.pu64);
+		printf(" %lld", _u64);
 		break;
     case TK_FNUMBER:
-        printf(" %lf", pl.pf64);
+        printf(" %f", _f64);
         break;
     case TK_IDENTIFIER:
 	case TK_STRING:
 		printf(" %s", string);
 		break;
 	case TK_CHAR:
-		printf(" %c", pl.pu32);
+		printf(" %c", (char)_u64);
 		break;
 	}
 	printf("\n");
@@ -134,11 +92,14 @@ const char * TokenTypeToStr(TOKEN_TYPE type)
         CASE_TOKEN_TYPE(TK_COMMA);
         CASE_TOKEN_TYPE(TK_BANG);
         CASE_TOKEN_TYPE(TK_STRING);
+        CASE_TOKEN_TYPE(TK_STRING_KEYWORD);
         CASE_TOKEN_TYPE(TK_CHAR);
         CASE_TOKEN_TYPE(TK_IF);
         CASE_TOKEN_TYPE(TK_FOR);
         CASE_TOKEN_TYPE(TK_RETURN);
         CASE_TOKEN_TYPE(TK_BOOL);
+        CASE_TOKEN_TYPE(TK_TRUE);
+        CASE_TOKEN_TYPE(TK_FALSE);
         CASE_TOKEN_TYPE(TK_INT);
         CASE_TOKEN_TYPE(TK_U8);
         CASE_TOKEN_TYPE(TK_U16);

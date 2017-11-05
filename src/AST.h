@@ -18,16 +18,8 @@ struct Scope {
 enum BasicType {
     BASIC_TYPE_BOOL,
     BASIC_TYPE_STRING,
-    BASIC_TYPE_S8, 
-    BASIC_TYPE_S16, 
-    BASIC_TYPE_S32, 
-    BASIC_TYPE_S64,
-    BASIC_TYPE_U8, 
-    BASIC_TYPE_U16, 
-    BASIC_TYPE_U32, 
-    BASIC_TYPE_U64,
-    BASIC_TYPE_F32, 
-    BASIC_TYPE_F64
+    BASIC_TYPE_INTEGER,
+    BASIC_TYPE_FLOATING
 };
 
 enum AST_CLASS_TYPE {
@@ -46,8 +38,7 @@ enum AST_CLASS_TYPE {
     AST_DIRECT_TYPE,
     AST_ARRAY_TYPE,
     AST_IDENTIFIER,
-    AST_CONSTANT_NUMBER,
-    AST_CONSTANT_STRING,
+    AST_LITERAL,
     AST_BINARY_OPERATION,
     AST_UNARY_OPERATION,
     AST_ASSIGNMENT,
@@ -133,11 +124,12 @@ struct DirectTypeAST : TypeAST
 {
     DirectTypeAST() { ast_type = AST_DIRECT_TYPE; }
 
-	BasicType type;
+	BasicType basic_type;
+    bool isSigned = false;
 	bool isArray = false;
 	bool isPointer = false;
     bool isLiteral = false;
-    u32 size_in_bytes = 0;
+    u32 size_in_bits = 0;
 	TextType name = nullptr;
 };
 
@@ -156,25 +148,15 @@ struct IdentifierAST : ExpressionAST
     TextType name = nullptr;
 };
 
-struct ConstantNumberAST : ExpressionAST
+struct LiteralAST : ExpressionAST
 {
-    ConstantNumberAST() { ast_type = AST_CONSTANT_NUMBER; pl.pu64 = 0; }
-    union payload {
-        u32 pu32;
-        u64 pu64;
-        s32 ps32;
-        s64 ps64;
-        f32 pf32;
-        f64 pf64;
-    } pl;
-    DirectTypeAST type;
-};
-
-struct ConstantStringAST : ExpressionAST
-{
-    ConstantStringAST() { ast_type = AST_CONSTANT_STRING; }
+    LiteralAST() { ast_type = AST_LITERAL; }
+    u64 _u64 = 0;
+    s64 _s64 = 0;
+    f64 _f64 = 0.0;
+    bool _bool = false;
     TextType str = nullptr;
-    DirectTypeAST type;
+    DirectTypeAST typeAST;
 };
 
 struct BinaryOperationAST : ExpressionAST
@@ -188,6 +170,8 @@ struct BinaryOperationAST : ExpressionAST
 struct UnaryOperationAST : ExpressionAST
 {
     UnaryOperationAST() { ast_type = AST_UNARY_OPERATION; }
+    TOKEN_TYPE op = TK_INVALID;
+    ExpressionAST *expr = nullptr;
 };
 
 struct AssignmentAST : ExpressionAST
@@ -212,4 +196,4 @@ struct VariableDeclarationAST : StatementAST
 };
 
 void printAST(const BaseAST*ast, int ident);
-const char *BasicTypeToStr(BasicType t);
+const char *BasicTypeToStr(const DirectTypeAST* t);
