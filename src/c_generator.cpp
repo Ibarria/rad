@@ -296,10 +296,10 @@ void c_generator::generate_expression(ExpressionAST * expr)
     switch (expr->ast_type) {
     case AST_CONSTANT_NUMBER: {
         auto cn = (ConstantNumberAST *)expr;
-        if ((cn->type == BASIC_TYPE_F32) ||
-            (cn->type == BASIC_TYPE_F64)) {
+        if ((cn->type.type == BASIC_TYPE_F32) ||
+            (cn->type.type == BASIC_TYPE_F64)) {
             fprintf(output_file, "%f", cn->pl.pf64);
-        } else if (cn->type == BASIC_TYPE_U64) {
+        } else if (cn->type.type == BASIC_TYPE_U64) {
             fprintf(output_file, "%lld", cn->pl.pu64);
         }
         break;

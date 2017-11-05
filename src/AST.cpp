@@ -41,8 +41,8 @@ void printAST(const BaseAST *ast, int ident)
     switch (ast->ast_type) {
     case AST_CONSTANT_NUMBER: {
         const ConstantNumberAST *c = (const ConstantNumberAST *)ast;
-        printf("%*sConstNumAST type: %s", ident, "", BasicTypeToStr(c->type));
-        switch (c->type)
+        printf("%*sConstNumAST type: %s", ident, "", BasicTypeToStr(c->type.type));
+        switch (c->type.type)
         {
         case BASIC_TYPE_F32:
             printf(" %f", c->pl.pf32);

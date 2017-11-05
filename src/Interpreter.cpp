@@ -10,6 +10,35 @@
 # define vsprintf_s vsnprintf
 #endif
 
+static void printTypeToStr(char *s, TypeAST *type)
+{
+    switch (type->ast_type) {
+    case AST_DIRECT_TYPE: {
+        auto dt = (DirectTypeAST *)type;
+        sprintf(s, "%s ", BasicTypeToStr(dt->type));
+        break;
+    }
+    case AST_FUNCTION_TYPE: {
+        auto ft = (FunctionTypeAST *)type;
+        sprintf(s, "(");
+        for (auto arg : ft->arguments) printTypeToStr(s, arg->type);
+        sprintf(s, ") ");
+        if (ft->return_type) {
+            printTypeToStr(s, ft->return_type);
+        } else {
+            sprintf(s, "-> void ");
+        }
+        break;
+    }
+    case AST_ARRAY_TYPE: {
+        assert(!"Unsupported array type");
+        break;
+    }
+    default:
+        assert(!"Unsupported type");
+    }
+}
+
 void Interpreter::Error(BaseAST *ast, const char *msg, ...)
 {
     va_list args;
@@ -90,16 +119,11 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
     }
     case AST_CONSTANT_NUMBER: {
         ConstantNumberAST *cons = (ConstantNumberAST *)expr;
-        DirectTypeAST *direct_type = new DirectTypeAST();
-        copyASTloc(expr, direct_type);
-        direct_type->type = cons->type;
-        return direct_type;
+        return &cons->type;
     }
     case AST_CONSTANT_STRING: {
-        DirectTypeAST *direct_type = new DirectTypeAST();
-        copyASTloc(expr, direct_type);
-        direct_type->type = BASIC_TYPE_STRING;
-        return direct_type;
+        auto str = (ConstantStringAST *)expr;
+        return &str->type;
     }
     case AST_BINARY_OPERATION: {
         return deduceType(((BinaryOperationAST *)expr)->lhs);
@@ -108,6 +132,51 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
         assert("We should never be here, we could not parse this type\n");
     }
     return nullptr;
+}
+
+/*
+    This function returns true if both types are compatible
+    One thing to be careful here is when we have arrays, that we have the array element
+    type, otherwise is is a plain and simple comparison
+    For pointer types, both their point_to types have to match
+    Future: support type alias
+*/
+bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
+{
+    if (lhs->ast_type != rhs->ast_type) {
+        return false;
+    }
+    switch (lhs->ast_type) {
+    case AST_DIRECT_TYPE: {
+        auto rdt = (DirectTypeAST *)rhs;
+        auto ldt = (DirectTypeAST *)lhs;
+        // Modify this when pointer and array support is introduced
+        assert(!(ldt->isArray || ldt->isPointer || rdt->isArray || rdt->isPointer));
+        return rdt->type == ldt->type;
+        break;
+    }
+    case AST_ARRAY_TYPE: {
+        assert(!"Unimplemented array type");
+        return false;
+        break;
+    }
+    case AST_FUNCTION_TYPE: {
+        auto rft = (FunctionTypeAST *)rhs;
+        auto lft = (FunctionTypeAST *)lhs;
+        if (!compatibleTypes(lft->return_type, rft->return_type)) return false;
+        if (lft->arguments.size() != rft->arguments.size()) return false;
+        for (u32 i = 0; i < lft->arguments.size(); i++) {
+            auto larg = lft->arguments[i];
+            auto rarg = rft->arguments[i];
+            if (!compatibleTypes(larg->type, rarg->type)) return false;
+        }
+        return true;
+        break;
+    }
+    default:
+        return false;
+    }
+    return false;
 }
 
 u32 Interpreter::process_scope_variables(Scope * scope)
@@ -282,6 +351,16 @@ void Interpreter::traverseAST(StatementBlockAST *root)
             }
 
             // lhs and rhs need to have the same type
+            TypeAST *lhsType, *rhsType;
+            lhsType = deduceType(assgn->lhs);
+            rhsType = deduceType(assgn->rhs);
+            if (!compatibleTypes(lhsType, rhsType)) {
+                char ltype[64] = {}, rtype[64] = {};
+                printTypeToStr(ltype, lhsType);
+                printTypeToStr(rtype, rhsType);
+                Error(assgn, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
+            }
+
             // check for width of operands (in case of literals), like assigning 512 to an u8.
         }
     }

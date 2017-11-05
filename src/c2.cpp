@@ -61,7 +61,7 @@ static char c_filename[256];
 
 char *getCfilename(const char *jai_name)
 {
-    strcpy(c_filename, jai_name);
+    strncpy(c_filename, jai_name, sizeof(c_filename));
     char *s = c_filename + strlen(c_filename);
     while ((*s != '.') && (s != c_filename)) s--;
     if (*s == '.') {

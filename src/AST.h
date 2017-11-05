@@ -136,6 +136,8 @@ struct DirectTypeAST : TypeAST
 	BasicType type;
 	bool isArray = false;
 	bool isPointer = false;
+    bool isLiteral = false;
+    u32 size_in_bytes = 0;
 	TextType name = nullptr;
 };
 
@@ -165,13 +167,14 @@ struct ConstantNumberAST : ExpressionAST
         f32 pf32;
         f64 pf64;
     } pl;
-    BasicType type;
+    DirectTypeAST type;
 };
 
 struct ConstantStringAST : ExpressionAST
 {
     ConstantStringAST() { ast_type = AST_CONSTANT_STRING; }
     TextType str = nullptr;
+    DirectTypeAST type;
 };
 
 struct BinaryOperationAST : ExpressionAST

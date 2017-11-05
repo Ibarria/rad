@@ -14,7 +14,7 @@ struct Interpreter
     bool isConstExpression(ExpressionAST *expr);
     bool checkVariablesInExpression(ExpressionAST *expr);
     TypeAST * deduceType(ExpressionAST *expr);
-
+    bool compatibleTypes(TypeAST *lhs, TypeAST *rhs);
     bool infer_types(VariableDeclarationAST *decl);
 
     u32 process_scope_variables(Scope * scope);

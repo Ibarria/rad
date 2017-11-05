@@ -465,18 +465,24 @@ ExpressionAST * Parser::parseLiteral()
     } else if ((t.type == TK_NUMBER) || (t.type == TK_FNUMBER)) {
         ConstantNumberAST *ex = new ConstantNumberAST();
         setASTinfo(this, ex);
+        setASTinfo(this, &ex->type);
+
+        ex->type.isLiteral = true;
 
         if (t.type == TK_NUMBER) {
-            ex->type = BASIC_TYPE_U64;
+            ex->type.type = BASIC_TYPE_U64;
             ex->pl.pu64 = t.pl.pu64;
         } else {
-            ex->type = BASIC_TYPE_F64;
+            ex->type.type = BASIC_TYPE_F64;
             ex->pl.pf64 = t.pl.pf64;
         }
         return ex;
     } else if (t.type == TK_STRING) {
         ConstantStringAST *str = new ConstantStringAST();
         setASTinfo(this, str);
+        setASTinfo(this, &str->type);
+        str->type.isLiteral = true;
+        str->type.type = BASIC_TYPE_STRING;
 
         str->str = t.string;
         return str;
