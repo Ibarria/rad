@@ -133,7 +133,6 @@ int main(int argc, char **argv)
     printTime("C Code generation stage", codegenTime);
     printTime("Binary generation stage", binaryGenTime);
 
-    delete parsedFile;
     return 0;
 }
 

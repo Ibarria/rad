@@ -11,6 +11,7 @@ struct Parser {
     char errorString[512];
     Scope *current_scope = nullptr;
     FileAST *top_level_ast = nullptr;
+    bool isImport = false;
     bool success;
     void Error(const char *msg, ...);
 

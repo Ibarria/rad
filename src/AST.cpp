@@ -40,6 +40,12 @@ const char *BasicTypeToStr(const DirectTypeAST *t)
     return "UNKNOWN";
 }
 
+static const char *BoolToStr(bool b)
+{
+    if (b) return "YES";
+    return "NO";
+}
+
 static void printDeclarationASTFlags(u32 flags)
 {
     if (flags & DECL_FLAG_HAS_BEEN_GENERATED) {
@@ -140,6 +146,7 @@ void printAST(const BaseAST *ast, int ident)
     case AST_FUNCTION_TYPE: {
         const FunctionTypeAST *a = (const FunctionTypeAST *)ast;
         printf("%*sFunctionDeclarationAST with %d arguments\n", ident, "", (int)a->arguments.size());
+        printf("%*s  Foreign: %s VariableArguments: %s\n", ident, "", BoolToStr(a->isForeign), BoolToStr(a->hasVariableArguments));
         for (const auto & arg : a->arguments) printAST(arg, ident + 3);
         if (a->return_type) {
             printf("%*s and return type:\n", ident, "");
@@ -182,6 +189,12 @@ void printAST(const BaseAST *ast, int ident)
     case AST_FILE: {
         const FileAST *a = (const FileAST *)ast;
         for (const auto &it : a->items) printAST(it, ident);
+        break;
+    }
+    case AST_UNARY_OPERATION: {
+        auto un = (const UnaryOperationAST *)ast;
+        printf("%*sUnaryOperation: op: %s\n", ident, "", TokenTypeToStr(un->op));
+        printAST(un->expr, ident + 3);
         break;
     }
     default : 
