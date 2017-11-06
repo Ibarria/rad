@@ -1,6 +1,6 @@
 #pragma once
 
-enum BytecodeInstructions {
+enum BytecodeInstructionOpcode : u16 {
     BC_UNINITIALIZED,
     BC_ZERO_REG,
     BC_COPY_REG_B_TO_A,
@@ -33,3 +33,5 @@ enum BytecodeInstructions {
     BC_UNARY_OPERATION,
     BC_NUMBER_OF_OPERATIONS
 };
+
+

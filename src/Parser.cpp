@@ -21,11 +21,6 @@ extern bool option_printTokens;
 
 #define NEW_AST(ast_type) (ast_type *) setASTinfo(this, (BaseAST *) new(this->pool) ast_type )
 
-void * operator new (u64 size, PoolAllocator *p)
-{
-    return p->alloc(size);
-}
-
 static BaseAST * setASTloc(Parser *p, BaseAST *ast)
 {
     SrcLocation loc;

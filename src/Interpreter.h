@@ -27,6 +27,9 @@ struct Interpreter
     void traverseAST(FileAST *root);
     void traverseAST(StatementBlockAST *root);
     void traverseAST(ExpressionAST *root);
+
+    void perform_bytecode(FileAST *root);
+
     void printErrors();
 };
 

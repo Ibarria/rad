@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "TextType.h"
+#include "bytecode_generator.h"
 
 #ifndef WIN32
 # define sprintf_s sprintf
@@ -249,6 +250,7 @@ bool Interpreter::infer_types(VariableDeclarationAST *decl)
         FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
         decl->specified_type = fundef->declaration;
         decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
+        assert(decl->specified_type->size_in_bits);
         return true;
     }
     default: {
@@ -258,6 +260,7 @@ bool Interpreter::infer_types(VariableDeclarationAST *decl)
         if (t != nullptr) {
             decl->specified_type = t;
             decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
+            assert(t->size_in_bits);
             return true;
         }
         break;
@@ -465,6 +468,17 @@ void Interpreter::traverseAST(ExpressionAST *expr)
     }
 }
 
+void Interpreter::perform_bytecode(FileAST * root)
+{
+    bytecode_generator bcgen;
+    // @TODO : should the bytecode have its own pool? 
+    // makes sense since it is emphymeral, but we need to be able to
+    // get its output too...
+    PoolAllocator bc_pool;   
+    bcgen.setPool(&bc_pool);
+    bytecode_program *bp = bcgen.compileToBytecode(root);
+}
+
 void Interpreter::traverseAST(StatementBlockAST *root)
 {
     if (root == nullptr) return; // this happens for foreign functions
@@ -526,4 +540,7 @@ void Interpreter::traverseAST(FileAST *root)
             assert(!"Unsupported type on top level expression");
         }
     }
+    if (!success) return;
+
+    perform_bytecode(root);
 }

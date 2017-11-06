@@ -1,0 +1,3 @@
+LIBRARY Basic
+EXPORTS
+  printf = myprintf

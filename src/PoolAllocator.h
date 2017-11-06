@@ -21,3 +21,4 @@ public:
     void * alloc(u64 size);
 };
 
+void * operator new (u64 size, PoolAllocator *p);

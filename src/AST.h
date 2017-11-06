@@ -74,6 +74,7 @@ struct DefinitionAST : StatementAST
 
 struct TypeAST : BaseAST
 {
+    u32 size_in_bits = 0;
 };
 
 struct ArgumentDeclarationAST : BaseAST
@@ -85,7 +86,7 @@ struct ArgumentDeclarationAST : BaseAST
 
 struct FunctionTypeAST : TypeAST
 {
-    FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; }
+    FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; size_in_bits = 64; }
     Array<ArgumentDeclarationAST *> arguments;
     TypeAST *return_type = nullptr;
     bool isForeign = false;
@@ -110,6 +111,7 @@ struct FunctionDefinitionAST : DefinitionAST
     FunctionTypeAST *declaration = nullptr;
     StatementBlockAST *function_body = nullptr;
     virtual bool needsSemiColon() const { return false; }
+    u32 size_in_bits = 64;
 };
 
 struct ExpressionAST : DefinitionAST
@@ -137,7 +139,6 @@ struct DirectTypeAST : TypeAST
 	bool isArray = false;
 	bool isPointer = false;
     bool isLiteral = false;
-    u32 size_in_bits = 0;
 	TextType name = nullptr;
 };
 

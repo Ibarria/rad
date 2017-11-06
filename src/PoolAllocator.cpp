@@ -7,6 +7,11 @@
 
 #define MEGABYTES (1024*1024)
 
+void * operator new (u64 size, PoolAllocator *p)
+{
+    return p->alloc(size);
+}
+
 void PoolAllocator::allocateBlock(block * b)
 {
 #ifdef WIN32	
