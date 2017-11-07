@@ -10,8 +10,8 @@ struct BCI {
     u64 big_const = 0;
     BytecodeInstructionOpcode opcode = BC_UNINITIALIZED;
     u32 inst_index = 0; // to be used as IP reg
-    u16 src_reg;
-    u16 dst_reg;
+    s16 src_reg;
+    s16 dst_reg;
     u8 op_size;
 };
 
@@ -39,9 +39,12 @@ struct bc_base_memory {
 struct bytecode_program
 {
     bc_base_memory bss;
-
+    bc_register regs[64];
+    s16 regs_used = 0;
     Array<BCI *> instructions;
-
+    s16 reserve_register() { assert(regs_used < 64);  return regs_used++; }
+    s16 reg_mark() const { return regs_used; }
+    void pop_mark(s16 mark) { regs_used = mark; }
 };
 
 struct bytecode_generator
@@ -49,9 +52,15 @@ struct bytecode_generator
     PoolAllocator *pool = nullptr;
     bytecode_program *program = nullptr;
 
+    BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const);
+    void issue_instruction(BCI *bci);
+
     void setPool(PoolAllocator *p) { pool = p; }
     bytecode_program *compileToBytecode(FileAST *root);
 
+    void initializeVariablesInScope(Scope *scope);
+    void initializeVariable(VariableDeclarationAST *decl);
 
+    void computeExpressionIntoRegister(ExpressionAST *expr, s16 reg);
 };
 

@@ -41,12 +41,14 @@ public:
     T operator[] (u32 index) { assert(index < used_elems); return elems[index]; }
     const T operator[] (u32 index) const { assert(index < used_elems); return elems[index]; }
 
-    void push_back(T elem) {
+    u32 push_back(T elem) {
         if (used_elems + 1 >= num_elems) {
             resize(num_elems * 2);
         }
         elems[used_elems++] = elem;
+        return used_elems - 1;
     }
+
     void resize(u32 new_size) {
         if (new_size < num_elems) return;
         elems = (T *)realloc(elems, sizeof(T)*new_size);

@@ -202,6 +202,7 @@ struct VariableDeclarationAST : StatementAST
 	TypeAST *specified_type = nullptr;
     DefinitionAST *definition = nullptr;
     u32 flags = 0;
+    u64 bc_mem_offset = 0;
 };
 
 void printAST(const BaseAST*ast, int ident);

@@ -3,6 +3,10 @@
 enum BytecodeInstructionOpcode : u16 {
     BC_UNINITIALIZED,
     BC_ZERO_REG,
+    BC_LOAD_BIG_CONSTANT_TO_REG,
+    BC_STORE_TO_STACK_PLUS_CONSTANT,
+    BC_STORE_TO_BSS_PLUS_CONSTANT,
+
     BC_COPY_REG_B_TO_A,
     BC_STACK_PLUS_CONSTANT, // access stack memory
     BC_BSS_BIG_PLUS_CONSTANT, // access global memory

@@ -199,9 +199,11 @@ TypeAST *Parser::parseDirectType()
     switch (t.type) {
     case TK_BOOL:
         type->basic_type = BASIC_TYPE_BOOL;
+        type->size_in_bits = 8; // This could change, but enough for now
         break;
     case TK_STRING_KEYWORD:
         type->basic_type = BASIC_TYPE_STRING;
+        type->size_in_bits = 64 + 64; // for the pointer to data and the size of the string
         break;
     case TK_U8:
         type->basic_type = BASIC_TYPE_INTEGER;
@@ -509,18 +511,23 @@ ExpressionAST * Parser::parseLiteral()
 
         if (t.type == TK_NUMBER) {
             ex->typeAST.basic_type = BASIC_TYPE_INTEGER;
+            ex->typeAST.size_in_bits = 64;
             ex->_u64 = t._u64;
         } else if (t.type == TK_FNUMBER) {
             ex->typeAST.basic_type = BASIC_TYPE_FLOATING;
+            ex->typeAST.size_in_bits = 64;
             ex->_f64 = t._f64;
         } else if (t.type == TK_STRING) {
             ex->typeAST.basic_type = BASIC_TYPE_STRING;
+            ex->typeAST.size_in_bits = 64+64;
             ex->str = t.string;
         } else if (t.type == TK_TRUE) {
             ex->typeAST.basic_type = BASIC_TYPE_BOOL;
+            ex->typeAST.size_in_bits = 8;
             ex->_bool = true;
         } else if (t.type == TK_FALSE) {
             ex->typeAST.basic_type = BASIC_TYPE_BOOL;
+            ex->typeAST.size_in_bits = 8;
             ex->_bool = false;
         }
         return ex;
