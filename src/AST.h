@@ -9,12 +9,13 @@ struct BaseAST;
 struct TypeAST;
 struct ExpressionAST;
 struct VariableDeclarationAST;
+struct FunctionDefinitionAST;
 struct bytecode_function;
 
 struct Scope {
     Scope *parent = nullptr;
     Array<VariableDeclarationAST *>decls;
-    // Maybe add check for current function
+    FunctionDefinitionAST *current_function = nullptr;
 };
 
 enum BasicType {
@@ -108,6 +109,7 @@ struct FunctionDefinitionAST : DefinitionAST
     FunctionDefinitionAST() { ast_type = AST_FUNCTION_DEFINITION; }
     FunctionTypeAST *declaration = nullptr;
     StatementBlockAST *function_body = nullptr;
+    VariableDeclarationAST *var_decl = nullptr;
     virtual bool needsSemiColon() const { return false; }
     u32 size_in_bits = 64;
     bytecode_function *bc_function = nullptr;

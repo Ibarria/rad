@@ -20,7 +20,7 @@ void Token::print()
 	printf("Token %03d:%03d type %s", loc.line, loc.col, TokenTypeToStr(type));
 	switch (type) {
 	case TK_NUMBER:
-		printf(" %lu", _u64);
+		printf(" %" U64FMT "u", _u64);
 		break;
     case TK_FNUMBER:
         printf(" %f", _f64);

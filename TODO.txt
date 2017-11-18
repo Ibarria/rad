@@ -11,7 +11,8 @@
 * do check for types when calling a function
 * check the type of return values in a function, and the existence of a return statement
 * check that a function call is a variable of type function
-* do check for size when doing explicit declaration (s8 x := 512)
+* do check for size when doing explicit declaration (x : s8 = 512)
+* do check for size and sign on explicit declarartion (x : u8 = -1)
 * do check for types on assignment
 * do conditionals
 * do for loop (with it)

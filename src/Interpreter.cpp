@@ -11,6 +11,8 @@
 # define vsprintf_s vsnprintf
 #endif
 
+extern bool option_printBytecode;
+
 static void printTypeToStr(char *s, TypeAST *type)
 {
     switch (type->ast_type) {
@@ -69,6 +71,16 @@ void copyASTloc(BaseAST *src, BaseAST *dst)
 {
     dst->filename = src->filename;
     dst->line_num = src->line_num;
+}
+
+static FunctionDefinitionAST * findEnclosingFunction(StatementAST * stmt)
+{
+    Scope *scope = stmt->scope;
+    do {
+        if (scope->current_function) return scope->current_function;
+        scope = scope->parent;
+    } while (scope != nullptr);
+    return nullptr;
 }
 
 VariableDeclarationAST *Interpreter::validateVariable(IdentifierAST *a)
@@ -489,7 +501,7 @@ void Interpreter::traverseAST(ExpressionAST *expr)
         break;
     }
     case AST_IDENTIFIER: {
-        assert(!"Identifier not supported for traverseAST yet");
+        checkVariablesInExpression(expr);
         break;
     }
     case AST_LITERAL:
@@ -510,7 +522,7 @@ void Interpreter::perform_bytecode(FileAST * root)
     bcgen.setPool(&bc_pool);
     bytecode_program *bp = bcgen.compileToBytecode(root);
     
-    print_bc_program(bp);
+    if (option_printBytecode) print_bc_program(bp);
 }
 
 void Interpreter::traverseAST(StatementBlockAST *root)
@@ -545,7 +557,20 @@ void Interpreter::traverseAST(StatementBlockAST *root)
             
             // next we need to type check the return expression
             // with the enclosing function (!!)
-            assert(!"Need to extend the traverseAST for return statements");
+            TypeAST *ret_type = deduceType(ret_stmt->ret);
+            FunctionDefinitionAST *fundef = findEnclosingFunction(ret_stmt);
+            if (!fundef) {
+                Error(ret_stmt, "Return statement not within a function\n");
+                return;
+            }
+            TypeAST *func_ret_type = fundef->declaration->return_type;
+            if (!compatibleTypes(ret_type, func_ret_type)) {
+                char ltype[64] = {}, rtype[64] = {};
+                printTypeToStr(ltype, ret_type);
+                printTypeToStr(rtype, func_ret_type);
+                Error(ret_stmt, "Incompatible types between the return statement: %s and the return type %s for function %s\n",
+                    ltype, rtype, fundef->var_decl->varname);
+            }
         } else {
             assert(!"Unhandled traverseAST check in statement block");
         }

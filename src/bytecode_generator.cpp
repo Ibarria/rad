@@ -140,7 +140,7 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
 
 void print_instruction(BCI *inst)
 {
-    printf("  op: %s src: %d dst: %d size: %d big_const: %lu | 0x%lX\n",
+    printf("  op: %s src: %d dst: %d size: %d big_const: %" U64FMT "u | 0x%" U64FMT "X\n",
            bc_opcode_to_str(inst->opcode), (int)inst->src_reg,
            (int)inst->dst_reg, inst->op_size, inst->big_const, inst->big_const);
 }
@@ -304,7 +304,7 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
                 if (var_size > 0) {
                     // reserve space and figure out where it is
                     decl->bc_mem_offset = current_function->local_variables_size;
-                    current_function->local_variables_size += var_size;
+                    current_function->local_variables_size += (u32)var_size;
                 }
                 initializeVariable(decl);
                 break;
@@ -434,7 +434,7 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     }
     case AST_BINARY_OPERATION: {
         auto binop = (BinaryOperationAST *)expr;
-        assert(!"Binary expression not supported on bytecode yet");
+        // assert(!"Binary expression not supported on bytecode yet");
         break;
     }
     case AST_ASSIGNMENT: {
@@ -458,7 +458,7 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     assert(fundecl->bc_params_size < sizeof(bc_calling_record)/sizeof(u64));
 
     s16 mark = program->machine.reg_mark();
-    for (int index = 0; index < funcall->args.size(); index++) {
+    for (u32 index = 0; index < funcall->args.size(); index++) {
         auto arg_expr = funcall->args[index];
         auto arg_decl = fundecl->arguments[index];
         // @TODO improvement, implicit cast of arguments here

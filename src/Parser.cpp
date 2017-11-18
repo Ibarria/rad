@@ -195,6 +195,7 @@ static bool isVariableTypeToken(TOKEN_TYPE t)
         || (t == TK_STRING_KEYWORD);
 }
 
+
 TypeAST *Parser::parseDirectType()
 {
     // @TODO: support pointer, arrays, etc
@@ -414,7 +415,7 @@ StatementAST *Parser::parseStatement()
     }
 }
 
-StatementBlockAST *Parser::parseStatementBlock(FunctionTypeAST *fundecl)
+StatementBlockAST *Parser::parseStatementBlock(FunctionDefinitionAST *fundef)
 {
     if (!lex->checkToken(TK_OPEN_BRACKET)) {
         Error("We are trying to parse a statement block and it needs to start with an open bracket\n");
@@ -427,10 +428,12 @@ StatementBlockAST *Parser::parseStatementBlock(FunctionTypeAST *fundecl)
     block->block_scope.parent = current_scope;
     current_scope = &block->block_scope;
 
-    if (fundecl) {
+    if (fundef) {
+        current_scope->current_function = fundef;
         // if this is the body of a function, register the arguments as variables
-        for(auto arg:fundecl->arguments) {
+        for(auto arg:fundef->declaration->arguments) {
             AddDeclarationToScope(arg);
+            arg->scope = current_scope;
         }
     }
     
@@ -477,7 +480,7 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
     }
     // We need to add the declarated variables into the statementBlock
     // for the function
-    fundef->function_body = parseStatementBlock(fundef->declaration);
+    fundef->function_body = parseStatementBlock(fundef);
     if (!success) {
         return nullptr;
     }
@@ -872,6 +875,11 @@ VariableDeclarationAST * Parser::parseDeclaration()
         decl->definition = parseDefinition();
         if (!success) {
             return nullptr;
+        }
+        if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
+            // we want to be able to find the name of the function
+            auto fundef = (FunctionDefinitionAST *)decl->definition;
+            fundef->var_decl = decl;
         }
         lex->lookaheadToken(t);
     } else if (t.type != TK_SEMICOLON) {

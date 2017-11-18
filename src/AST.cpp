@@ -85,7 +85,7 @@ void printAST(const BaseAST *ast, int ident)
             if (c->typeAST.isSigned) {
                 printf(" %lld", c->_s64);
             } else {
-                printf(" %lu", c->_u64);
+                printf(" %" U64FMT "u", c->_u64);
             }
             break;
         default:

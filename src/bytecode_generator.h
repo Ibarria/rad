@@ -51,8 +51,8 @@ struct bytecode_machine
     s16 reserve_register(u64 count = 1)
     {
         assert(regs_used + count < 128);
-        s16 ret_value;
-        regs_used += count;
+        s16 ret_value = regs_used;
+        regs_used += (u16)count;
         return ret_value;
     }
     s16 reg_mark() const { return regs_used; }

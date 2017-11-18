@@ -16,6 +16,7 @@
 static const char *root_file = nullptr;
 bool option_printTokens = false;
 bool option_printAST = false;
+bool option_printBytecode = false;
 
 #ifndef WIN32
 # define sprintf_s  sprintf
@@ -32,6 +33,7 @@ void usage()
     printf("\tOptions:\n");
     printf("\t-tokens: Print lexeical tokens\n");
     printf("\t-ast: Print ast tree\n");
+    printf("\t-bytecode: Print bytecode\n");
 }
 
 void parseOptions(int argc, char **argv)
@@ -42,6 +44,8 @@ void parseOptions(int argc, char **argv)
             option_printTokens = true;
         } else if (!strcmp(argv[i], "-ast")) {
             option_printAST = true;
+        } else if (!strcmp(argv[i], "-bytecode")) {
+            option_printBytecode = true;
         } else {
             root_file = argv[i];
         }

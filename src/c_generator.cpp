@@ -336,8 +336,8 @@ void c_generator::generate_expression(ExpressionAST * expr)
             fprintf(output_file, "\"%s\"", lit->str);
             break;
         case BASIC_TYPE_INTEGER:
-            if (lit->typeAST.isSigned) fprintf(output_file, "%lld", lit->_s64);
-            else fprintf(output_file, "%lu", lit->_u64);
+            if (lit->typeAST.isSigned) fprintf(output_file, "%" U64FMT "d", lit->_s64);
+            else fprintf(output_file, "%" U64FMT "u", lit->_u64);
             break;
         }
 
