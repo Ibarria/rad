@@ -245,12 +245,12 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
 
 }
 
-void c_generator::generate_argument_declaration(ArgumentDeclarationAST * arg)
+void c_generator::generate_argument_declaration(VariableDeclarationAST * arg)
 {
-    assert(arg->type->ast_type == AST_DIRECT_TYPE);
-    auto dt = (DirectTypeAST *)arg->type;
+    assert(arg->specified_type->ast_type == AST_DIRECT_TYPE);
+    auto dt = (DirectTypeAST *)arg->specified_type;
     fprintf(output_file, BasicTypeToStr(dt));
-    fprintf(output_file, " %s", arg->name);
+    fprintf(output_file, " %s", arg->varname);
 }
 
 void c_generator::generate_statement_block(StatementBlockAST * block)

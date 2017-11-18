@@ -20,11 +20,11 @@ struct Parser {
 
     TypeAST *parseDirectType();
     TypeAST *parseType();
-    ArgumentDeclarationAST *parseArgumentDeclaration();
+    VariableDeclarationAST *parseArgumentDeclaration();
     FunctionTypeAST *parseFunctionDeclaration();
     ReturnStatementAST *parseReturnStatement();
     StatementAST *parseStatement();
-    StatementBlockAST *parseStatementBlock();
+    StatementBlockAST *parseStatementBlock(FunctionTypeAST *fundecl = nullptr);
     FunctionDefinitionAST *parseFunctionDefinition();
     FunctionCallAST *parseFunctionCall();
     ExpressionAST * parseLiteral();

@@ -12,8 +12,9 @@ struct VariableDeclarationAST;
 struct bytecode_function;
 
 struct Scope {
-    Scope *parent;
+    Scope *parent = nullptr;
     Array<VariableDeclarationAST *>decls;
+    // Maybe add check for current function
 };
 
 enum BasicType {
@@ -79,18 +80,10 @@ struct TypeAST : BaseAST
     u32 size_in_bits = 0;
 };
 
-struct ArgumentDeclarationAST : BaseAST
-{
-    ArgumentDeclarationAST() { ast_type = AST_ARGUMENT_DECLARATION; }
-    TextType name = nullptr;
-    TypeAST *type = nullptr;
-    u64 bc_mem_offset = 0;
-};
-
 struct FunctionTypeAST : TypeAST
 {
     FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; size_in_bits = 64; }
-    Array<ArgumentDeclarationAST *> arguments;
+    Array<VariableDeclarationAST *> arguments;
     TypeAST *return_type = nullptr;
     u64 bc_params_size = 0;
     bool isForeign = false;
@@ -200,9 +193,12 @@ struct AssignmentAST : ExpressionAST
     TOKEN_TYPE op = TK_INVALID;
 };
 
-#define DECL_FLAG_IS_CONSTANT          0x1
-#define DECL_FLAG_HAS_BEEN_INFERRED    0x2
-#define DECL_FLAG_HAS_BEEN_GENERATED   0x4
+#define DECL_FLAG_IS_CONSTANT          0x01
+#define DECL_FLAG_HAS_BEEN_INFERRED    0x02
+#define DECL_FLAG_HAS_BEEN_GENERATED   0x04
+#define DECL_FLAG_IS_FUNCTION_ARGUMENT 0x08
+#define DECL_FLAG_IS_LOCAL_VARIABLE    0x10
+#define DECL_FLAG_IS_GLOBAL_VARIABLE   0x20
 
 struct VariableDeclarationAST : StatementAST
 {

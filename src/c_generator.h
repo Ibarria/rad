@@ -17,7 +17,7 @@ class c_generator
     void generate_dangling_functions();
     void generate_function_prototype(VariableDeclarationAST *decl, bool second_pass = false);
     void generate_variable_declaration(VariableDeclarationAST *decl);
-    void generate_argument_declaration(ArgumentDeclarationAST *arg);
+    void generate_argument_declaration(VariableDeclarationAST *arg);
     void generate_statement_block(StatementBlockAST *block);
     void generate_statement(StatementAST *stmt);
     void generate_return_statement(ReturnStatementAST *ret);

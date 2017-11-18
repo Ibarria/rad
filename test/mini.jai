@@ -1,14 +1,14 @@
 
 #import "modules/basic.jai"
 
-x : u8 = 3;
+x1 : u8 = 3;
 s := "Hello there";
 
 
 main :: ()
 {
-    x := 1;
-    x = add(3, 0);
+    x1 := 1;
+    x1 = add(3, 0);
 //    printf("X is %llu\n", x);
 
 //    x = #run (3 + 2);

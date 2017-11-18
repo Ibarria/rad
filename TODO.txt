@@ -54,3 +54,33 @@
 - Be able to parse assignments
 - Be able to parse Math expressions
 - Print AST on the screen
+
+##### Thoughts on Arrays ##### 
+We support 3 types of arrays:
+ 1) Very C like array, size known at compile time:
+    array_1 := [50] u16;
+	
+ 2) Static array, where all elements have a valid value
+    array_2 := [] u16;
+	array_2[30]; => access element 30. Bounds check possible
+	array_2.data => this is a ^u16
+	array_2.count => number of elements in the array
+	Both data and count are visible and can be assigned and modified (at your peril)
+
+ 3) Dynamic array, size can change and not all elements might be used
+    array_3 := [..] u16;
+	array_3[30]; => access element 30. Bounds check possible
+	array_3.data => this is a ^u16
+	array_3.size => number of elements in the array total
+	array_3.count => number of used, valid elements in the array
+	
+ How do these arrays convert to each other? 
+  - A Dynamic array can convert to a static array, by losing information? NO
+    This has the risk that if the conversion is on a function that tries to access internals,
+	it could break since internals differ. 
+  - A C like array converts to static array?
+    Playing with internals is again a risk, but less so than in the previous example
+	This would force C arrays to store the size, when in most cases it would be enough to just 
+	use the size from the AST. Maybe provide the size if the array is ever passed in a function. 
+ 
+	

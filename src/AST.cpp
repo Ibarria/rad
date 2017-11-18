@@ -137,12 +137,6 @@ void printAST(const BaseAST *ast, int ident)
         printf("%*sDirectTypeAST %s\n", ident, "", BasicTypeToStr(a)); 
         break;
     }
-    case AST_ARGUMENT_DECLARATION: {
-        const ArgumentDeclarationAST *a = (const ArgumentDeclarationAST *)ast;
-        printf("%*sArgumentDeclarationAST name: %s\n", ident, "", a->name);
-        printAST(a->type, ident + 3);
-        break;
-    }
     case AST_FUNCTION_TYPE: {
         const FunctionTypeAST *a = (const FunctionTypeAST *)ast;
         printf("%*sFunctionDeclarationAST with %d arguments\n", ident, "", (int)a->arguments.size());

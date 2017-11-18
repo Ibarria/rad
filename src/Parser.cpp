@@ -77,6 +77,14 @@ bool Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
         }
     }
     current_scope->decls.push_back(decl);
+    if (!(decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT)) {
+        // argument declarations have their flag set already
+        if (current_scope->parent == nullptr) {
+            decl->flags |= DECL_FLAG_IS_GLOBAL_VARIABLE;
+        } else {
+            decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
+        }
+    }
     return true;
 }
 
@@ -274,16 +282,16 @@ TypeAST * Parser::parseType()
     return parseDirectType();
 }
 
-ArgumentDeclarationAST *Parser::parseArgumentDeclaration()
+VariableDeclarationAST *Parser::parseArgumentDeclaration()
 {
     Token t;
     lex->lookaheadToken(t);
-    ArgumentDeclarationAST *arg = NEW_AST(ArgumentDeclarationAST);
+    VariableDeclarationAST *arg = NEW_AST(VariableDeclarationAST);
     MustMatchToken(TK_IDENTIFIER, "Argument declaration needs to start with an identifier");
     if (!success) {
         return nullptr;
     }
-    arg->name = t.string;
+    arg->varname = t.string;
 
     MustMatchToken(TK_COLON, "Argument declaration needs a colon between identifier and type");
 
@@ -291,11 +299,12 @@ ArgumentDeclarationAST *Parser::parseArgumentDeclaration()
         return nullptr;
     }
 
-    arg->type = parseType();
+    arg->specified_type = parseType();
 
     if (!success) {
         return nullptr;
     }
+    arg->flags |= DECL_FLAG_IS_FUNCTION_ARGUMENT;
     return arg;
 }
 
@@ -320,7 +329,7 @@ FunctionTypeAST *Parser::parseFunctionDeclaration()
             }
             continue;
         }
-        ArgumentDeclarationAST *arg = Parser::parseArgumentDeclaration();
+        VariableDeclarationAST *arg = Parser::parseArgumentDeclaration();
         if (!success) {
             return nullptr;
         }
@@ -405,7 +414,7 @@ StatementAST *Parser::parseStatement()
     }
 }
 
-StatementBlockAST *Parser::parseStatementBlock()
+StatementBlockAST *Parser::parseStatementBlock(FunctionTypeAST *fundecl)
 {
     if (!lex->checkToken(TK_OPEN_BRACKET)) {
         Error("We are trying to parse a statement block and it needs to start with an open bracket\n");
@@ -418,6 +427,13 @@ StatementBlockAST *Parser::parseStatementBlock()
     block->block_scope.parent = current_scope;
     current_scope = &block->block_scope;
 
+    if (fundecl) {
+        // if this is the body of a function, register the arguments as variables
+        for(auto arg:fundecl->arguments) {
+            AddDeclarationToScope(arg);
+        }
+    }
+    
     while (!lex->checkToken(TK_CLOSE_BRACKET)) {
         StatementAST *statement = nullptr;
         statement = parseStatement();
@@ -459,7 +475,9 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
             TokenTypeToStr(lex->getTokenType()));
         return nullptr;
     }
-    fundef->function_body = parseStatementBlock();
+    // We need to add the declarated variables into the statementBlock
+    // for the function
+    fundef->function_body = parseStatementBlock(fundef->declaration);
     if (!success) {
         return nullptr;
     }
@@ -932,11 +950,11 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
             file_inst->items.push_back(r);
         } else {
             VariableDeclarationAST *d = parseDeclaration();
-
+            
             if (!success) {
                 return nullptr;
             }
-
+            
             file_inst->items.push_back(d);
         }
     }

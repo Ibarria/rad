@@ -52,17 +52,32 @@ static inline u64 getVariableSize(VariableDeclarationAST *decl)
     return decl->specified_type->size_in_bits / 8;
 }
 
-static inline u64 getVariableSize(ArgumentDeclarationAST *arg)
+static inline bool isGlobal(VariableDeclarationAST *decl)
 {
-    return arg->type->size_in_bits / 8;
+    assert(decl);
+    assert(decl->scope);
+    if (decl->scope->parent == nullptr) {
+        assert(!(decl->flags & DECL_FLAG_IS_LOCAL_VARIABLE));
+        assert(!(decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT));
+        assert(decl->flags & DECL_FLAG_IS_GLOBAL_VARIABLE);
+    } else {
+        assert(decl->flags & (DECL_FLAG_IS_LOCAL_VARIABLE | DECL_FLAG_IS_FUNCTION_ARGUMENT));
+    }
+    return !!(decl->flags & DECL_FLAG_IS_GLOBAL_VARIABLE);
 }
 
-static inline bool isGlobal(BaseAST *ast)
+static inline bool isLocal(VariableDeclarationAST *decl)
 {
-    assert(ast);
-    assert(ast->scope);
-    return ast->scope->parent == nullptr;
+    assert(decl);
+    return !!(decl->flags & DECL_FLAG_IS_LOCAL_VARIABLE);
 }
+
+static inline bool isArgument(VariableDeclarationAST *decl)
+{
+    assert(decl);
+    return !!(decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT);
+}
+
 
 static s16 reserveRegistersForSize(bytecode_machine *machine, u64 size_in_bits)
 {
@@ -161,19 +176,16 @@ void print_bc_program(bytecode_program *program)
     }
 }
 
-
-void bytecode_generator::createCallRegisterInstruction(ArgumentDeclarationAST *arg_decl, s16 reg)
+void bytecode_generator::createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bits, s16 reg)
 {
     BCI *bci;
-    BytecodeInstructionOpcode opcode;
-    opcode = BC_POKE_INTO_CALLING_RECORD;
     
-    bci = create_instruction(opcode, reg, -1, arg_decl->bc_mem_offset);
-    bci->op_size = truncate_op_size(arg_decl->type->size_in_bits);
+    bci = create_instruction(opcode, reg, -1, bc_mem_offset);
+    bci->op_size = truncate_op_size(size_in_bits);
     issue_instruction(bci);
-    if (arg_decl->type->size_in_bits > 64) {
-        s64 bits = arg_decl->type->size_in_bits;
-        u64 offset = arg_decl->bc_mem_offset + 8;
+    if (size_in_bits > 64) {
+        s64 bits = size_in_bits;
+        u64 offset = bc_mem_offset + 8;
         bits -= 64;
         reg++;
         do {
@@ -189,31 +201,19 @@ void bytecode_generator::createCallRegisterInstruction(ArgumentDeclarationAST *a
 
 void bytecode_generator::createStoreInstruction(VariableDeclarationAST *decl, s16 reg)
 {
-    BCI *bci;
     BytecodeInstructionOpcode opcode;
     if (isGlobal(decl)) {
         opcode = BC_STORE_TO_BSS_PLUS_CONSTANT;
-    } else {
+    } else if (isLocal(decl)) {
         opcode = BC_STORE_TO_STACK_PLUS_CONSTANT;
+    } else if (isArgument(decl)) {
+        opcode = BC_POKE_INTO_CALLING_RECORD;
+    } else {
+        assert(!"Variable without scope set!");
     }
     
-    bci = create_instruction(opcode, reg, -1, decl->bc_mem_offset);
-    bci->op_size = truncate_op_size(decl->specified_type->size_in_bits);
-    issue_instruction(bci);
-    if (decl->specified_type->size_in_bits > 64) {
-        s64 bits = decl->specified_type->size_in_bits;
-        u64 offset = decl->bc_mem_offset + 8;
-        bits -= 64;
-        reg++;
-        do {
-            BCI *bci = create_instruction(opcode, reg, -1, offset);
-            issue_instruction(bci);
-            bci->op_size = truncate_op_size(bits);
-            reg++;
-            bits -= 64;
-            offset += 8;
-        } while (bits > 0);
-    }
+    createStoreInstruction(opcode, decl->bc_mem_offset,
+                           decl->specified_type->size_in_bits, reg);
 }
 
 BCI * bytecode_generator::create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const)
@@ -267,9 +267,14 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
 	
     assert(fundef->declaration);
     auto fundecl = fundef->declaration;
+    if (fundecl->return_type) {
+        // Return types go first in the calling record
+        u64 var_size = fundecl->return_type->size_in_bits / 8;
+        fundecl->bc_params_size += var_size;
+    }
     for (auto arg: fundecl->arguments) {
         // compute the size and offset for the arguments
-        assert(arg->type);
+        assert(arg->specified_type);
         u64 var_size = getVariableSize(arg);
         arg->bc_mem_offset = fundecl->bc_params_size;
         fundecl->bc_params_size += var_size;
@@ -327,7 +332,12 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
                 break;
             }
             case AST_RETURN_STATEMENT: {
-                assert(false);
+                auto ret_stmt = (ReturnStatementAST *)stmt;
+                s16 mark = program->machine.reg_mark();
+                s16 reg = reserveRegistersForSize(&program->machine, ret_stmt->ret->expr_type->size_in_bits);
+                computeExpressionIntoRegister(ret_stmt->ret, reg);
+                createStoreInstruction(BC_POKE_INTO_CALLING_RECORD, 0, ret_stmt->ret->expr_type->size_in_bits, reg);
+                program->machine.pop_mark(mark);
                 break;
             }
             case AST_STATEMENT_BLOCK: {
@@ -336,7 +346,7 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
                 break;
             }
             default:
-                assert(false);
+                assert(!"Generate Statement Block in Bytecode, unknown AST");
         }
     }
 }
@@ -452,9 +462,9 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
         auto arg_expr = funcall->args[index];
         auto arg_decl = fundecl->arguments[index];
         // @TODO improvement, implicit cast of arguments here
-        s16 reg = reserveRegistersForSize(&program->machine, arg_decl->type->size_in_bits);
+        s16 reg = reserveRegistersForSize(&program->machine, arg_decl->specified_type->size_in_bits);
         computeExpressionIntoRegister(arg_expr, reg);
-        createCallRegisterInstruction(arg_decl, reg);
+        createStoreInstruction(arg_decl, reg);
     }
     BCI *bci = create_instruction(BC_CALL_PROCEDURE, -1, reg_return, straight_convert(funcall->fundef));
     issue_instruction(bci);

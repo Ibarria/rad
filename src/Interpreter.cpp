@@ -22,7 +22,7 @@ static void printTypeToStr(char *s, TypeAST *type)
     case AST_FUNCTION_TYPE: {
         auto ft = (FunctionTypeAST *)type;
         sprintf(s, "(");
-        for (auto arg : ft->arguments) printTypeToStr(s, arg->type);
+        for (auto arg : ft->arguments) printTypeToStr(s, arg->specified_type);
         sprintf(s, ") ");
         if (ft->return_type) {
             printTypeToStr(s, ft->return_type);
@@ -213,7 +213,7 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
         for (u32 i = 0; i < lft->arguments.size(); i++) {
             auto larg = lft->arguments[i];
             auto rarg = rft->arguments[i];
-            if (!compatibleTypes(larg->type, rarg->type)) return false;
+            if (!compatibleTypes(larg->specified_type, rarg->specified_type)) return false;
         }
         return true;
         break;
@@ -412,7 +412,7 @@ void Interpreter::traverseAST(ExpressionAST *expr)
             Error(assgn, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
         }
 
-        // TODO: check for width of operands (in case of literals), like assigning 512 to an u8.
+        // @TODO: check for width of operands (in case of literals), like assigning 512 to an u8.
         // one of the hard things here is what to do on complex expressions with literals, promote?
 
         // are there any checks to do on the left hand side?
@@ -446,7 +446,7 @@ void Interpreter::traverseAST(ExpressionAST *expr)
         for (u32 i = 0; i < fundecl->arguments.size(); i++) {
             TypeAST *lhsType, *rhsType;
             lhsType = deduceType(funcall->args[i]);
-            rhsType = fundecl->arguments[i]->type;
+            rhsType = fundecl->arguments[i]->specified_type;
             if (!success) return;
             if (!compatibleTypes(lhsType, rhsType)) {
                 char ltype[64] = {}, rtype[64] = {};
@@ -466,12 +466,34 @@ void Interpreter::traverseAST(ExpressionAST *expr)
         break;
     }
     case AST_BINARY_OPERATION: {
+        auto binop = (BinaryOperationAST *)expr;
+        TypeAST *lhsType, *rhsType;
+        lhsType = deduceType(binop->lhs);
+        rhsType = deduceType(binop->rhs);
+        // @TODO: Check that the operator matches the types of rhs, lhs
+        if (!compatibleTypes(lhsType, rhsType)) {
+            char ltype[64] = {}, rtype[64] = {};
+            printTypeToStr(ltype, lhsType);
+            printTypeToStr(rtype, rhsType);
+            Error(binop, "Incompatible types during binary operation %s: %s and %s\n",
+                  TokenTypeToCOP(binop->op),
+                  ltype, rtype);
+        }
+        traverseAST(binop->lhs);
+        traverseAST(binop->rhs);
         break;
     }
     case AST_UNARY_OPERATION: {
+        // @TODO: Check that the operator makes sense with the inner type
+        assert(!"Not implemented traverseAST checks for Unary Operation");
+        break;
+    }
+    case AST_IDENTIFIER: {
+        assert(!"Identifier not supported for traverseAST yet");
         break;
     }
     case AST_LITERAL:
+        // Nothing to check here
         break;
     default:
         assert(!"Missing AST support types");
@@ -516,6 +538,16 @@ void Interpreter::traverseAST(StatementBlockAST *root)
         } else if ((stmt->ast_type == AST_ASSIGNMENT) ||
             (stmt->ast_type == AST_FUNCTION_CALL)) {
             traverseAST((ExpressionAST *)stmt);
+        } else if (stmt->ast_type == AST_RETURN_STATEMENT) {
+            auto ret_stmt = (ReturnStatementAST *)stmt;
+            // we need to check the return expression itself
+            traverseAST(ret_stmt->ret);
+            
+            // next we need to type check the return expression
+            // with the enclosing function (!!)
+            assert(!"Need to extend the traverseAST for return statements");
+        } else {
+            assert(!"Unhandled traverseAST check in statement block");
         }
     }
     current_scope = previous_scope;
