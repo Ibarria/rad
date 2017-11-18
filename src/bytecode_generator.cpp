@@ -5,6 +5,10 @@
 
 const u64 stack_size = 10 * 1024;
 
+template <class T> const T& max(const T& a, const T& b) {
+    return (a<b) ? b : a;     
+}
+
 union __xxx_to_u64 {
     f64 f;
     s64 s;
@@ -129,9 +133,14 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_LOAD_BIG_CONSTANT_TO_REG);
         CASE_BC_OPCODE(BC_STORE_TO_STACK_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_STORE_TO_BSS_PLUS_CONSTANT);
+        CASE_BC_OPCODE(BC_LOAD_FROM_STACK_PLUS_CONSTANT);
+        CASE_BC_OPCODE(BC_LOAD_FROM_BSS_PLUS_CONSTANT);
+        CASE_BC_OPCODE(BC_LOAD_FROM_CALLING_RECORD);
         CASE_BC_OPCODE(BC_POKE_INTO_CALLING_RECORD);
         CASE_BC_OPCODE(BC_CALL_PROCEDURE);
         CASE_BC_OPCODE(BC_RETURN);
+        CASE_BC_OPCODE(BC_BINARY_OPERATION);
+        CASE_BC_OPCODE(BC_UNARY_OPERATION);
 
         default:
             return "UNKNOWN OPCODE";
@@ -140,8 +149,8 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
 
 void print_instruction(BCI *inst)
 {
-    printf("  op: %s src: %d dst: %d size: %d big_const: %" U64FMT "u | 0x%" U64FMT "X\n",
-           bc_opcode_to_str(inst->opcode), (int)inst->src_reg,
+    printf("  op: %s src: %d src2: %d dst: %d size: %d big_const: %" U64FMT "u | 0x%" U64FMT "X\n",
+           bc_opcode_to_str(inst->opcode), (int)inst->src_reg, (int)inst->src2_reg,
            (int)inst->dst_reg, inst->op_size, inst->big_const, inst->big_const);
 }
 
@@ -215,6 +224,47 @@ void bytecode_generator::createStoreInstruction(VariableDeclarationAST *decl, s1
     createStoreInstruction(opcode, decl->bc_mem_offset,
                            decl->specified_type->size_in_bits, reg);
 }
+
+void bytecode_generator::createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bits, s16 reg)
+{
+    BCI *bci;
+
+    bci = create_instruction(opcode, -1, reg, bc_mem_offset);
+    bci->op_size = truncate_op_size(size_in_bits);
+    issue_instruction(bci);
+    if (size_in_bits > 64) {
+        s64 bits = size_in_bits;
+        u64 offset = bc_mem_offset + 8;
+        bits -= 64;
+        reg++;
+        do {
+            BCI *bci = create_instruction(opcode, -1, reg, offset);
+            issue_instruction(bci);
+            bci->op_size = truncate_op_size(bits);
+            reg++;
+            bits -= 64;
+            offset += 8;
+        } while (bits > 0);
+    }
+}
+
+void bytecode_generator::createLoadInstruction(VariableDeclarationAST *decl, s16 reg)
+{
+    BytecodeInstructionOpcode opcode;
+    if (isGlobal(decl)) {
+        opcode = BC_LOAD_FROM_BSS_PLUS_CONSTANT;
+    } else if (isLocal(decl)) {
+        opcode = BC_LOAD_FROM_STACK_PLUS_CONSTANT;
+    } else if (isArgument(decl)) {
+        opcode = BC_LOAD_FROM_CALLING_RECORD;
+    } else {
+        assert(!"Variable without scope set!");
+    }
+
+    createLoadInstruction(opcode, decl->bc_mem_offset,
+        decl->specified_type->size_in_bits, reg);
+}
+
 
 BCI * bytecode_generator::create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const)
 {
@@ -424,7 +474,9 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)expr;
-        assert(!"Identifier expression not supported on bytecode yet");
+        assert(id->decl);
+        createLoadInstruction(id->decl, reg);
+        
         break;
     }
     case AST_UNARY_OPERATION: {
@@ -434,7 +486,23 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     }
     case AST_BINARY_OPERATION: {
         auto binop = (BinaryOperationAST *)expr;
-        // assert(!"Binary expression not supported on bytecode yet");
+        // Basic idea: 
+        // Do recursive bytecode for op1, op2 in some alloc registers
+        // then convert the opcode into some bytecode call (maybe just 1 inst)
+        // operate on the 2 regs, write into the result
+        s16 mark = program->machine.reg_mark();
+        TypeAST *lhsType = binop->lhs->expr_type;
+        TypeAST *rhsType = binop->rhs->expr_type;
+        s16 reglhs = reserveRegistersForSize(&program->machine, lhsType->size_in_bits);
+        s16 regrhs = reserveRegistersForSize(&program->machine, rhsType->size_in_bits);        
+        computeExpressionIntoRegister(binop->lhs, reglhs);
+        // @Optimization: do shortcircuit?
+        computeExpressionIntoRegister(binop->rhs, regrhs);
+        BCI *bci = create_instruction(BC_BINARY_OPERATION, reglhs, reg, binop->op);
+        bci->src2_reg = regrhs;
+        bci->op_size = max(lhsType->size_in_bits, rhsType->size_in_bits);
+        issue_instruction(bci);
+        program->machine.pop_mark(mark);
         break;
     }
     case AST_ASSIGNMENT: {
