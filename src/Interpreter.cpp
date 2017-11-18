@@ -483,6 +483,8 @@ void Interpreter::perform_bytecode(FileAST * root)
     PoolAllocator bc_pool;   
     bcgen.setPool(&bc_pool);
     bytecode_program *bp = bcgen.compileToBytecode(root);
+    
+    print_bc_program(bp);
 }
 
 void Interpreter::traverseAST(StatementBlockAST *root)

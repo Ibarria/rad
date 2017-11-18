@@ -10,9 +10,9 @@ struct BCI {
     u64 big_const = 0;
     BytecodeInstructionOpcode opcode = BC_UNINITIALIZED;
     u32 inst_index = 0; // to be used as IP reg
-    s16 src_reg;
-    s16 dst_reg;
-    u8 op_size;
+    s16 src_reg = -1;
+    s16 dst_reg = -1;
+    u8 op_size = 0;
 };
 
 union bc_register {
@@ -50,12 +50,12 @@ struct bytecode_program
     bc_register regs[64]; // Maybe do SSA, like LLVM wants?
     s16 regs_used = 0;
 	bytecode_function preamble_function;
-	bytecode_function start_function;
+	bytecode_function *start_function = nullptr;
     Array<bytecode_function *> functions;
     s16 reserve_register(u64 count = 1)
     {
         assert(regs_used + count < 64);
-        u64 ret_value;
+        s16 ret_value;
         regs_used += count;
         return ret_value;
     }
@@ -78,9 +78,10 @@ struct bytecode_generator
 
     void initializeVariablesInScope(Scope *scope);
     void initializeVariable(VariableDeclarationAST *decl);
-    void generate_function(FunctionDefinitionAST *fundef);
+    void generate_function(TextType name, FunctionDefinitionAST *fundef);
     void generate_statement_block(StatementBlockAST *block);
 
     void computeExpressionIntoRegister(ExpressionAST *expr, s16 reg);
 };
 
+void print_bc_program(bytecode_program *program);

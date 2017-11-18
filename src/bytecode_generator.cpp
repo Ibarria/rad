@@ -1,5 +1,7 @@
 #include "bytecode_generator.h"
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 const u64 stack_size = 10 * 1024;
 
@@ -97,6 +99,59 @@ static inline u64 roundToPage(u64 size, u64 page_size)
     return size;
 }
 
+#define CASE_BC_OPCODE(a) case a: return #a
+const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
+{
+    switch(opcode)
+    {
+        CASE_BC_OPCODE(BC_UNINITIALIZED);
+        CASE_BC_OPCODE(BC_ZERO_REG);
+        CASE_BC_OPCODE(BC_LOAD_BIG_CONSTANT_TO_REG);
+        CASE_BC_OPCODE(BC_STORE_TO_STACK_PLUS_CONSTANT);
+        CASE_BC_OPCODE(BC_STORE_TO_BSS_PLUS_CONSTANT);
+        default:
+            return "UNKNOWN OPCODE";
+    }
+}
+
+void print_instruction(BCI *inst)
+{
+    printf("  op: %s src: %d dst: %d size: %d big_const: %lu\n",
+           bc_opcode_to_str(inst->opcode), (int)inst->src_reg,
+           (int)inst->dst_reg, inst->op_size, inst->big_const);
+}
+
+void print_bc_function(bytecode_function *func)
+{
+    if (func->function_name) {
+        printf("Function : %s ", func->function_name);
+    } else {
+        printf("Function <unnamed> ");
+    }
+    printf(" local var size: %d num_instructions: %d\n",
+           func->local_variables_size, func->instructions.size());
+    for(auto inst: func->instructions) {
+        print_instruction(inst);
+    }
+}
+
+void print_bc_program(bytecode_program *program)
+{
+    printf("Preamble function:\n");
+    print_bc_function(&program->preamble_function);
+
+    printf("Start function: ");
+    if (program->start_function) {
+        printf("%s\n", program->start_function->function_name);
+    } else {
+        printf(" <none>\n");
+    }
+    
+    for (auto func:program->functions) {
+        print_bc_function(func);
+    }
+}
+
 void bytecode_generator::createStoreInstruction(VariableDeclarationAST *decl, s16 reg)
 {
     BCI *bci;
@@ -165,18 +220,24 @@ bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
     return bp;
 }
 
-void bytecode_generator::generate_function(FunctionDefinitionAST * fundef)
+void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST * fundef)
 {
     if (fundef->declaration->isForeign) return; // foreign functions just get called
 
     bytecode_function *old_current = current_function;
     bytecode_function *func = new (pool) bytecode_function;
+    func->function_name = name;
+    func->function_id = fundef->s;
     current_function = func;
 	
     // Creating a function is the same as processing its statementBlock
     generate_statement_block(fundef->function_body);
 	
 	current_function = old_current;
+    if (!strcmp(name, "main") && (fundef->scope->parent == nullptr)) {
+        program->start_function = func;
+    }
+    program->functions.push_back(func);
 }
 
 void bytecode_generator::generate_statement_block(StatementBlockAST *block)
@@ -244,7 +305,7 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
     
     if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
         auto fundef = (FunctionDefinitionAST *)decl->definition;
-        generate_function(fundef);
+        generate_function(decl->varname, fundef);
         // assert(false);
         return;
     }
