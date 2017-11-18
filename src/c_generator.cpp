@@ -7,11 +7,6 @@
 # define sprintf_s sprintf
 #endif
 
-static inline bool isFunctionDeclaration(VariableDeclarationAST *decl)
-{
-    return (decl->specified_type->ast_type == AST_FUNCTION_TYPE);
-}
-
 static inline bool isStringDeclaration(VariableDeclarationAST *decl)
 {
     if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
@@ -342,7 +337,7 @@ void c_generator::generate_expression(ExpressionAST * expr)
             break;
         case BASIC_TYPE_INTEGER:
             if (lit->typeAST.isSigned) fprintf(output_file, "%lld", lit->_s64);
-            else fprintf(output_file, "%llu", lit->_u64);
+            else fprintf(output_file, "%lu", lit->_u64);
             break;
         }
 

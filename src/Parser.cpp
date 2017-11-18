@@ -8,8 +8,9 @@
 #include <stdarg.h>
 
 #ifndef WIN32
-# define sprintf_s sprintf
+# define sprintf_s  sprintf
 # define vsprintf_s vsnprintf
+# define strncpy_s  strncpy
 #endif
 
 void traverseAST(FileAST *root);
@@ -21,6 +22,8 @@ extern bool option_printTokens;
 
 #define NEW_AST(ast_type) (ast_type *) setASTinfo(this, (BaseAST *) new(this->pool) ast_type )
 
+static u64 sequence_id = 100;
+
 static BaseAST * setASTloc(Parser *p, BaseAST *ast)
 {
     SrcLocation loc;
@@ -28,6 +31,8 @@ static BaseAST * setASTloc(Parser *p, BaseAST *ast)
     ast->line_num = loc.line;
     ast->char_num = loc.col;
     ast->filename = p->lex->getFilename();
+	// @TODO: make this an atomic operation
+	ast->s = sequence_id++;
     return ast;
 }
 
@@ -410,8 +415,8 @@ StatementBlockAST *Parser::parseStatementBlock()
     StatementBlockAST *block = NEW_AST(StatementBlockAST);
 
     // push scope
-    block->scope.parent = current_scope;
-    current_scope = &block->scope;
+    block->block_scope.parent = current_scope;
+    current_scope = &block->block_scope;
 
     while (!lex->checkToken(TK_CLOSE_BRACKET)) {
         StatementAST *statement = nullptr;
@@ -890,7 +895,7 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
         file_inst = fast;
     } else {
         file_inst = new (pool) FileAST;
-        file_inst->scope.parent = nullptr;
+        file_inst->global_scope.parent = nullptr;
     }
      
     top_level_ast = file_inst;
@@ -908,7 +913,7 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
     }
 
     if (current_scope == nullptr) {
-        current_scope = &file_inst->scope;        
+        current_scope = &file_inst->global_scope;        
     }
 
 	while (!lex.checkToken(TK_LAST_TOKEN)) {

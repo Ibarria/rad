@@ -17,6 +17,12 @@ static const char *root_file = nullptr;
 bool option_printTokens = false;
 bool option_printAST = false;
 
+#ifndef WIN32
+# define sprintf_s  sprintf
+# define vsprintf_s vsnprintf
+# define strncpy_s  strncpy
+#endif
+
 void usage()
 {
 	// show usage and version

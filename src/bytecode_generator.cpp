@@ -39,6 +39,33 @@ static inline u8 truncate_op_size(s64 bits)
     return 8;
 }
 
+static inline u64 getVariableSize(VariableDeclarationAST *decl)
+{
+    if ((decl->flags & DECL_FLAG_IS_CONSTANT) &&
+        isFunctionDeclaration(decl)) {
+        // constant functions do not need space
+        return 0;
+    }
+    
+    return decl->specified_type->size_in_bits / 8;
+}
+
+static inline bool isGlobal(BaseAST *ast)
+{
+    assert(ast);
+    assert(ast->scope);
+    return ast->scope->parent == nullptr;
+}
+
+static s16 reserveRegistersForSize(bytecode_program *program, u64 size_in_bits)
+{
+    // @TODO: Possible optimization, for large structs or arrays,
+    // store them in the stack and just copy here pointers to that
+    u64 count = size_in_bits / 64;
+    if (size_in_bits %64 != 0) count ++;
+    return program->reserve_register(count);
+}
+
 static u64 getScopeVariablesSize(Scope *scope)
 {
     u64 total_size = 0;
@@ -52,11 +79,14 @@ static u64 getScopeVariablesSize(Scope *scope)
         assert(decl->specified_type->size_in_bits > 0);
         assert((decl->specified_type->size_in_bits % 8) == 0);
         
-        // the offset for global variables is the accumulated size in bytes
-        decl->bc_mem_offset = total_size;
+        u64 var_size = getVariableSize(decl);
 
-        total_size += decl->specified_type->size_in_bits / 8;
-
+        if (var_size > 0) {
+            // the offset for global variables is the accumulated size in bytes
+            decl->bc_mem_offset = total_size;
+            
+            total_size += decl->specified_type->size_in_bits / 8;
+        }
     }
     return total_size;
 }
@@ -65,6 +95,35 @@ static inline u64 roundToPage(u64 size, u64 page_size)
 {
     size = (page_size - 1)&size ? ((size + page_size) & ~(page_size - 1)) : size;
     return size;
+}
+
+void bytecode_generator::createStoreInstruction(VariableDeclarationAST *decl, s16 reg)
+{
+    BCI *bci;
+    BytecodeInstructionOpcode opcode;
+    if (isGlobal(decl)) {
+        opcode = BC_STORE_TO_BSS_PLUS_CONSTANT;
+    } else {
+        opcode = BC_STORE_TO_STACK_PLUS_CONSTANT;
+    }
+    
+    bci = create_instruction(opcode, reg, -1, decl->bc_mem_offset);
+    bci->op_size = truncate_op_size(decl->specified_type->size_in_bits);
+    issue_instruction(bci);
+    if (decl->specified_type->size_in_bits > 64) {
+        s64 bits = decl->specified_type->size_in_bits;
+        u64 offset = decl->bc_mem_offset + 8;
+        bits -= 64;
+        reg++;
+        do {
+            BCI *bci = create_instruction(opcode, reg, -1, offset);
+            issue_instruction(bci);
+            bci->op_size = truncate_op_size(bits);
+            reg++;
+            bits -= 64;
+            offset += 8;
+        } while (bits > 0);
+    }
 }
 
 BCI * bytecode_generator::create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const)
@@ -80,7 +139,7 @@ BCI * bytecode_generator::create_instruction(BytecodeInstructionOpcode opcode, s
 
 void bytecode_generator::issue_instruction(BCI * bci)
 {
-    bci->inst_index = program->instructions.push_back(bci);
+    bci->inst_index = current_function->instructions.push_back(bci);
 }
 
 bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
@@ -89,7 +148,7 @@ bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
     this->program = bp;
 
     // First step, have space in the bss for the global variables (non functions)
-    u64 bss_size = getScopeVariablesSize(&root->scope);
+    u64 bss_size = getScopeVariablesSize(&root->global_scope);
     // ensure we get page aligned memory chunks
     bss_size = roundToPage(bss_size, 4 * 1024);
 
@@ -97,12 +156,78 @@ bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
         bss_size, stack_size);
     
     // set the correct value in the bss area for vars (bytecode instruction)
-    initializeVariablesInScope(&root->scope);
-
-    // Next, write functions in the bss. If calling a function, we might (or might not)
-    // have its address, keep it in mind and later update all locations
-
+    current_function = &program->preamble_function;
+    initializeVariablesInScope(&root->global_scope);
+    current_function = nullptr;
+    
+    // Update function variable addresses?
+    
     return bp;
+}
+
+void bytecode_generator::generate_function(FunctionDefinitionAST * fundef)
+{
+    if (fundef->declaration->isForeign) return; // foreign functions just get called
+
+    bytecode_function *old_current = current_function;
+    bytecode_function *func = new (pool) bytecode_function;
+    current_function = func;
+	
+    // Creating a function is the same as processing its statementBlock
+    generate_statement_block(fundef->function_body);
+	
+	current_function = old_current;
+}
+
+void bytecode_generator::generate_statement_block(StatementBlockAST *block)
+{
+    // first thing, allocate space for the variables, and process implicit
+    // initialization
+    for (auto stmt: block->statements) {
+        switch (stmt->ast_type) {
+            case AST_VARIABLE_DECLARATION: {
+                auto decl = (VariableDeclarationAST *)stmt;
+                u64 var_size = getVariableSize(decl);
+                if (var_size > 0) {
+                    // reserve space and figure out where it is
+                    decl->bc_mem_offset = current_function->local_variables_size;
+                    current_function->local_variables_size += var_size;
+                }
+                initializeVariable(decl);
+                break;
+            }
+            case AST_ASSIGNMENT: {
+                auto assign = (AssignmentAST *)stmt;
+                s16 mark = program->reg_mark();
+                s16 reg = reserveRegistersForSize(program, assign->lhs->expr_type->size_in_bits);
+                computeExpressionIntoRegister(assign->rhs, reg);
+
+                if (assign->rhs->ast_type == AST_IDENTIFIER) {
+                    auto iden = (IdentifierAST *)assign->rhs;
+                    createStoreInstruction(iden->decl, reg);
+                } else {
+                    assert (! "We do not support anything else than an identifier for lhs for now");
+                }
+                
+                program->pop_mark(mark);
+                break;
+            }
+            case AST_FUNCTION_CALL: {
+                assert(false);
+                break;
+            }
+            case AST_RETURN_STATEMENT: {
+                assert(false);
+                break;
+            }
+            case AST_STATEMENT_BLOCK: {
+                assert(false);
+                break;
+            }
+            default:
+                assert(false);
+        }
+    }
 }
 
 void bytecode_generator::initializeVariablesInScope(Scope * scope)
@@ -119,8 +244,7 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
     
     if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
         auto fundef = (FunctionDefinitionAST *)decl->definition;
-        if (fundef->declaration->isForeign) return; // foreign functions just get called
-
+        generate_function(fundef);
         // assert(false);
         return;
     }
@@ -129,36 +253,12 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
     // ok, it is an expression (operation, literal (num, string) )
     // or god forbid, another variable (which means load its value
     s16 mark = program->reg_mark();
-    s16 reg = program->reserve_register();
-    // What if we need more registers? well, for now we allocate extra and assume the best
-    if (decl->specified_type->size_in_bits > 64) {
-        s64 bits = decl->specified_type->size_in_bits;
-        bits -= 64;
-        do {
-            program->reserve_register();
-            bits -= 64;
-        } while (bits > 0);
-    }
+    s16 reg = reserveRegistersForSize(program, decl->specified_type->size_in_bits);
+    
     computeExpressionIntoRegister((ExpressionAST *)decl->definition, reg);
     assert(decl->scope->parent == nullptr);
-    BCI *bci = create_instruction(BC_STORE_TO_BSS_PLUS_CONSTANT, reg, -1, decl->bc_mem_offset);
-    bci->op_size = truncate_op_size(decl->specified_type->size_in_bits);
-    issue_instruction(bci);
-    if (decl->specified_type->size_in_bits > 64) {
-        s64 bits = decl->specified_type->size_in_bits;
-        u64 offset = decl->bc_mem_offset + 8;
-        bits -= 64;
-        reg++;
-        do {
-            BCI *bci = create_instruction(BC_STORE_TO_BSS_PLUS_CONSTANT, reg, -1, offset);
-            issue_instruction(bci);
-            bci->op_size = truncate_op_size(bits);
-            reg++;
-            bits -= 64;
-            offset += 8;
-        } while (bits > 0);
-    }
-
+    createStoreInstruction(decl, reg);
+    
     program->pop_mark(mark);
 }
 

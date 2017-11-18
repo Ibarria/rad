@@ -131,6 +131,7 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
         if (!fundecl->return_type) {
             Error(expr, "Cannot use the return value of a void function [%s]\n", a->function_name);
         }
+        expr->expr_type = fundecl->return_type;
         return fundecl->return_type;
     }
     case AST_IDENTIFIER: {
@@ -139,27 +140,34 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
         if (!decl) return nullptr;
 
         // do not recurse on inferring types as this could cause infinite recursion
+        expr->expr_type = decl->specified_type;
         return decl->specified_type;
     }
     case AST_LITERAL: {
         auto lt = (LiteralAST *)expr;
+        expr->expr_type = &lt->typeAST;
         return &lt->typeAST;
     }
     case AST_BINARY_OPERATION: {
         // @TODO: the type should be a combination of both lhs and rhs?
-        return deduceType(((BinaryOperationAST *)expr)->lhs);
+        // @TODO: The type here should also depend on the operator
+        TypeAST *type = deduceType(((BinaryOperationAST *)expr)->lhs);
+        expr->expr_type = type;
+        return type;
     }
     case AST_UNARY_OPERATION: {
         auto un = (UnaryOperationAST *)expr;
         // @TODO: Use the operation in `un` to choose the type
-        return deduceType(un->expr);
-        break;
+        TypeAST *type = deduceType(un->expr);
+        expr->expr_type = type;
+        return type;
     }
     case AST_RUN_DIRECTIVE: {
         auto run = (RunDirectiveAST *)expr;
         // Run directives do not change the type of whatever they run, pass through
-        return deduceType(run->expr);
-        break;
+        TypeAST *type = deduceType(run->expr);
+        expr->expr_type = type;
+        return type;
     }
     default:
         assert("We should never be here, we could not parse this type\n");
@@ -414,9 +422,7 @@ void Interpreter::traverseAST(ExpressionAST *expr)
         FunctionCallAST *funcall = (FunctionCallAST *)expr;
         VariableDeclarationAST *decl = validateFunctionCall(funcall);
         if (!decl) return;
-        assert(decl);
-        assert(decl->specified_type);
-        assert(decl->specified_type->ast_type == AST_FUNCTION_TYPE);
+        assert(isFunctionDeclaration(decl));
         FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
         if (fundecl->hasVariableArguments) {
             // for variable number of argument functions we only need to check a lower bound
@@ -482,12 +488,12 @@ void Interpreter::perform_bytecode(FileAST * root)
 void Interpreter::traverseAST(StatementBlockAST *root)
 {
     if (root == nullptr) return; // this happens for foreign functions
-    process_all_scope_variables(&root->scope);
+    process_all_scope_variables(&root->block_scope);
 
     if (!success) return;
 
     Scope *previous_scope = current_scope;
-    current_scope = &root->scope;
+    current_scope = &root->block_scope;
     for (auto stmt : root->statements) {
         if (stmt->ast_type == AST_VARIABLE_DECLARATION) {
             auto decl = (VariableDeclarationAST *)stmt;
@@ -518,13 +524,13 @@ void Interpreter::printErrors()
 
 void Interpreter::traverseAST(FileAST *root)
 {
-    process_all_scope_variables(&root->scope);
-    current_scope = &root->scope;
+    process_all_scope_variables(&root->global_scope);
+    current_scope = &root->global_scope;
     for (auto &ast : root->items) {
         switch (ast->ast_type) {
         case AST_VARIABLE_DECLARATION: {
             auto decl = (VariableDeclarationAST *)ast;
-            if ((decl->definition) && (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
+            if (isFunctionDeclaration(decl)) {
                 FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
                 traverseAST(fundef->function_body);
             }

@@ -36,13 +36,29 @@ struct bc_base_memory {
     void initMem(u8 *basemem, u64 bss_size, u64 stack_size);
 };
 
+struct bytecode_function
+{
+	Array<BCI *> instructions;
+	TextType function_name = nullptr;
+    u32 local_variables_size = 0; // space to take from the stack for this function
+	u64 function_id;
+};
+
 struct bytecode_program
 {
     bc_base_memory bss;
-    bc_register regs[64];
+    bc_register regs[64]; // Maybe do SSA, like LLVM wants?
     s16 regs_used = 0;
-    Array<BCI *> instructions;
-    s16 reserve_register() { assert(regs_used < 64);  return regs_used++; }
+	bytecode_function preamble_function;
+	bytecode_function start_function;
+    Array<bytecode_function *> functions;
+    s16 reserve_register(u64 count = 1)
+    {
+        assert(regs_used + count < 64);
+        u64 ret_value;
+        regs_used += count;
+        return ret_value;
+    }
     s16 reg_mark() const { return regs_used; }
     void pop_mark(s16 mark) { regs_used = mark; }
 };
@@ -51,8 +67,10 @@ struct bytecode_generator
 {
     PoolAllocator *pool = nullptr;
     bytecode_program *program = nullptr;
+	bytecode_function *current_function = nullptr;
 
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const);
+    void createStoreInstruction(VariableDeclarationAST *decl, s16 reg); 
     void issue_instruction(BCI *bci);
 
     void setPool(PoolAllocator *p) { pool = p; }
@@ -60,6 +78,8 @@ struct bytecode_generator
 
     void initializeVariablesInScope(Scope *scope);
     void initializeVariable(VariableDeclarationAST *decl);
+    void generate_function(FunctionDefinitionAST *fundef);
+    void generate_statement_block(StatementBlockAST *block);
 
     void computeExpressionIntoRegister(ExpressionAST *expr, s16 reg);
 };

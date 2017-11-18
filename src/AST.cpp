@@ -85,7 +85,7 @@ void printAST(const BaseAST *ast, int ident)
             if (c->typeAST.isSigned) {
                 printf(" %lld", c->_s64);
             } else {
-                printf(" %llu", c->_u64);
+                printf(" %lu", c->_u64);
             }
             break;
         default:
@@ -200,5 +200,15 @@ void printAST(const BaseAST *ast, int ident)
     default : 
         printf("%*sUnknown AST type\n", ident, "");
     }
+}
+
+bool isFunctionDeclaration(VariableDeclarationAST *decl)
+{
+    if (decl && (decl->definition) &&
+        (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
+            return true;
+    }
+        
+    return false;
 }
 

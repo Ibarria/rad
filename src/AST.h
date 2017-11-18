@@ -54,13 +54,14 @@ struct BaseAST
     Scope *scope = nullptr;
     u32 line_num = 0;
     u32 char_num = 0;
+	u64 s = 0; // This is a unique ID for this AST element
 };
 
 struct FileAST : BaseAST
 {
     FileAST() { ast_type = AST_FILE; }
     Array<BaseAST *>items;
-    Scope scope;
+    Scope global_scope;
 };
 
 struct StatementAST : BaseAST
@@ -97,7 +98,7 @@ struct StatementBlockAST : StatementAST
 {
     StatementBlockAST() { ast_type = AST_STATEMENT_BLOCK; }
     Array<StatementAST *> statements;
-    Scope scope;
+    Scope block_scope;
 };
 
 struct ReturnStatementAST: StatementAST
@@ -105,6 +106,7 @@ struct ReturnStatementAST: StatementAST
     ReturnStatementAST() { ast_type = AST_RETURN_STATEMENT; }
     ExpressionAST *ret = nullptr;
 };
+
 struct FunctionDefinitionAST : DefinitionAST
 {
     FunctionDefinitionAST() { ast_type = AST_FUNCTION_DEFINITION; }
@@ -116,6 +118,7 @@ struct FunctionDefinitionAST : DefinitionAST
 
 struct ExpressionAST : DefinitionAST
 {
+    TypeAST *expr_type = nullptr;
 };
 
 struct RunDirectiveAST : ExpressionAST
@@ -123,11 +126,13 @@ struct RunDirectiveAST : ExpressionAST
     RunDirectiveAST() { ast_type = AST_RUN_DIRECTIVE; }
     ExpressionAST *expr = nullptr;
 };
+
 struct FunctionCallAST : ExpressionAST
 {
     FunctionCallAST() { ast_type = AST_FUNCTION_CALL; }
     Array<ExpressionAST *>args;
     TextType function_name = nullptr;
+    FunctionDefinitionAST *fundef = nullptr;
 };
 
 struct DirectTypeAST : TypeAST
@@ -207,3 +212,4 @@ struct VariableDeclarationAST : StatementAST
 
 void printAST(const BaseAST*ast, int ident);
 const char *BasicTypeToStr(const DirectTypeAST* t);
+bool isFunctionDeclaration(VariableDeclarationAST *decl);
