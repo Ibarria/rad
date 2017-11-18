@@ -52,6 +52,11 @@ static inline u64 getVariableSize(VariableDeclarationAST *decl)
     return decl->specified_type->size_in_bits / 8;
 }
 
+static inline u64 getVariableSize(ArgumentDeclarationAST *arg)
+{
+    return arg->type->size_in_bits / 8;
+}
+
 static inline bool isGlobal(BaseAST *ast)
 {
     assert(ast);
@@ -59,13 +64,13 @@ static inline bool isGlobal(BaseAST *ast)
     return ast->scope->parent == nullptr;
 }
 
-static s16 reserveRegistersForSize(bytecode_program *program, u64 size_in_bits)
+static s16 reserveRegistersForSize(bytecode_machine *machine, u64 size_in_bits)
 {
     // @TODO: Possible optimization, for large structs or arrays,
     // store them in the stack and just copy here pointers to that
     u64 count = size_in_bits / 64;
     if (size_in_bits %64 != 0) count ++;
-    return program->reserve_register(count);
+    return machine->reserve_register(count);
 }
 
 static u64 getScopeVariablesSize(Scope *scope)
@@ -109,6 +114,10 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_LOAD_BIG_CONSTANT_TO_REG);
         CASE_BC_OPCODE(BC_STORE_TO_STACK_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_STORE_TO_BSS_PLUS_CONSTANT);
+        CASE_BC_OPCODE(BC_POKE_INTO_CALLING_RECORD);
+        CASE_BC_OPCODE(BC_CALL_PROCEDURE);
+        CASE_BC_OPCODE(BC_RETURN);
+
         default:
             return "UNKNOWN OPCODE";
     }
@@ -116,9 +125,9 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
 
 void print_instruction(BCI *inst)
 {
-    printf("  op: %s src: %d dst: %d size: %d big_const: %lu\n",
+    printf("  op: %s src: %d dst: %d size: %d big_const: %lu | 0x%lX\n",
            bc_opcode_to_str(inst->opcode), (int)inst->src_reg,
-           (int)inst->dst_reg, inst->op_size, inst->big_const);
+           (int)inst->dst_reg, inst->op_size, inst->big_const, inst->big_const);
 }
 
 void print_bc_function(bytecode_function *func)
@@ -149,6 +158,32 @@ void print_bc_program(bytecode_program *program)
     
     for (auto func:program->functions) {
         print_bc_function(func);
+    }
+}
+
+
+void bytecode_generator::createCallRegisterInstruction(ArgumentDeclarationAST *arg_decl, s16 reg)
+{
+    BCI *bci;
+    BytecodeInstructionOpcode opcode;
+    opcode = BC_POKE_INTO_CALLING_RECORD;
+    
+    bci = create_instruction(opcode, reg, -1, arg_decl->bc_mem_offset);
+    bci->op_size = truncate_op_size(arg_decl->type->size_in_bits);
+    issue_instruction(bci);
+    if (arg_decl->type->size_in_bits > 64) {
+        s64 bits = arg_decl->type->size_in_bits;
+        u64 offset = arg_decl->bc_mem_offset + 8;
+        bits -= 64;
+        reg++;
+        do {
+            BCI *bci = create_instruction(opcode, reg, -1, offset);
+            issue_instruction(bci);
+            bci->op_size = truncate_op_size(bits);
+            reg++;
+            bits -= 64;
+            offset += 8;
+        } while (bits > 0);
     }
 }
 
@@ -230,6 +265,16 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
     func->function_id = fundef->s;
     current_function = func;
 	
+    assert(fundef->declaration);
+    auto fundecl = fundef->declaration;
+    for (auto arg: fundecl->arguments) {
+        // compute the size and offset for the arguments
+        assert(arg->type);
+        u64 var_size = getVariableSize(arg);
+        arg->bc_mem_offset = fundecl->bc_params_size;
+        fundecl->bc_params_size += var_size;
+    }
+    
     // Creating a function is the same as processing its statementBlock
     generate_statement_block(fundef->function_body);
 	
@@ -237,6 +282,8 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
     if (!strcmp(name, "main") && (fundef->scope->parent == nullptr)) {
         program->start_function = func;
     }
+    assert(fundef->bc_function == nullptr);
+    fundef->bc_function = func;
     program->functions.push_back(func);
 }
 
@@ -259,22 +306,24 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
             }
             case AST_ASSIGNMENT: {
                 auto assign = (AssignmentAST *)stmt;
-                s16 mark = program->reg_mark();
-                s16 reg = reserveRegistersForSize(program, assign->lhs->expr_type->size_in_bits);
+                s16 mark = program->machine.reg_mark();
+                s16 reg = reserveRegistersForSize(&program->machine, assign->lhs->expr_type->size_in_bits);
                 computeExpressionIntoRegister(assign->rhs, reg);
 
-                if (assign->rhs->ast_type == AST_IDENTIFIER) {
-                    auto iden = (IdentifierAST *)assign->rhs;
+                if (assign->lhs->ast_type == AST_IDENTIFIER) {
+                    auto iden = (IdentifierAST *)assign->lhs;
                     createStoreInstruction(iden->decl, reg);
                 } else {
                     assert (! "We do not support anything else than an identifier for lhs for now");
                 }
                 
-                program->pop_mark(mark);
+                program->machine.pop_mark(mark);
                 break;
             }
             case AST_FUNCTION_CALL: {
-                assert(false);
+                auto funcall = (FunctionCallAST *)stmt;
+                // on statements we do not care about return values
+                compute_function_call_into_register(funcall, -1);
                 break;
             }
             case AST_RETURN_STATEMENT: {
@@ -282,7 +331,8 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
                 break;
             }
             case AST_STATEMENT_BLOCK: {
-                assert(false);
+                auto inner_block = (StatementBlockAST *)stmt;
+                generate_statement_block(inner_block);
                 break;
             }
             default:
@@ -306,21 +356,19 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
     if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
         auto fundef = (FunctionDefinitionAST *)decl->definition;
         generate_function(decl->varname, fundef);
-        // assert(false);
         return;
     }
     // @TODO: we do not support function pointers yet
 
     // ok, it is an expression (operation, literal (num, string) )
     // or god forbid, another variable (which means load its value
-    s16 mark = program->reg_mark();
-    s16 reg = reserveRegistersForSize(program, decl->specified_type->size_in_bits);
+    s16 mark = program->machine.reg_mark();
+    s16 reg = reserveRegistersForSize(&program->machine, decl->specified_type->size_in_bits);
     
     computeExpressionIntoRegister((ExpressionAST *)decl->definition, reg);
-    assert(decl->scope->parent == nullptr);
     createStoreInstruction(decl, reg);
     
-    program->pop_mark(mark);
+    program->machine.pop_mark(mark);
 }
 
 void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16 reg)
@@ -366,24 +414,54 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)expr;
+        assert(!"Identifier expression not supported on bytecode yet");
         break;
     }
     case AST_UNARY_OPERATION: {
         auto unop = (UnaryOperationAST *)expr;
+        assert(!"Unary expression not supported on bytecode yet");
         break;
     }
     case AST_BINARY_OPERATION: {
         auto binop = (BinaryOperationAST *)expr;
+        assert(!"Binary expression not supported on bytecode yet");
         break;
     }
     case AST_ASSIGNMENT: {
         assert(!"Assignment expression bytecode not implemented");
         break;
     }
+    case AST_FUNCTION_CALL: {
+        auto funcall = (FunctionCallAST *)expr;
+        assert(funcall->fundef->declaration->return_type);
+        compute_function_call_into_register(funcall, reg);
+        break;
+    }
     default:
         assert(!"Unknown expression AST for bytecode");
     }
 }
+
+void bytecode_generator::compute_function_call_into_register(FunctionCallAST *funcall, s16 reg_return)
+{
+    auto fundecl = funcall->fundef->declaration;
+    assert(fundecl->bc_params_size < sizeof(bc_calling_record)/sizeof(u64));
+
+    s16 mark = program->machine.reg_mark();
+    for (int index = 0; index < funcall->args.size(); index++) {
+        auto arg_expr = funcall->args[index];
+        auto arg_decl = fundecl->arguments[index];
+        // @TODO improvement, implicit cast of arguments here
+        s16 reg = reserveRegistersForSize(&program->machine, arg_decl->type->size_in_bits);
+        computeExpressionIntoRegister(arg_expr, reg);
+        createCallRegisterInstruction(arg_decl, reg);
+    }
+    BCI *bci = create_instruction(BC_CALL_PROCEDURE, -1, reg_return, straight_convert(funcall->fundef));
+    issue_instruction(bci);
+    bci->op_size = 8;
+    program->machine.pop_mark(mark);
+}
+
 
 void bc_base_memory::initMem(u8 * basemem, u64 bss_size, u64 stack_size)
 {

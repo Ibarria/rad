@@ -127,6 +127,8 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
             return nullptr;
         }
 
+        assert(decl->definition->ast_type == AST_FUNCTION_DEFINITION);
+        a->fundef = (FunctionDefinitionAST *)decl->definition;
         FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
         if (!fundecl->return_type) {
             Error(expr, "Cannot use the return value of a void function [%s]\n", a->function_name);
@@ -137,9 +139,11 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
     case AST_IDENTIFIER: {
         IdentifierAST *a = (IdentifierAST *)expr;
         VariableDeclarationAST *decl = validateVariable(a);
-        if (!decl) return nullptr;
 
         // do not recurse on inferring types as this could cause infinite recursion
+        if (!decl) return nullptr;
+
+        a->decl = decl;
         expr->expr_type = decl->specified_type;
         return decl->specified_type;
     }

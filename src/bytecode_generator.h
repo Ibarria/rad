@@ -22,7 +22,7 @@ union bc_register {
 };
 
 struct bc_calling_record {
-    bc_register regs[32];
+    bc_register regs[64];
 };
 
 struct bc_base_memory {
@@ -44,23 +44,28 @@ struct bytecode_function
 	u64 function_id;
 };
 
-struct bytecode_program
+struct bytecode_machine
 {
-    bc_base_memory bss;
-    bc_register regs[64]; // Maybe do SSA, like LLVM wants?
+    bc_register regs[128]; // Maybe do SSA, like LLVM wants?
     s16 regs_used = 0;
-	bytecode_function preamble_function;
-	bytecode_function *start_function = nullptr;
-    Array<bytecode_function *> functions;
     s16 reserve_register(u64 count = 1)
     {
-        assert(regs_used + count < 64);
+        assert(regs_used + count < 128);
         s16 ret_value;
         regs_used += count;
         return ret_value;
     }
     s16 reg_mark() const { return regs_used; }
     void pop_mark(s16 mark) { regs_used = mark; }
+};
+
+struct bytecode_program
+{
+    bc_base_memory bss;
+    bytecode_machine machine;
+	bytecode_function preamble_function;
+	bytecode_function *start_function = nullptr;
+    Array<bytecode_function *> functions;
 };
 
 struct bytecode_generator
@@ -71,6 +76,7 @@ struct bytecode_generator
 
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const);
     void createStoreInstruction(VariableDeclarationAST *decl, s16 reg); 
+    void createCallRegisterInstruction(ArgumentDeclarationAST *arg_decl, s16 reg);
     void issue_instruction(BCI *bci);
 
     void setPool(PoolAllocator *p) { pool = p; }
@@ -82,6 +88,7 @@ struct bytecode_generator
     void generate_statement_block(StatementBlockAST *block);
 
     void computeExpressionIntoRegister(ExpressionAST *expr, s16 reg);
+    void compute_function_call_into_register(FunctionCallAST *funcall, s16 reg);
 };
 
 void print_bc_program(bytecode_program *program);

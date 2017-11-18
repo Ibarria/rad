@@ -9,6 +9,7 @@ struct BaseAST;
 struct TypeAST;
 struct ExpressionAST;
 struct VariableDeclarationAST;
+struct bytecode_function;
 
 struct Scope {
     Scope *parent;
@@ -83,6 +84,7 @@ struct ArgumentDeclarationAST : BaseAST
     ArgumentDeclarationAST() { ast_type = AST_ARGUMENT_DECLARATION; }
     TextType name = nullptr;
     TypeAST *type = nullptr;
+    u64 bc_mem_offset = 0;
 };
 
 struct FunctionTypeAST : TypeAST
@@ -90,6 +92,7 @@ struct FunctionTypeAST : TypeAST
     FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; size_in_bits = 64; }
     Array<ArgumentDeclarationAST *> arguments;
     TypeAST *return_type = nullptr;
+    u64 bc_params_size = 0;
     bool isForeign = false;
     bool hasVariableArguments = false;
 };
@@ -114,6 +117,7 @@ struct FunctionDefinitionAST : DefinitionAST
     StatementBlockAST *function_body = nullptr;
     virtual bool needsSemiColon() const { return false; }
     u32 size_in_bits = 64;
+    bytecode_function *bc_function = nullptr;
 };
 
 struct ExpressionAST : DefinitionAST
