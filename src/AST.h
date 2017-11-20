@@ -86,7 +86,6 @@ struct FunctionTypeAST : TypeAST
     FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; size_in_bits = 64; }
     Array<VariableDeclarationAST *> arguments;
     TypeAST *return_type = nullptr;
-    u64 bc_params_size = 0;
     bool isForeign = false;
     bool hasVariableArguments = false;
 };

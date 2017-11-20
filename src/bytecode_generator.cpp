@@ -45,6 +45,31 @@ static inline u8 truncate_op_size(s64 bits)
     return 8;
 }
 
+static inline void copy_bytes(u8 *src, u8* dst, u8 count)
+{
+    if (count == 8) {
+        u64 *src8 = (u64 *)src;
+        u64 *dst8 = (u64 *)dst;
+        *dst8 = *src8;
+        return;
+    } else if (count == 4) {
+        u32 *src4 = (u32 *)src;
+        u32 *dst4 = (u32 *)dst;
+        *dst4 = *src4;
+        return;
+    }
+    while (count > 0) {
+        *dst++ = *src++;
+        count--;
+    }
+}
+
+static inline void copy_bytes(u64 *src, u64 *dst, u8 count)
+{
+    copy_bytes((u8 *)src, (u8 *)dst, count);
+}
+
+
 static inline u64 getVariableSize(VariableDeclarationAST *decl)
 {
     if ((decl->flags & DECL_FLAG_IS_CONSTANT) &&
@@ -132,16 +157,15 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_ZERO_REG);
         CASE_BC_OPCODE(BC_LOAD_BIG_CONSTANT_TO_REG);
         CASE_BC_OPCODE(BC_STORE_TO_STACK_PLUS_CONSTANT);
+        CASE_BC_OPCODE(BC_STORE_TO_TOP_STACK_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_STORE_TO_BSS_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_LOAD_FROM_STACK_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_LOAD_FROM_BSS_PLUS_CONSTANT);
-        CASE_BC_OPCODE(BC_LOAD_FROM_CALLING_RECORD);
-        CASE_BC_OPCODE(BC_POKE_INTO_CALLING_RECORD);
         CASE_BC_OPCODE(BC_CALL_PROCEDURE);
         CASE_BC_OPCODE(BC_RETURN);
         CASE_BC_OPCODE(BC_BINARY_OPERATION);
         CASE_BC_OPCODE(BC_UNARY_OPERATION);
-
+        CASE_BC_OPCODE(BC_RESERVE_STACK_SIZE);
         default:
             return "UNKNOWN OPCODE";
     }
@@ -161,8 +185,8 @@ void print_bc_function(bytecode_function *func)
     } else {
         printf("Function <unnamed> ");
     }
-    printf(" local var size: %d num_instructions: %d\n",
-           func->local_variables_size, func->instructions.size());
+    printf(" local var size: %" U64FMT "u num_instructions: %d\n",
+           func->bc_params_size, func->instructions.size());
     for(auto inst: func->instructions) {
         print_instruction(inst);
     }
@@ -215,9 +239,7 @@ void bytecode_generator::createStoreInstruction(VariableDeclarationAST *decl, s1
         opcode = BC_STORE_TO_BSS_PLUS_CONSTANT;
     } else if (isLocal(decl)) {
         opcode = BC_STORE_TO_STACK_PLUS_CONSTANT;
-    } else if (isArgument(decl)) {
-        opcode = BC_POKE_INTO_CALLING_RECORD;
-    } else {
+    }  else {
         assert(!"Variable without scope set!");
     }
     
@@ -256,7 +278,7 @@ void bytecode_generator::createLoadInstruction(VariableDeclarationAST *decl, s16
     } else if (isLocal(decl)) {
         opcode = BC_LOAD_FROM_STACK_PLUS_CONSTANT;
     } else if (isArgument(decl)) {
-        opcode = BC_LOAD_FROM_CALLING_RECORD;
+        opcode = BC_LOAD_FROM_STACK_PLUS_CONSTANT;
     } else {
         assert(!"Variable without scope set!");
     }
@@ -280,6 +302,13 @@ BCI * bytecode_generator::create_instruction(BytecodeInstructionOpcode opcode, s
 void bytecode_generator::issue_instruction(BCI * bci)
 {
     bci->inst_index = current_function->instructions.push_back(bci);
+}
+
+void bytecode_generator::issueReserveStackSpace(u64 size)
+{
+    BCI *bci = create_instruction(BC_RESERVE_STACK_SIZE, 0, 0, size);
+    bci->op_size = 8;
+    issue_instruction(bci);
 }
 
 bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
@@ -319,15 +348,15 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
     auto fundecl = fundef->declaration;
     if (fundecl->return_type) {
         // Return types go first in the calling record
-        u64 var_size = fundecl->return_type->size_in_bits / 8;
-        fundecl->bc_params_size += var_size;
+        u32 var_size = fundecl->return_type->size_in_bits / 8;
+        current_function->bc_params_size += var_size;
     }
     for (auto arg: fundecl->arguments) {
         // compute the size and offset for the arguments
         assert(arg->specified_type);
         u64 var_size = getVariableSize(arg);
-        arg->bc_mem_offset = fundecl->bc_params_size;
-        fundecl->bc_params_size += var_size;
+        arg->bc_mem_offset = current_function->bc_params_size;
+        current_function->bc_params_size += var_size;
     }
     
     // Creating a function is the same as processing its statementBlock
@@ -352,9 +381,12 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
                 auto decl = (VariableDeclarationAST *)stmt;
                 u64 var_size = getVariableSize(decl);
                 if (var_size > 0) {
+                    // Possible optimization: have stack space in a per block basis
+                    // We might need this for defers too. 
                     // reserve space and figure out where it is
-                    decl->bc_mem_offset = current_function->local_variables_size;
-                    current_function->local_variables_size += (u32)var_size;
+                    decl->bc_mem_offset = current_function->bc_params_size;
+                    current_function->bc_params_size += var_size;
+                    issueReserveStackSpace(var_size);
                 }
                 initializeVariable(decl);
                 break;
@@ -386,7 +418,9 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
                 s16 mark = program->machine.reg_mark();
                 s16 reg = reserveRegistersForSize(&program->machine, ret_stmt->ret->expr_type->size_in_bits);
                 computeExpressionIntoRegister(ret_stmt->ret, reg);
-                createStoreInstruction(BC_POKE_INTO_CALLING_RECORD, 0, ret_stmt->ret->expr_type->size_in_bits, reg);
+                createStoreInstruction(BC_STORE_TO_STACK_PLUS_CONSTANT, 0, ret_stmt->ret->expr_type->size_in_bits, reg);
+                BCI *bci = create_instruction(BC_RETURN, -1, -1, 0);
+                issue_instruction(bci);
                 program->machine.pop_mark(mark);
                 break;
             }
@@ -523,7 +557,6 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
 void bytecode_generator::compute_function_call_into_register(FunctionCallAST *funcall, s16 reg_return)
 {
     auto fundecl = funcall->fundef->declaration;
-    assert(fundecl->bc_params_size < sizeof(bc_calling_record)/sizeof(u64));
 
     s16 mark = program->machine.reg_mark();
     for (u32 index = 0; index < funcall->args.size(); index++) {
@@ -532,11 +565,12 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
         // @TODO improvement, implicit cast of arguments here
         s16 reg = reserveRegistersForSize(&program->machine, arg_decl->specified_type->size_in_bits);
         computeExpressionIntoRegister(arg_expr, reg);
-        createStoreInstruction(arg_decl, reg);
+        createStoreInstruction(BC_STORE_TO_TOP_STACK_PLUS_CONSTANT, arg_decl->bc_mem_offset, 
+            arg_decl->specified_type->size_in_bits, reg);
     }
     BCI *bci = create_instruction(BC_CALL_PROCEDURE, -1, reg_return, straight_convert(funcall->fundef));
     issue_instruction(bci);
-    bci->op_size = 8;
+    bci->op_size = fundecl->return_type->size_in_bits / 8;
     program->machine.pop_mark(mark);
 }
 
@@ -546,7 +580,195 @@ void bc_base_memory::initMem(u8 * basemem, u64 bss_size, u64 stack_size)
     mem = basemem;
     alloc_size = bss_size + stack_size;
     used_size = 0;
-    stack_base = mem + bss_size;
-    stack_index = 0;
+    stack_start = mem + bss_size;
+    stack_base = stack_pointer = stack_start;
     this->stack_size = stack_size;
+}
+
+void bytecode_runner::run_bc_function(bytecode_function * func)
+{
+    for (auto bci : func->instructions) {
+        switch (bci->opcode) {
+        case BC_ZERO_REG: {
+            program->machine.regs[bci->dst_reg]._u64 = 0;
+            break;
+        }
+        case BC_LOAD_BIG_CONSTANT_TO_REG: {
+            copy_bytes(&bci->big_const, &program->machine.regs[bci->dst_reg]._u64, bci->op_size);
+            break;
+        }
+        case BC_STORE_TO_STACK_PLUS_CONSTANT: {
+            assert(program->bss.stack_start + program->bss.stack_size > program->bss.stack_base + bci->big_const);
+            copy_bytes((u8*)(&program->machine.regs[bci->src_reg]._u64),
+                &program->bss.stack_base[bci->big_const],
+                bci->op_size);
+            break;
+        }
+        case BC_STORE_TO_TOP_STACK_PLUS_CONSTANT: {
+            assert(program->bss.stack_start + program->bss.stack_size > program->bss.stack_pointer + bci->big_const);
+            copy_bytes((u8*)(&program->machine.regs[bci->src_reg]._u64),
+                &program->bss.stack_pointer[bci->big_const],
+                bci->op_size);
+            break;
+        }
+        case BC_STORE_TO_BSS_PLUS_CONSTANT: {
+            assert(bci->big_const < program->bss.alloc_size);
+            copy_bytes((u8 *)&program->machine.regs[bci->src_reg]._u64, 
+                &program->bss.mem[bci->big_const],
+                bci->op_size);
+            break;
+        }
+        case BC_LOAD_FROM_STACK_PLUS_CONSTANT: {
+            assert(program->bss.stack_start + program->bss.stack_size > program->bss.stack_base + bci->big_const);
+            copy_bytes(&program->bss.stack_base[bci->big_const],
+                (u8 *)&program->machine.regs[bci->dst_reg]._u64,
+                bci->op_size);
+            break;
+        }
+        case BC_LOAD_FROM_BSS_PLUS_CONSTANT: {
+            assert(bci->big_const < program->bss.alloc_size);
+            copy_bytes(&program->bss.mem[bci->big_const], 
+                (u8 *)&program->machine.regs[bci->dst_reg]._u64, 
+                bci->op_size);
+            break;
+        }
+        case BC_RESERVE_STACK_SIZE: {
+            program->bss.stack_pointer += bci->big_const;
+            assert(program->bss.stack_pointer < program->bss.stack_start + program->bss.stack_size);
+            break;
+        }
+        case BC_BINARY_OPERATION: {
+            switch (bci->big_const) {
+            case TK_EQ: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 ==
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_LEQ: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 <=
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_GEQ: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 >=
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_NEQ: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 !=
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_LT: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 <
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_GT: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 >
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_RSHIFT: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 >>
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_LSHIFT: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 <<
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_STAR: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 *
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_DIV: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 /
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_MOD: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 %
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_PLUS: {
+                // How are we going to handle floating point ?
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 +
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            case TK_MINUS: {
+                program->machine.regs[bci->dst_reg]._u64 =
+                    program->machine.regs[bci->src_reg]._u64 -
+                    program->machine.regs[bci->src2_reg]._u64;
+                break;
+            }
+            default:
+                assert(!"Unknown operator for a binary operation");
+                break;
+            }
+            break;
+        }
+        case BC_UNARY_OPERATION: {
+            assert(!"Instruction not implemented");
+            break;
+        }
+        case BC_CALL_PROCEDURE: {
+            // Assume that the arguments (maybe leave space for the return value) are in the stack
+            // save the current stack pointer, set a new one for the function
+            u8 *old_stack_base = program->bss.stack_base;
+            u8 *old_stack_pointer = program->bss.stack_pointer;
+            program->bss.stack_base = program->bss.stack_pointer;
+            FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)bci->big_const;
+
+            if (fundef->declaration->isForeign) {
+                // we need to do special work for foreign functions, dyncall
+                // @TODO
+            } else {
+                assert(fundef->bc_function);
+                run_bc_function(fundef->bc_function);
+                if (bci->dst_reg != -1) {
+                    copy_bytes(old_stack_pointer,
+                        (u8 *)&program->machine.regs[bci->dst_reg], bci->op_size);
+                }
+            }
+
+            program->bss.stack_base = old_stack_base;
+            program->bss.stack_pointer = old_stack_pointer;
+            break;
+        }
+        case BC_RETURN: {
+            // end function execution right here. 
+            // In the future, do postamble work such as defer
+            return; 
+        }
+        default:
+            assert(!"Unknown Instruction type");
+        }
+    }
+}
+
+void bytecode_runner::run_preamble()
+{
+    run_bc_function(&program->preamble_function);
+}
+
+ExpressionAST * bytecode_runner::run_directive(RunDirectiveAST * run)
+{
+    return nullptr;
 }

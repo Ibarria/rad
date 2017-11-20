@@ -436,7 +436,7 @@ void c_generator::generate_c_file(const char * filename, FileAST * root)
             break;
         }
         default:
-            printf("AST type not supported at the top level: %d\n", ast->ast_type);
+            printf("  C Generation: AST type not supported at the top level: %d\n", ast->ast_type);
         }
     }
 

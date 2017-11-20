@@ -22,15 +22,12 @@ union bc_register {
     u8 *_ptr;
 };
 
-struct bc_calling_record {
-    bc_register regs[64];
-};
-
 struct bc_base_memory {
     u8 *mem = nullptr;
+    u8 *stack_start = nullptr;
     u8 *stack_base = nullptr;
-    u64 stack_index = 0;
-    u64 stack_size = 0;
+    u8 *stack_pointer = nullptr;
+    u64 stack_size = 0; // debug information
     u64 alloc_size = 0; // debug information
     u64 used_size = 0; // debug information
 
@@ -41,7 +38,7 @@ struct bytecode_function
 {
 	Array<BCI *> instructions;
 	TextType function_name = nullptr;
-    u32 local_variables_size = 0; // space to take from the stack for this function
+    u64 bc_params_size = 0; // space to take from the stack for this function
 	u64 function_id;
 };
 
@@ -81,6 +78,7 @@ struct bytecode_generator
     void createLoadInstruction(VariableDeclarationAST *decl, s16 reg);
     void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bits, s16 reg);
     void issue_instruction(BCI *bci);
+    void issueReserveStackSpace(u64 size);
 
     void setPool(PoolAllocator *p) { pool = p; }
     bytecode_program *compileToBytecode(FileAST *root);
@@ -92,6 +90,16 @@ struct bytecode_generator
 
     void computeExpressionIntoRegister(ExpressionAST *expr, s16 reg);
     void compute_function_call_into_register(FunctionCallAST *funcall, s16 reg);
+};
+
+struct bytecode_runner
+{
+    bytecode_program *program = nullptr;
+
+    void run_bc_function(bytecode_function *func);
+
+    void run_preamble();
+    ExpressionAST * run_directive(RunDirectiveAST *run);
 };
 
 void print_bc_program(bytecode_program *program);

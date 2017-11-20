@@ -518,11 +518,22 @@ void Interpreter::perform_bytecode(FileAST * root)
     // @TODO : should the bytecode have its own pool? 
     // makes sense since it is emphymeral, but we need to be able to
     // get its output too...
+    // Should we bytecode the whole program, or only what needs to run?
+    // finding the dependencies can be tricky... 
     PoolAllocator bc_pool;   
     bcgen.setPool(&bc_pool);
     bytecode_program *bp = bcgen.compileToBytecode(root);
     
     if (option_printBytecode) print_bc_program(bp);
+
+    // Find and run the #run directives now that we have a program compiled
+    bytecode_runner runner;
+    runner.program = bp;
+
+    // Just code to test the bytecode runner
+    runner.run_preamble();
+    runner.run_bc_function(bp->start_function);
+
 }
 
 void Interpreter::traverseAST(StatementBlockAST *root)
