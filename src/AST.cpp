@@ -191,6 +191,34 @@ void printAST(const BaseAST *ast, int ident)
         printAST(un->expr, ident + 3);
         break;
     }
+    case AST_VAR_REFERENCE: {
+        auto var_ref = (const VarReferenceAST *)ast;
+        printf("%*sVariable Reference: name: %s\n", ident, "", var_ref->name);
+        printAST(var_ref->next, ident + 3);
+        break;
+    }
+    case AST_STRUCT_DEFINITION: {
+        auto struct_def = (const StructDefinitionAST *)ast;
+        printf("%*sStructDefinition: StructType: \n", ident, "");
+        for (auto decl : struct_def->struct_type.struct_scope.decls) {
+            printAST(decl, ident + 3);
+        }
+        break;
+    }
+    case AST_STRUCT_TYPE: {
+        auto struct_type = (const StructTypeAST *)ast;
+        printf("%*sStructType: \n", ident, "");
+        for (auto decl : struct_type->struct_scope.decls) {
+            printAST(decl, ident + 3);
+        }
+        break;
+    }
+    case AST_RUN_DIRECTIVE: {
+        auto run = (const RunDirectiveAST *)ast;
+        printf("%*sRun Directive:\n", ident, "");
+        printAST(run->expr, ident + 3);
+        break;
+    }
     default : 
         printf("%*sUnknown AST type\n", ident, "");
     }

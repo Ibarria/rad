@@ -42,7 +42,8 @@ struct ReservedKeyword {
     const char *keyword;
     TOKEN_TYPE type;
 } reserved_keywords[] = {
-    { "return",   TK_RETURN},
+    { "return",   TK_RETURN },
+    { "struct",   TK_STRUCT },
     { "if",       TK_IF },
     { "for",      TK_FOR },
     { "bool",     TK_BOOL },
@@ -328,6 +329,16 @@ void Lexer::parseFile()
     tokens.push_back(tok);
     tokens.push_back(tok);
     tokens.push_back(tok);
+}
+
+void Lexer::getCurrentToken(Token & tok)
+{
+    if (token_index == tokens.size()) {
+        tok.clear();
+        tok.type = TK_LAST_TOKEN;
+        return;
+    }
+    tok = tokens[token_index];
 }
 
 void Lexer::getNextToken(Token &tok)

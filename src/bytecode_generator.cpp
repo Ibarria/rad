@@ -126,6 +126,11 @@ static u64 getScopeVariablesSize(Scope *scope)
     assert(scope->parent == nullptr);
 
     for (auto decl : scope->decls) {
+        if (decl->flags & DECL_FLAG_IS_TYPE) {
+            // Type variables do not take space
+            // Possible optimization, same for const variables
+            continue;
+        }
         assert(decl->specified_type);
         assert(decl->specified_type->size_in_bits > 0);
         assert((decl->specified_type->size_in_bits % 8) == 0);

@@ -4,9 +4,17 @@
 x1 : u8 = 3;
 s := "Hello there";
 
+MyType :: struct {
+  x: float;
+  y: string;
+}
 
 main :: ()
 {
+    a : MyType;
+    a.x = 3.0;
+
+
     x1 := 1;
     x1 = add(3, 0);
 //    printf("X is %llu\n", x);

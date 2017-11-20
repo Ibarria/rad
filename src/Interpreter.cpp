@@ -42,6 +42,47 @@ static void printTypeToStr(char *s, TypeAST *type)
     }
 }
 
+static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
+{
+    // trivial recursive case, could not be found
+    if (scope == nullptr) return nullptr;
+
+    for (auto d : scope->decls) {
+        if (!strcmp(name, d->varname)) return d;
+    }
+    return findVariable(name, scope->parent);
+}
+
+static bool isTypeStruct(TypeAST *type)
+{
+    if (type->ast_type == AST_STRUCT_TYPE) {
+        return true;
+    } else if (type->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)type;
+        if (dt->basic_type != BASIC_TYPE_CUSTOM) {
+            return false; // normal direct types are not structs
+        }
+        // When we reorganize the dependencies, this should go away
+        if (!dt->custom_type) {
+            VariableDeclarationAST *type_var = findVariable(dt->name, dt->scope);
+            if (!type_var) {
+                // Error(decl, "Type %s could not be resolved", dtype->name);
+                assert(false);
+                // we can't catch this error because we would need to be a member func
+                // we need the new dependency system...
+                return false;
+            }
+            assert(type_var->specified_type);
+            dt->custom_type = type_var->specified_type;
+        }
+        // if we are here, we should have computed the custom type
+        assert(dt->custom_type);
+        // This allows for more than 1 level of indirection
+        return isTypeStruct(dt->custom_type);
+    }
+    return false;
+}
+
 void Interpreter::Error(BaseAST *ast, const char *msg, ...)
 {
     va_list args;
@@ -54,17 +95,6 @@ void Interpreter::Error(BaseAST *ast, const char *msg, ...)
     success = false;
 
     errors.push_back(CreateTextType(&pool, errorString));
-}
-
-static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
-{
-    // trivial recursive case, could not be found
-    if (scope == nullptr) return nullptr;
-
-    for (auto d : scope->decls) {
-        if (!strcmp(name, d->varname)) return d;
-    }
-    return findVariable(name, scope->parent);
 }
 
 void copyASTloc(BaseAST *src, BaseAST *dst)
@@ -185,8 +215,67 @@ TypeAST * Interpreter::deduceType(ExpressionAST *expr)
         expr->expr_type = type;
         return type;
     }
+    case AST_VAR_REFERENCE: {
+        // find the type of this reference for checking, traversing it
+        auto var_ref = (VarReferenceAST *)expr;
+        VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
+        if (decl == nullptr) {
+            Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
+            return false;
+        }
+
+        if (!isTypeStruct(decl->specified_type)) {
+            Error(expr, "The variable [%s] is not of struct type", var_ref->name);
+            return false;
+        }
+
+        auto struct_type = (StructTypeAST *)decl->specified_type;
+
+        Scope *struct_scope = struct_type->scope;
+        var_ref = var_ref->next;
+
+        assert(var_ref);
+        // if the topmost element of a reference is not constant, check the rest
+        while (var_ref != nullptr) {
+            // At the start of the loop, we have an unchecked var_ref and the scope it applies to
+            if (var_ref->ast_type == AST_IDENTIFIER) {
+                // leaf check
+                auto inner_decl = findVariable(var_ref->name, struct_scope);
+                if (inner_decl == nullptr) {
+                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
+                    return false;
+                }
+
+                // end this
+                return inner_decl->specified_type;
+
+            } else if (var_ref->ast_type = AST_VAR_REFERENCE) {
+                auto inner_decl = findVariable(var_ref->name, struct_scope);
+                if (inner_decl == nullptr) {
+                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
+                    return false;
+                }
+
+                if (!isTypeStruct(inner_decl->specified_type)) {
+                    Error(expr, "The variable [%s] is not of struct type", var_ref->name);
+                    return false;
+                }
+
+                auto inner_struct_type = (StructTypeAST *)inner_decl->specified_type;
+                struct_scope = inner_struct_type->scope;
+                var_ref = var_ref->next;
+            } else {
+                assert(!"We should never be here!, wrong type on struct variable checking");
+            }
+        }
+        // We should never get here
+        assert(!"This location on type deduction should not be reachable");
+        return false;
+
+        break;
+    }
     default:
-        assert("We should never be here, we could not parse this type\n");
+        assert(!"We should never be here, we could not parse this type\n");
     }
     return nullptr;
 }
@@ -264,8 +353,31 @@ void Interpreter::process_all_scope_variables(Scope *scope)
 }
 
 bool Interpreter::infer_types(VariableDeclarationAST *decl)
-{
-    if (decl->specified_type) return true;
+{    
+    if (decl->specified_type) {
+        bool earlyOut = true;
+        if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
+            auto dtype = (DirectTypeAST *)decl->specified_type;
+            if (dtype->basic_type == BASIC_TYPE_CUSTOM) {
+                // we have to find the type here and provide a reference
+                if (dtype->custom_type) {
+                    // early out, the custom type is found
+                    return true;
+                } else {
+                    VariableDeclarationAST *type_var = findVariable(dtype->name, dtype->scope);
+                    if (!type_var) {
+                        Error(decl, "Type %s could not be resolved", dtype->name);
+                        return false;
+                    }
+                    assert(type_var->specified_type);
+                    dtype->custom_type = type_var->specified_type;
+                    return true;
+                }
+            }
+        }
+        // Early out, there is nothing to do
+        return true;
+    }
     current_identifier = decl->varname;
 
     assert(decl->definition); // if we do not have a type we must have something to compare against
@@ -276,6 +388,14 @@ bool Interpreter::infer_types(VariableDeclarationAST *decl)
         decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
         assert(decl->specified_type->size_in_bits);
         return true;
+    }
+    case AST_STRUCT_DEFINITION: {
+        auto struct_def = (StructDefinitionAST *)decl->definition;
+        decl->specified_type = &struct_def->struct_type;
+        decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
+        decl->flags |= DECL_FLAG_IS_TYPE; // Use this so we do not reserve space for types
+        assert(decl->specified_type->size_in_bits == 0);
+        break;
     }
     default: {
         // expect this to be an expression, and the expression type needs to be deduced
@@ -347,8 +467,61 @@ bool Interpreter::checkVariablesInExpression(ExpressionAST *expr)
         return checkVariablesInExpression(run->expr);
         break;
     }
+    case AST_VAR_REFERENCE: {
+        auto var_ref = (VarReferenceAST *)expr;
+        // for this to be right, we need to first find the topmost variable, and it has to be a struct type
+        // @TODO: Extend this when the variable can also be an array
+        VariableDeclarationAST *top_decl = findVariable(var_ref->name, var_ref->scope);
+        if (top_decl == nullptr) {
+            Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
+            return false;
+        }
+
+        if (!isTypeStruct(top_decl->specified_type)) {
+            Error(expr, "The variable [%s] is not of struct type", var_ref->name);
+            return false;
+        }
+
+        auto struct_type = (StructTypeAST *)top_decl->specified_type;
+
+        Scope *struct_scope = struct_type->scope;
+        var_ref = var_ref->next;
+        // if the topmost element of a reference is not constant, check the rest
+        while (var_ref != nullptr) {
+            // At the start of the loop, we have an unchecked var_ref and the scope it applies to
+            if (var_ref->ast_type == AST_IDENTIFIER) {
+                // leaf check
+                auto inner_decl = findVariable(var_ref->name, struct_scope);
+                if (inner_decl == nullptr) {
+                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
+                    return false;
+                }
+
+                // end this
+                var_ref = nullptr;
+            } else if (var_ref->ast_type = AST_VAR_REFERENCE) {
+                auto inner_decl = findVariable(var_ref->name, struct_scope);
+                if (inner_decl == nullptr) {
+                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
+                    return false;
+                }
+
+                if (!isTypeStruct(inner_decl->specified_type)) {
+                    Error(expr, "The variable [%s] is not of struct type", var_ref->name);
+                    return false;
+                }
+
+                auto inner_struct_type = (StructTypeAST *)inner_decl->specified_type;
+                struct_scope = inner_struct_type->scope;
+                var_ref = var_ref->next;
+            } else {
+                assert(!"We should never be here!, wrong type on struct variable checking");
+            }
+        }
+        return true;
+    }
     default:
-        assert("We should never be here, we could not parse this type\n");
+        assert(!"We should never be here, we could not parse this type\n");
     }
     return false;
 }
@@ -379,8 +552,72 @@ bool Interpreter::isConstExpression(ExpressionAST *expr)
     case AST_UNARY_OPERATION: {
         return true;
     }
+    case AST_VAR_REFERENCE: {
+        auto var_ref = (VarReferenceAST *)expr;
+        VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
+        if (decl == nullptr) {
+            Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
+            return false;
+        }
+
+        if (decl->flags & DECL_FLAG_IS_CONSTANT) {
+            return true;
+        }
+
+        if (!isTypeStruct(decl->specified_type)) {
+            Error(expr, "The variable [%s] is not of struct type\n", var_ref->name);
+            return false;
+        }
+
+        auto struct_type = (StructTypeAST *)decl->specified_type;
+
+        Scope *struct_scope = struct_type->scope;
+        var_ref = var_ref->next;
+        // if the topmost element of a reference is not constant, check the rest
+        while (var_ref != nullptr) {
+            // At the start of the loop, we have an unchecked var_ref and the scope it applies to
+            if (var_ref->ast_type == AST_IDENTIFIER) {
+                // leaf check
+                auto inner_decl = findVariable(var_ref->name, struct_scope);
+                if (inner_decl == nullptr) {
+                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
+                    return false;
+                }
+
+                if (inner_decl->flags & DECL_FLAG_IS_CONSTANT) {
+                    return true;
+                }
+
+                // end this
+                var_ref = nullptr;
+            } else if (var_ref->ast_type = AST_VAR_REFERENCE) {
+                auto inner_decl = findVariable(var_ref->name, struct_scope);
+                if (inner_decl == nullptr) {
+                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
+                    return false;
+                }
+
+                if (inner_decl->flags & DECL_FLAG_IS_CONSTANT) {
+                    return true;
+                }
+
+                if (!isTypeStruct(inner_decl->specified_type)) {
+                    Error(expr, "The variable [%s] is not of struct type", var_ref->name);
+                    return false;
+                }
+
+                auto inner_struct_type = (StructTypeAST *)inner_decl->specified_type;
+                struct_scope = inner_struct_type->scope;
+                var_ref = var_ref->next;
+            } else {
+                assert(!"We should never be here!, wrong type on struct variable checking");
+            }
+        }
+        // If we get here, we have not found a constant
+        return false;
+    }
     default:
-        assert("We should never be here, we could not parse this type\n");
+        assert(!"We should never be here, we could not parse this type\n");
     }
     return false;
 }

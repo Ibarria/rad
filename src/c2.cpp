@@ -108,6 +108,10 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    if (option_printAST) {
+        printAST(parsedFile, 0);
+    }
+
     interp.traverseAST(parsedFile);
 
     if (!interp.success) {
@@ -117,15 +121,16 @@ int main(int argc, char **argv)
     }
 
     astBuildTime = timer.stopTimer();
+
+    if (option_printAST) {
+        printAST(parsedFile, 0);
+    }
+
     timer.startTimer();
 
     c_generator gen;
     char *c_filename = getCfilename(root_file);
     gen.generate_c_file(c_filename, parsedFile);
-
-    if (option_printAST) {
-        printAST(parsedFile, 0);
-    }
 
     codegenTime = timer.stopTimer();
     

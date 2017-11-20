@@ -32,8 +32,6 @@ enum TOKEN_TYPE {
     TK_CLOSE_BRACKET,
     TK_OPEN_SQBRACKET,
     TK_CLOSE_SQBRACKET,
-    TK_OPEN_CURLYBRACKET,
-    TK_CLOSE_CURLYBRACKET,
     TK_RETURN_ARROW,
     TK_SEMICOLON,
     TK_COLON,
@@ -77,6 +75,7 @@ enum TOKEN_TYPE {
     TK_FLOAT,
     TK_F32,
     TK_F64,
+    TK_STRUCT, 
 
     // compiler directive tokens
 

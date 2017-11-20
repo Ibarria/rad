@@ -22,7 +22,8 @@ enum BasicType {
     BASIC_TYPE_BOOL,
     BASIC_TYPE_STRING,
     BASIC_TYPE_INTEGER,
-    BASIC_TYPE_FLOATING
+    BASIC_TYPE_FLOATING,
+    BASIC_TYPE_CUSTOM
 };
 
 enum AST_CLASS_TYPE {
@@ -46,7 +47,10 @@ enum AST_CLASS_TYPE {
     AST_UNARY_OPERATION,
     AST_ASSIGNMENT,
     AST_VARIABLE_DECLARATION,
-    AST_RUN_DIRECTIVE
+    AST_RUN_DIRECTIVE,
+    AST_STRUCT_TYPE,
+    AST_STRUCT_DEFINITION,   // this is here only to satisfy class hierarchy... does not add value
+    AST_VAR_REFERENCE,
 };
 
 struct BaseAST
@@ -73,7 +77,7 @@ struct StatementAST : BaseAST
 
 struct DefinitionAST : StatementAST
 {
-    virtual bool needsSemiColon() const { return true; }
+    bool needsSemiColon = true;
 };
 
 struct TypeAST : BaseAST
@@ -105,11 +109,10 @@ struct ReturnStatementAST: StatementAST
 
 struct FunctionDefinitionAST : DefinitionAST
 {
-    FunctionDefinitionAST() { ast_type = AST_FUNCTION_DEFINITION; }
+    FunctionDefinitionAST() { ast_type = AST_FUNCTION_DEFINITION; needsSemiColon = false; }
     FunctionTypeAST *declaration = nullptr;
     StatementBlockAST *function_body = nullptr;
-    VariableDeclarationAST *var_decl = nullptr;
-    virtual bool needsSemiColon() const { return false; }
+    VariableDeclarationAST *var_decl = nullptr; // so that we can find the name of the function
     u32 size_in_bits = 64;
     bytecode_function *bc_function = nullptr;
 };
@@ -143,6 +146,7 @@ struct DirectTypeAST : TypeAST
 	bool isPointer = false;
     bool isLiteral = false;
 	TextType name = nullptr;
+    TypeAST * custom_type = nullptr;
 };
 
 struct ArrayTypeAST : TypeAST
@@ -153,11 +157,48 @@ struct ArrayTypeAST : TypeAST
     bool isDynamic = false;
 };
 
-struct IdentifierAST : ExpressionAST
+struct StructTypeAST : TypeAST
+{
+    StructTypeAST() { ast_type = AST_STRUCT_TYPE; }
+    Scope struct_scope;
+};
+
+struct StructDefinitionAST : DefinitionAST 
+{
+    StructDefinitionAST() { ast_type = AST_STRUCT_DEFINITION; needsSemiColon = false; }
+    StructTypeAST struct_type;
+};
+
+#define DECL_FLAG_IS_CONSTANT          0x01
+#define DECL_FLAG_HAS_BEEN_INFERRED    0x02
+#define DECL_FLAG_HAS_BEEN_GENERATED   0x04
+#define DECL_FLAG_IS_FUNCTION_ARGUMENT 0x08
+#define DECL_FLAG_IS_LOCAL_VARIABLE    0x10
+#define DECL_FLAG_IS_GLOBAL_VARIABLE   0x20
+#define DECL_FLAG_IS_TYPE              0x40
+#define DECL_FLAG_IS_STRUCT_MEMBER     0x80
+
+struct VariableDeclarationAST : StatementAST
+{
+    VariableDeclarationAST() { ast_type = AST_VARIABLE_DECLARATION; }
+    TextType varname = nullptr;
+    TypeAST *specified_type = nullptr;
+    DefinitionAST *definition = nullptr;
+    u32 flags = 0;
+    u64 bc_mem_offset = 0;
+};
+
+struct VarReferenceAST : ExpressionAST
+{
+    VarReferenceAST() { ast_type = AST_VAR_REFERENCE; }
+    TextType name = nullptr;
+    VarReferenceAST *next = nullptr;
+};
+
+struct IdentifierAST : VarReferenceAST
 {
     IdentifierAST() { ast_type = AST_IDENTIFIER; }
     VariableDeclarationAST *decl = nullptr;
-    TextType name = nullptr;
 };
 
 struct LiteralAST : ExpressionAST
@@ -192,23 +233,6 @@ struct AssignmentAST : ExpressionAST
     ExpressionAST *lhs = nullptr;
     ExpressionAST *rhs = nullptr;
     TOKEN_TYPE op = TK_INVALID;
-};
-
-#define DECL_FLAG_IS_CONSTANT          0x01
-#define DECL_FLAG_HAS_BEEN_INFERRED    0x02
-#define DECL_FLAG_HAS_BEEN_GENERATED   0x04
-#define DECL_FLAG_IS_FUNCTION_ARGUMENT 0x08
-#define DECL_FLAG_IS_LOCAL_VARIABLE    0x10
-#define DECL_FLAG_IS_GLOBAL_VARIABLE   0x20
-
-struct VariableDeclarationAST : StatementAST
-{
-    VariableDeclarationAST() { ast_type = AST_VARIABLE_DECLARATION; }
-    TextType varname = nullptr;
-	TypeAST *specified_type = nullptr;
-    DefinitionAST *definition = nullptr;
-    u32 flags = 0;
-    u64 bc_mem_offset = 0;
 };
 
 void printAST(const BaseAST*ast, int ident);

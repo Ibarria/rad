@@ -26,7 +26,8 @@ public:
     void setPoolAllocator(PoolAllocator *p) { pool = p; }
 	bool openFile(const char *filename);
     void parseFile();
-	void getNextToken(Token &tok);
+    void getCurrentToken(Token &tok);
+    void getNextToken(Token &tok);
     void lookaheadToken(Token &tok);
     void lookNaheadToken(Token &tok, unsigned int ahead);
     void consumeToken();

@@ -88,6 +88,19 @@ bool Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
     return true;
 }
 
+bool Parser::AddDeclarationToStruct(StructDefinitionAST * struct_def, VariableDeclarationAST * decl)
+{
+    for (auto d : struct_def->struct_type.struct_scope.decls) {
+        if (!strcmp(d->varname, decl->varname)) {
+            Error("Variable %s is already defined within this struct", decl->varname);
+            return false;
+        }
+    }
+    struct_def->struct_type.struct_scope.decls.push_back(decl);
+    decl->flags |= DECL_FLAG_IS_STRUCT_MEMBER;
+    return true;
+}
+
 static bool isIntegerType(BasicType t)
 {
     return (t == BASIC_TYPE_INTEGER);
@@ -266,6 +279,8 @@ TypeAST *Parser::parseDirectType()
         type->size_in_bits = 64;
         break;
     case TK_IDENTIFIER :
+        type->basic_type = BASIC_TYPE_CUSTOM;
+        break;
     default:
         assert(!"Identifier types, custom types are not implemented");
     }
@@ -487,6 +502,39 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
     return fundef;
 }
 
+// This is really the declaration... 
+StructDefinitionAST * Parser::parseStructDefinition()
+{
+    StructDefinitionAST *struct_def = NEW_AST(StructDefinitionAST);
+    Token t;
+    lex->getNextToken(t);
+
+    assert(t.type == TK_STRUCT);
+
+    // Add here possible support for SOA or other qualifiers
+    lex->getNextToken(t);
+
+    if (t.type == TK_OPEN_BRACKET) {
+        while (t.type != TK_CLOSE_BRACKET) {
+            // now we process the different elements inside the struct, recursively
+            VariableDeclarationAST *decl = parseDeclaration();
+            if (!success) {
+                return nullptr;
+            }
+            AddDeclarationToStruct(struct_def, decl);
+            if (!success) {
+                return nullptr;
+            }
+            
+            lex->lookaheadToken(t);
+        }
+        // consume the close bracket
+        lex->consumeToken();
+    }
+
+    return struct_def;
+}
+
 FunctionCallAST * Parser::parseFunctionCall()
 {
     FunctionCallAST *funcall = NEW_AST(FunctionCallAST);
@@ -519,19 +567,53 @@ FunctionCallAST * Parser::parseFunctionCall()
     return funcall;
 }
 
-ExpressionAST * Parser::parseLiteral()
+VarReferenceAST * Parser::parseVarReference()
 {
     Token t;
-    lex->getNextToken(t);
+    lex->getCurrentToken(t);
+    assert(t.type == TK_IDENTIFIER);
+    lex->consumeToken(); // this consumes the identifier
 
-    if (t.type == TK_IDENTIFIER) {
+    if (lex->checkAheadToken(TK_PERIOD, 0)) {
+        // compound statement
+        VarReferenceAST *comp = NEW_AST(VarReferenceAST);
+        comp->name = t.string;
+        lex->consumeToken();
+        if (!lex->checkAheadToken(TK_IDENTIFIER, 0)) {
+            Error("An identifier must follow after a period access expression");
+            return nullptr;
+        }
+        comp->next = parseVarReference();
+        return comp;
+    } else if (lex->checkAheadToken(TK_OPEN_SQBRACKET, 0)) {
+        // This is an array access
+        assert(!"Array access in expressions is not implemented yet");
+        return nullptr;
+    } else {
+
+        if (t.type != TK_IDENTIFIER) {
+            Error("An identifier must follow after a period access expression");
+            return nullptr;
+        }
+
         IdentifierAST *ex = NEW_AST(IdentifierAST);
         ex->name = t.string;
         return ex;
+    }
+}
+
+ExpressionAST * Parser::parseLiteral()
+{
+    Token t;
+    lex->getCurrentToken(t);
+
+    if (t.type == TK_IDENTIFIER) {
+        return parseVarReference();
     } else if ((t.type == TK_NUMBER) || (t.type == TK_TRUE) ||
         (t.type == TK_FNUMBER) || (t.type == TK_STRING) || (t.type == TK_FALSE)) {
         auto ex = NEW_AST(LiteralAST);
         setASTinfo(this, &ex->typeAST);
+        lex->consumeToken();
 
         ex->typeAST.isLiteral = true;
 
@@ -560,6 +642,7 @@ ExpressionAST * Parser::parseLiteral()
     } else if (t.type == TK_OPEN_PAREN) {
         SrcLocation loc;
         loc = t.loc;
+        lex->consumeToken();
 
         ExpressionAST *expr = parseExpression();
         if (!success) return nullptr;
@@ -829,11 +912,13 @@ DefinitionAST *Parser::parseDefinition()
             // check will be too. 
             return parseFunctionDefinition();
         }
+    } else if (t.type == TK_STRUCT) {
+        return parseStructDefinition();
     }
     return parseExpression();
 }
 
-VariableDeclarationAST * Parser::parseDeclaration()
+VariableDeclarationAST * Parser::parseDeclaration(bool isStruct)
 {
     Token t;
     lex->getNextToken(t);
@@ -883,12 +968,12 @@ VariableDeclarationAST * Parser::parseDeclaration()
         }
         lex->lookaheadToken(t);
     } else if (t.type != TK_SEMICOLON) {
-        Error("Declaration is malformed");
+        Error("Declaration is malformed, a semicolon was expected");
         if (!success) {
             return nullptr;
         }
     }
-    if (!decl->definition || decl->definition->needsSemiColon()) {
+    if (!decl->definition || decl->definition->needsSemiColon) {
         // @TODO: support compiler flags and others here
         if (t.type != TK_SEMICOLON) {
             Error("Declaration needs to end with a semicolon\n");
@@ -898,7 +983,10 @@ VariableDeclarationAST * Parser::parseDeclaration()
         }
         lex->getNextToken(t);
     }
-    AddDeclarationToScope(decl);
+    if (!isStruct) {
+        // struct members do not follow the AddDeclaration to scope
+        AddDeclarationToScope(decl);
+    }
     return decl;
 }
 

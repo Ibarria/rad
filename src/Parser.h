@@ -17,6 +17,7 @@ struct Parser {
 
     bool MustMatchToken(TOKEN_TYPE type, const char *msg = nullptr);
     bool AddDeclarationToScope(VariableDeclarationAST *decl);
+    bool AddDeclarationToStruct(StructDefinitionAST *struct_def, VariableDeclarationAST *decl);
 
     TypeAST *parseDirectType();
     TypeAST *parseType();
@@ -26,13 +27,16 @@ struct Parser {
     StatementAST *parseStatement();
     StatementBlockAST *parseStatementBlock(FunctionDefinitionAST *fundef = nullptr);
     FunctionDefinitionAST *parseFunctionDefinition();
+    StructDefinitionAST *parseStructDefinition();
     FunctionCallAST *parseFunctionCall();
+    VarReferenceAST * parseVarReference();
+
     ExpressionAST * parseLiteral();
     ExpressionAST * parseUnaryExpression();
     ExpressionAST * parseBinOpExpressionRecursive(u32 oldprec, ExpressionAST *lhs);
     ExpressionAST * parseBinOpExpression();
     DefinitionAST * parseDefinition();
-    VariableDeclarationAST * parseDeclaration();
+    VariableDeclarationAST * parseDeclaration(bool isStruct = false);
     ExpressionAST * parseAssignmentExpression();
     ExpressionAST * parseExpression();
     void parseImportDirective();
