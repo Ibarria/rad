@@ -77,7 +77,7 @@ static inline u64 getVariableSize(VariableDeclarationAST *decl)
         // constant functions do not need space
         return 0;
     }
-    
+    assert(decl->specified_type->size_in_bits != 0);
     return decl->specified_type->size_in_bits / 8;
 }
 
@@ -172,6 +172,7 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_UNARY_OPERATION);
         CASE_BC_OPCODE(BC_RESERVE_STACK_SIZE);
         default:
+            assert(!"Unknown bytecode Instruction opcode, please add");
             return "UNKNOWN OPCODE";
     }
 }
