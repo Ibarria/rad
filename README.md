@@ -7,6 +7,42 @@ This language does not have a name yet, I have toyed with `c2` , `jai`, `jet`.
 
 The language is statically typed, with option to runtime information and compile time execution. In the future the language will compile to LLVM, but for now it compiles to C. 
 
+Declaring Variables
+-------------------
+
+Variables are declared with the name on the left first, then type, and then initial value. For example:
+
+```cpp
+x : u64 = 3;
+```
+
+Variables can also be implicit (only the initial value):
+
+```cpp
+x := 3;
+```
+
+Or a variable could have no initial value:
+
+```cpp
+x : u64 ;
+```
+
+This extends to functions, which are variable types:
+
+```cpp
+add := (x: float, y: float) -> float 
+{
+    return x + y;
+}
+```
+
+Function pointers are just the same, but this time in type form:
+
+```cpp
+add : (x: float, y: float) -> float;
+```
+
 Thoughts on Arrays
 ------------------
 
