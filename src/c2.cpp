@@ -112,7 +112,7 @@ int main(int argc, char **argv)
         printAST(parsedFile, 0);
     }
 
-    interp.traverseAST(parsedFile);
+    interp.semanticProcess(parsedFile);
 
     if (!interp.success) {
         interp.printErrors();
@@ -121,10 +121,6 @@ int main(int argc, char **argv)
     }
 
     astBuildTime = timer.stopTimer();
-
-    if (option_printAST) {
-        printAST(parsedFile, 0);
-    }
 
     timer.startTimer();
 

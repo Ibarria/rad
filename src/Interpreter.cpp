@@ -83,6 +83,31 @@ static bool isTypeStruct(TypeAST *type)
     return false;
 }
 
+static void addTypeWork(PoolAllocator *pool, BaseAST *ast, interp_deps &deps)
+{
+    interp_work *res_work = new (pool) interp_work;
+    res_work->action = IA_RESOLVE_TYPE;
+    res_work->ast = ast;
+    deps.resolve_type.work.push_back(res_work);
+}
+
+static void addSizeWork(PoolAllocator *pool, BaseAST *ast, interp_deps &deps)
+{
+    interp_work *res_work = new (pool) interp_work;
+    res_work->action = IA_COMPUTE_SIZE;
+    res_work->ast = ast;
+    deps.compute_size.work.push_back(res_work);
+}
+
+static void addCheckWork(PoolAllocator *pool, BaseAST *ast, interp_deps &deps)
+{
+    interp_work *res_work = new (pool) interp_work;
+    res_work->action = IA_OPERATION_CHECK;
+    res_work->ast = ast;
+    deps.operation_check.work.push_back(res_work);
+}
+
+
 void Interpreter::Error(BaseAST *ast, const char *msg, ...)
 {
     va_list args;
@@ -95,6 +120,12 @@ void Interpreter::Error(BaseAST *ast, const char *msg, ...)
     success = false;
 
     errors.push_back(CreateTextType(&pool, errorString));
+}
+
+void Interpreter::reset_errors()
+{
+    success = true;
+    errors.reset();
 }
 
 void copyASTloc(BaseAST *src, BaseAST *dst)
@@ -118,7 +149,15 @@ VariableDeclarationAST *Interpreter::validateVariable(IdentifierAST *a)
     VariableDeclarationAST *decl = findVariable(a->name, a->scope);
 
     if (decl == nullptr) {
-        Error(a, "Variable [%s] could not be found on this scope\n", a->name);
+        if (a->prev) {
+            auto prev_decl = findVariable(a->prev->name, a->prev->scope);
+            assert(prev_decl->specified_type->ast_type == AST_DIRECT_TYPE);
+            auto dt = (DirectTypeAST *)prev_decl->specified_type;
+            Error(a, "Variable [%s] cannot be found on struct %s\n", a->name,
+                dt->name);
+        } else {
+            Error(a, "Variable [%s] could not be found on this scope\n", a->name);
+        }
         return nullptr;
     }
 
@@ -153,131 +192,6 @@ VariableDeclarationAST *Interpreter::validateFunctionCall(FunctionCallAST *a)
         return nullptr;
     }
     return decl;
-}
-
-
-TypeAST * Interpreter::deduceType(ExpressionAST *expr)
-{
-    switch (expr->ast_type) {
-    case AST_FUNCTION_CALL: {
-        FunctionCallAST *a = (FunctionCallAST *)expr;
-        VariableDeclarationAST *decl = validateFunctionCall(a);
-        if (!decl) return nullptr;
-
-        // do not recurse on inferring types as this could cause infinite recursion
-        if (decl->specified_type == nullptr) {
-            return nullptr;
-        }
-
-        assert(decl->definition->ast_type == AST_FUNCTION_DEFINITION);
-        a->fundef = (FunctionDefinitionAST *)decl->definition;
-        FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
-        if (!fundecl->return_type) {
-            Error(expr, "Cannot use the return value of a void function [%s]\n", a->function_name);
-        }
-        expr->expr_type = fundecl->return_type;
-        return fundecl->return_type;
-    }
-    case AST_IDENTIFIER: {
-        IdentifierAST *a = (IdentifierAST *)expr;
-        VariableDeclarationAST *decl = validateVariable(a);
-
-        // do not recurse on inferring types as this could cause infinite recursion
-        if (!decl) return nullptr;
-
-        a->decl = decl;
-        expr->expr_type = decl->specified_type;
-        return decl->specified_type;
-    }
-    case AST_LITERAL: {
-        auto lt = (LiteralAST *)expr;
-        expr->expr_type = &lt->typeAST;
-        return &lt->typeAST;
-    }
-    case AST_BINARY_OPERATION: {
-        // @TODO: the type should be a combination of both lhs and rhs?
-        // @TODO: The type here should also depend on the operator
-        TypeAST *type = deduceType(((BinaryOperationAST *)expr)->lhs);
-        expr->expr_type = type;
-        return type;
-    }
-    case AST_UNARY_OPERATION: {
-        auto un = (UnaryOperationAST *)expr;
-        // @TODO: Use the operation in `un` to choose the type
-        TypeAST *type = deduceType(un->expr);
-        expr->expr_type = type;
-        return type;
-    }
-    case AST_RUN_DIRECTIVE: {
-        auto run = (RunDirectiveAST *)expr;
-        // Run directives do not change the type of whatever they run, pass through
-        TypeAST *type = deduceType(run->expr);
-        expr->expr_type = type;
-        return type;
-    }
-    case AST_VAR_REFERENCE: {
-        // find the type of this reference for checking, traversing it
-        auto var_ref = (VarReferenceAST *)expr;
-        VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
-        if (decl == nullptr) {
-            Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
-            return false;
-        }
-
-        if (!isTypeStruct(decl->specified_type)) {
-            Error(expr, "The variable [%s] is not of struct type", var_ref->name);
-            return false;
-        }
-
-        auto struct_type = (StructTypeAST *)decl->specified_type;
-
-        Scope *struct_scope = struct_type->scope;
-        var_ref = var_ref->next;
-
-        assert(var_ref);
-        // if the topmost element of a reference is not constant, check the rest
-        while (var_ref != nullptr) {
-            // At the start of the loop, we have an unchecked var_ref and the scope it applies to
-            if (var_ref->ast_type == AST_IDENTIFIER) {
-                // leaf check
-                auto inner_decl = findVariable(var_ref->name, struct_scope);
-                if (inner_decl == nullptr) {
-                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
-                    return false;
-                }
-
-                // end this
-                return inner_decl->specified_type;
-
-            } else if (var_ref->ast_type = AST_VAR_REFERENCE) {
-                auto inner_decl = findVariable(var_ref->name, struct_scope);
-                if (inner_decl == nullptr) {
-                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
-                    return false;
-                }
-
-                if (!isTypeStruct(inner_decl->specified_type)) {
-                    Error(expr, "The variable [%s] is not of struct type", var_ref->name);
-                    return false;
-                }
-
-                auto inner_struct_type = (StructTypeAST *)inner_decl->specified_type;
-                struct_scope = inner_struct_type->scope;
-                var_ref = var_ref->next;
-            } else {
-                assert(!"We should never be here!, wrong type on struct variable checking");
-            }
-        }
-        // We should never get here
-        assert(!"This location on type deduction should not be reachable");
-        return false;
-
-        break;
-    }
-    default:
-        assert(!"We should never be here, we could not parse this type\n");
-    }
-    return nullptr;
 }
 
 /*
@@ -325,207 +239,6 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
     return false;
 }
 
-u32 Interpreter::process_scope_variables(Scope * scope)
-{
-    u32 untyped_vars = 0;
-    for (auto &decl : scope->decls) {
-        if (decl->specified_type == nullptr) {
-            if (!infer_types(decl)) {
-                untyped_vars++;
-            }
-        }
-    }
-    return untyped_vars;
-}
-
-void Interpreter::process_all_scope_variables(Scope *scope)
-{
-    u32 untyped_vars, prev_vars = 0;
-
-    do {
-        untyped_vars = process_scope_variables(scope);
-        if (prev_vars == 0) {
-            prev_vars = untyped_vars;
-        } else if ((prev_vars == untyped_vars) && prev_vars > 0) {
-            return;
-        }
-   } while (success && (untyped_vars > 0));
-}
-
-bool Interpreter::infer_types(VariableDeclarationAST *decl)
-{    
-    if (decl->specified_type) {
-        bool earlyOut = true;
-        if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
-            auto dtype = (DirectTypeAST *)decl->specified_type;
-            if (dtype->basic_type == BASIC_TYPE_CUSTOM) {
-                // we have to find the type here and provide a reference
-                if (dtype->custom_type) {
-                    // early out, the custom type is found
-                    return true;
-                } else {
-                    VariableDeclarationAST *type_var = findVariable(dtype->name, dtype->scope);
-                    if (!type_var) {
-                        Error(decl, "Type %s could not be resolved", dtype->name);
-                        return false;
-                    }
-                    assert(type_var->specified_type);
-                    dtype->custom_type = type_var->specified_type;
-                    return true;
-                }
-            }
-        }
-        // Early out, there is nothing to do
-        return true;
-    }
-    current_identifier = decl->varname;
-
-    assert(decl->definition); // if we do not have a type we must have something to compare against
-    switch (decl->definition->ast_type) {
-    case AST_FUNCTION_DEFINITION: {
-        FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
-        decl->specified_type = fundef->declaration;
-        decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
-        assert(decl->specified_type->size_in_bits);
-        return true;
-    }
-    case AST_STRUCT_DEFINITION: {
-        auto struct_def = (StructDefinitionAST *)decl->definition;
-        decl->specified_type = &struct_def->struct_type;
-        decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
-        decl->flags |= DECL_FLAG_IS_TYPE; // Use this so we do not reserve space for types
-        assert(decl->specified_type->size_in_bits == 0);
-        break;
-    }
-    default: {
-        // expect this to be an expression, and the expression type needs to be deduced
-        // operation, literal, function call, etc
-        TypeAST *t = deduceType((ExpressionAST *)decl->definition);
-        if (t != nullptr) {
-            decl->specified_type = t;
-            decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
-            assert(t->size_in_bits);
-            return true;
-        }
-        break;
-    }
-    }
-    return false;
-}
-
-bool Interpreter::checkVariablesInExpression(ExpressionAST *expr)
-{
-    switch (expr->ast_type) {
-    case AST_FUNCTION_CALL: {
-        FunctionCallAST *a = (FunctionCallAST *)expr;
-        VariableDeclarationAST *decl = findVariable(a->function_name, a->scope);
-
-        if (decl == nullptr) {
-            Error(expr, "Function [%s] could not be found on this scope\n", a->function_name);
-        }
-
-        bool ret = true;
-
-        for (auto arg : a->args) {
-            if (!checkVariablesInExpression(arg)) ret = false;
-        }
-
-        return ret;
-    }
-    case AST_IDENTIFIER: {
-        IdentifierAST *a = (IdentifierAST *)expr;
-        VariableDeclarationAST *decl = findVariable(a->name, a->scope);
-
-        if (decl == nullptr) {
-            Error(expr, "Variable [%s] could not be found on this scope\n", a->name);
-            return false;
-        }
-
-        if ((decl->filename == expr->filename) &&
-            (decl->line_num > expr->line_num) &&
-            !(decl->flags & DECL_FLAG_IS_CONSTANT))
-        {
-            Error(expr, "The variable [%s] used in this declaration appears after the current declaration, this is only allowed for constants\n",
-                a->name);
-        }
-
-        return true;
-    }
-    case AST_LITERAL: {
-        return true;
-    }
-    case AST_BINARY_OPERATION: {
-        return checkVariablesInExpression(((BinaryOperationAST *)expr)->lhs) &&
-            checkVariablesInExpression(((BinaryOperationAST *)expr)->rhs);
-    }
-    case AST_UNARY_OPERATION: {
-        auto un = (UnaryOperationAST *)expr;
-        return checkVariablesInExpression(un->expr);
-    }
-    case AST_RUN_DIRECTIVE: {
-        auto run = (RunDirectiveAST *)expr;
-        return checkVariablesInExpression(run->expr);
-        break;
-    }
-    case AST_VAR_REFERENCE: {
-        auto var_ref = (VarReferenceAST *)expr;
-        // for this to be right, we need to first find the topmost variable, and it has to be a struct type
-        // @TODO: Extend this when the variable can also be an array
-        VariableDeclarationAST *top_decl = findVariable(var_ref->name, var_ref->scope);
-        if (top_decl == nullptr) {
-            Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
-            return false;
-        }
-
-        if (!isTypeStruct(top_decl->specified_type)) {
-            Error(expr, "The variable [%s] is not of struct type", var_ref->name);
-            return false;
-        }
-
-        auto struct_type = (StructTypeAST *)top_decl->specified_type;
-
-        Scope *struct_scope = struct_type->scope;
-        var_ref = var_ref->next;
-        // if the topmost element of a reference is not constant, check the rest
-        while (var_ref != nullptr) {
-            // At the start of the loop, we have an unchecked var_ref and the scope it applies to
-            if (var_ref->ast_type == AST_IDENTIFIER) {
-                // leaf check
-                auto inner_decl = findVariable(var_ref->name, struct_scope);
-                if (inner_decl == nullptr) {
-                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
-                    return false;
-                }
-
-                // end this
-                var_ref = nullptr;
-            } else if (var_ref->ast_type = AST_VAR_REFERENCE) {
-                auto inner_decl = findVariable(var_ref->name, struct_scope);
-                if (inner_decl == nullptr) {
-                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
-                    return false;
-                }
-
-                if (!isTypeStruct(inner_decl->specified_type)) {
-                    Error(expr, "The variable [%s] is not of struct type", var_ref->name);
-                    return false;
-                }
-
-                auto inner_struct_type = (StructTypeAST *)inner_decl->specified_type;
-                struct_scope = inner_struct_type->scope;
-                var_ref = var_ref->next;
-            } else {
-                assert(!"We should never be here!, wrong type on struct variable checking");
-            }
-        }
-        return true;
-    }
-    default:
-        assert(!"We should never be here, we could not parse this type\n");
-    }
-    return false;
-}
-
 bool Interpreter::isConstExpression(ExpressionAST *expr)
 {
     switch (expr->ast_type) {
@@ -534,12 +247,9 @@ bool Interpreter::isConstExpression(ExpressionAST *expr)
     }
     case AST_IDENTIFIER: {
         IdentifierAST *a = (IdentifierAST *)expr;
-        VariableDeclarationAST *decl = findVariable(a->name, a->scope);
+        VariableDeclarationAST *decl = a->decl;
 
-        if (decl == nullptr) {
-            Error(expr, "Variable [%s] could not be found on this scope\n", a->name);
-            return false;
-        }
+        assert(decl);
 
         return !!(decl->flags & DECL_FLAG_IS_CONSTANT);
     }
@@ -555,59 +265,27 @@ bool Interpreter::isConstExpression(ExpressionAST *expr)
     case AST_VAR_REFERENCE: {
         auto var_ref = (VarReferenceAST *)expr;
         VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
-        if (decl == nullptr) {
-            Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
-            return false;
-        }
+        assert(decl);
 
         if (decl->flags & DECL_FLAG_IS_CONSTANT) {
             return true;
         }
 
-        if (!isTypeStruct(decl->specified_type)) {
-            Error(expr, "The variable [%s] is not of struct type\n", var_ref->name);
-            return false;
-        }
-
-        auto struct_type = (StructTypeAST *)decl->specified_type;
-
-        Scope *struct_scope = struct_type->scope;
         var_ref = var_ref->next;
+
         // if the topmost element of a reference is not constant, check the rest
         while (var_ref != nullptr) {
             // At the start of the loop, we have an unchecked var_ref and the scope it applies to
+            auto inner_decl = var_ref->decl;
+            assert(inner_decl);
+
+            if (inner_decl->flags & DECL_FLAG_IS_CONSTANT) {
+                return true;
+            }
+
             if (var_ref->ast_type == AST_IDENTIFIER) {
-                // leaf check
-                auto inner_decl = findVariable(var_ref->name, struct_scope);
-                if (inner_decl == nullptr) {
-                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
-                    return false;
-                }
-
-                if (inner_decl->flags & DECL_FLAG_IS_CONSTANT) {
-                    return true;
-                }
-
-                // end this
                 var_ref = nullptr;
             } else if (var_ref->ast_type = AST_VAR_REFERENCE) {
-                auto inner_decl = findVariable(var_ref->name, struct_scope);
-                if (inner_decl == nullptr) {
-                    Error(expr, "Variable [%s] could not be found on this scope\n", var_ref->name);
-                    return false;
-                }
-
-                if (inner_decl->flags & DECL_FLAG_IS_CONSTANT) {
-                    return true;
-                }
-
-                if (!isTypeStruct(inner_decl->specified_type)) {
-                    Error(expr, "The variable [%s] is not of struct type", var_ref->name);
-                    return false;
-                }
-
-                auto inner_struct_type = (StructTypeAST *)inner_decl->specified_type;
-                struct_scope = inner_struct_type->scope;
                 var_ref = var_ref->next;
             } else {
                 assert(!"We should never be here!, wrong type on struct variable checking");
@@ -620,133 +298,6 @@ bool Interpreter::isConstExpression(ExpressionAST *expr)
         assert(!"We should never be here, we could not parse this type\n");
     }
     return false;
-}
-
-/*
-    Responsibilities of traverseAST for Expressions
-
-    - Are variables declared in this scope?
-    - are the types of operands compatible?
-    - are function calls correct (name, ret type, arg types)
-
-    Are we doing duplicate work when we recurse?
-*/
-void Interpreter::traverseAST(ExpressionAST *expr)
-{
-    if (!success) return;
-    switch (expr->ast_type) {
-    case AST_ASSIGNMENT: {
-        auto assgn = (AssignmentAST *)expr;
-        // Errors to check:
-        // any variable used in the assignment needs to be declared in the scope. To be checked here or recursively?
-        checkVariablesInExpression(assgn->lhs);
-
-        if (!success) {
-            return;
-        }
-
-        // lhs cannot be const (or a literal, same thing)
-        if (isConstExpression(assgn->lhs)) {
-            Error(assgn, "The left hand side of an assignment must be an l-value\n");
-        }
-
-        // lhs and rhs need to have the same type
-        TypeAST *lhsType, *rhsType;
-        lhsType = deduceType(assgn->lhs);
-        rhsType = deduceType(assgn->rhs);
-        if (!compatibleTypes(lhsType, rhsType)) {
-            char ltype[64] = {}, rtype[64] = {};
-            printTypeToStr(ltype, lhsType);
-            printTypeToStr(rtype, rhsType);
-            Error(assgn, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
-        }
-
-        // @TODO: check for width of operands (in case of literals), like assigning 512 to an u8.
-        // one of the hard things here is what to do on complex expressions with literals, promote?
-
-        // are there any checks to do on the left hand side?
-        traverseAST(assgn->rhs);
-        break;
-    }
-    case AST_FUNCTION_CALL: {
-        // normal checks are already satisfied on type deduction:
-        // [DONE] check that the function being called exists, and that it is a function
-        // [DONE] for each argument, check that the type of the argument matches that of the parameter
-        FunctionCallAST *funcall = (FunctionCallAST *)expr;
-        VariableDeclarationAST *decl = validateFunctionCall(funcall);
-        if (!decl) return;
-        assert(isFunctionDeclaration(decl));
-        FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
-        if (fundecl->hasVariableArguments) {
-            // for variable number of argument functions we only need to check a lower bound
-            if (fundecl->arguments.size() > funcall->args.size()) {
-                Error(funcall, "Function %s called with %d arguments but it expects at least %d\n",
-                    funcall->function_name, funcall->args.size(), fundecl->arguments.size());
-                return;
-            }
-        } else {
-            if (fundecl->arguments.size() != funcall->args.size()) {
-                Error(funcall, "Function %s called with %d arguments but it expects %d\n",
-                    funcall->function_name, funcall->args.size(), fundecl->arguments.size());
-                return;
-            }
-        }
-
-        for (u32 i = 0; i < fundecl->arguments.size(); i++) {
-            TypeAST *lhsType, *rhsType;
-            lhsType = deduceType(funcall->args[i]);
-            rhsType = fundecl->arguments[i]->specified_type;
-            if (!success) return;
-            if (!compatibleTypes(lhsType, rhsType)) {
-                char ltype[64] = {}, rtype[64] = {};
-                printTypeToStr(ltype, lhsType);
-                printTypeToStr(rtype, rhsType);
-                Error(funcall, "Incompatible types during function call: provided: %s and expected: %s\n",
-                    ltype, rtype);
-                return;
-            }
-        }
-        break;
-    }
-    case AST_RUN_DIRECTIVE: {
-        // simple passthrough check
-        auto run = (RunDirectiveAST *)expr;
-        traverseAST(run->expr);
-        break;
-    }
-    case AST_BINARY_OPERATION: {
-        auto binop = (BinaryOperationAST *)expr;
-        TypeAST *lhsType, *rhsType;
-        lhsType = deduceType(binop->lhs);
-        rhsType = deduceType(binop->rhs);
-        // @TODO: Check that the operator matches the types of rhs, lhs
-        if (!compatibleTypes(lhsType, rhsType)) {
-            char ltype[64] = {}, rtype[64] = {};
-            printTypeToStr(ltype, lhsType);
-            printTypeToStr(rtype, rhsType);
-            Error(binop, "Incompatible types during binary operation %s: %s and %s\n",
-                  TokenTypeToCOP(binop->op),
-                  ltype, rtype);
-        }
-        traverseAST(binop->lhs);
-        traverseAST(binop->rhs);
-        break;
-    }
-    case AST_UNARY_OPERATION: {
-        // @TODO: Check that the operator makes sense with the inner type
-        assert(!"Not implemented traverseAST checks for Unary Operation");
-        break;
-    }
-    case AST_IDENTIFIER: {
-        checkVariablesInExpression(expr);
-        break;
-    }
-    case AST_LITERAL:
-        // Nothing to check here
-        break;
-    default:
-        assert(!"Missing AST support types");
-    }
 }
 
 void Interpreter::perform_bytecode(FileAST * root)
@@ -773,43 +324,454 @@ void Interpreter::perform_bytecode(FileAST * root)
 
 }
 
-void Interpreter::traverseAST(StatementBlockAST *root)
+void Interpreter::printErrors()
 {
-    if (root == nullptr) return; // this happens for foreign functions
-    process_all_scope_variables(&root->block_scope);
+    for (auto err : errors) {
+        printf("%s", err);
+    }
+}
+
+void Interpreter::semanticProcess(FileAST *root)
+{
+    traversePostfixTopLevel(root);
+
+    processAllDependencies();
 
     if (!success) return;
 
-    Scope *previous_scope = current_scope;
-    current_scope = &root->block_scope;
-    for (auto stmt : root->statements) {
-        if (stmt->ast_type == AST_VARIABLE_DECLARATION) {
-            auto decl = (VariableDeclarationAST *)stmt;
-            if (decl->definition) {
-                if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
-                    FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
-                    traverseAST(fundef->function_body);
-                } else {
-                    traverseAST((ExpressionAST *)decl->definition);
+    perform_bytecode(root);
+}
+
+void Interpreter::traversePostfixTopLevel(FileAST * root)
+{
+    for (auto ast : root->items) {
+        switch (ast->ast_type) {
+        case AST_VARIABLE_DECLARATION: {
+            auto decl = (VariableDeclarationAST *)ast;
+            traversePostfixTopLevelDeclaration(decl);
+            break;
+        }
+        case AST_RUN_DIRECTIVE: {
+            // @TODO: implement checks for run directive
+            // At some point we want to execute the run directive, after checks
+            // and sizes
+            auto run = (RunDirectiveAST *)ast;
+            traversePostfixTopLevelDirective(run);
+            break;
+        }
+        default:
+            assert(!"Unsupported type on top level expression");
+        }
+
+    }
+}
+
+void Interpreter::traversePostfixTopLevelDeclaration(VariableDeclarationAST * decl)
+{
+    assert(decl->deps == nullptr);
+    decl->deps = new (&pool) interp_deps;
+
+    traversePostfixAST(decl, *decl->deps);
+
+    if (!decl->deps->empty()) {
+        overall_deps.push_back(decl->deps);
+    }
+}
+
+void Interpreter::traversePostfixTopLevelDirective(RunDirectiveAST * run)
+{
+    assert(!"Not implemented top level directive in new dependency system");
+}
+
+void Interpreter::traversePostfixAST(BaseAST * ast, interp_deps & deps)
+{
+    // null pointer is valid, like if a type does not exist 
+    if (ast == nullptr) return;
+
+    switch (ast->ast_type) {
+    case AST_VARIABLE_DECLARATION: {
+        auto decl = (VariableDeclarationAST *)ast;
+        traversePostfixAST(decl->specified_type, deps);
+        traversePostfixAST(decl->definition, deps);
+
+        addTypeWork(&pool, ast, deps);
+        addSizeWork(&pool, ast, deps);
+        addCheckWork(&pool, ast, deps);
+        break;
+    }
+    case AST_FUNCTION_TYPE: {
+        auto funtype = (FunctionTypeAST *)ast;
+        for (auto arg : funtype->arguments) {
+            traversePostfixAST(arg, deps);
+        }
+        traversePostfixAST(funtype->return_type, deps);
+
+        // No other checks for just a function type
+        break;
+    }
+    case AST_STRUCT_DEFINITION: {
+        auto struct_def = (StructDefinitionAST *)ast;
+        traversePostfixAST(&struct_def->struct_type, deps);
+        break;
+    }
+    case AST_STRUCT_TYPE: {
+        auto struct_type = (StructTypeAST *)ast;
+        for (auto var : struct_type->struct_scope.decls) {
+            traversePostfixAST(var, deps);
+        }
+        addSizeWork(&pool, ast, deps);
+        break;
+    }
+    case AST_VAR_REFERENCE: {
+        auto var_ref = (VarReferenceAST *)ast;
+        // Special case, where we need to process this node before
+        // the next one
+        addTypeWork(&pool, ast, deps);
+        traversePostfixAST(var_ref->next, deps);
+        // do post processing to grab the type
+        addTypeWork(&pool, ast, deps);
+        break;
+    }
+    case AST_STATEMENT_BLOCK: {
+        auto block = (StatementBlockAST *)ast;
+        for (auto stmt : block->statements) {
+            traversePostfixAST(stmt, deps);
+        }
+        break;
+    }
+    case AST_RETURN_STATEMENT: {
+        auto ret = (ReturnStatementAST *)ast;
+        traversePostfixAST(ret->ret, deps);
+
+        addTypeWork(&pool, ast, deps);
+        addSizeWork(&pool, ast, deps);
+        addCheckWork(&pool, ast, deps);
+
+        break;
+    }
+    case AST_FUNCTION_DEFINITION: {
+        auto fundef = (FunctionDefinitionAST *)ast;
+        traversePostfixAST(fundef->declaration, deps);
+        traversePostfixAST(fundef->function_body, deps);
+        // No other checks for a function definition? 
+
+        // This check is to ensure the last statement on the block
+        // matches our return type
+        addCheckWork(&pool, ast, deps);
+
+        break;
+    }
+    case AST_FUNCTION_CALL: {
+        auto funcall = (FunctionCallAST *)ast;
+        for (auto arg : funcall->args) {
+            traversePostfixAST(arg, deps);
+        }
+
+        addTypeWork(&pool, ast, deps);
+        addSizeWork(&pool, ast, deps);
+        addCheckWork(&pool, ast, deps);
+
+        break;
+    }
+    case AST_DIRECT_TYPE: {
+        auto dt = (DirectTypeAST *)ast;
+
+        addTypeWork(&pool, ast, deps);
+
+        break;
+    }
+    case AST_IDENTIFIER: {
+        auto id = (IdentifierAST *)ast;
+
+        addTypeWork(&pool, ast, deps);
+        addSizeWork(&pool, ast, deps);
+        break;
+    }
+    case AST_LITERAL: {
+        auto lit = (LiteralAST *)ast;
+        addTypeWork(&pool, ast, deps);
+        break;
+    }
+    case AST_BINARY_OPERATION: {
+        auto binop = (BinaryOperationAST *)ast;
+        traversePostfixAST(binop->lhs, deps);
+        traversePostfixAST(binop->rhs, deps);
+
+        addTypeWork(&pool, ast, deps);
+        addSizeWork(&pool, ast, deps);
+        addCheckWork(&pool, ast, deps);
+        break;
+    }
+    case AST_UNARY_OPERATION: {
+        auto unop = (UnaryOperationAST *)ast;
+        traversePostfixAST(unop->expr, deps);
+
+        addTypeWork(&pool, ast, deps);
+        addSizeWork(&pool, ast, deps);
+        addCheckWork(&pool, ast, deps);
+        break;
+    }
+    case AST_ASSIGNMENT: {
+        auto assign = (AssignmentAST *)ast;
+        traversePostfixAST(assign->lhs, deps);
+        traversePostfixAST(assign->rhs, deps);
+
+        addTypeWork(&pool, ast, deps);
+        addSizeWork(&pool, ast, deps);
+        addCheckWork(&pool, ast, deps);
+        break;
+    }
+    default:
+        assert(!"AST type not being handled on traversePostfixAST");
+    }
+}
+
+void Interpreter::processAllDependencies()
+{
+    u64 old_remain = overallDepsItems();
+    u64 current_remain = old_remain;
+
+    do {
+        for (auto dep : overall_deps) {
+            processDependencies(dep);
+        }
+        old_remain = current_remain;
+        current_remain = overallDepsItems();
+        if (current_remain == 0) {
+            break;
+        } else if (current_remain < old_remain) {
+            // if we made progress, clear up errors as they are transient
+            reset_errors();
+        }
+    } while (current_remain < old_remain);
+
+}
+
+void Interpreter::processDependencies(interp_deps * deps)
+{
+    bool stageComplete = true;
+    if (!deps->resolve_type.empty()) {
+
+        u32 index = deps->resolve_type.active_item;
+        bool firstFailure = false;
+        for (; index < deps->resolve_type.work.size(); index++) {
+            auto work = deps->resolve_type.work[index];
+            bool r = doWorkAST(work);
+            if (!r) {
+                firstFailure = true;
+                stageComplete = false;
+                continue;
+            }
+            work->action = IA_NOP;
+            if (!firstFailure) {
+                deps->resolve_type.active_item++;
+            }
+        }
+    }
+
+    // One stage needs to be completely done before the next
+    if (!stageComplete) return;
+
+    if (!deps->compute_size.empty()) {
+
+        u32 index = deps->compute_size.active_item;
+        bool firstFailure = false;
+        for (; index < deps->compute_size.work.size(); index++) {
+            auto work = deps->compute_size.work[index];
+            bool r = doWorkAST(work);
+            if (!r) {
+                firstFailure = true;
+                stageComplete = false;
+            } else {
+                work->action = IA_NOP;
+                if (!firstFailure) {
+                    deps->compute_size.active_item++;
                 }
             }
-        } else if (stmt->ast_type == AST_STATEMENT_BLOCK) {
-            traverseAST((StatementBlockAST *)stmt);
-        } else if ((stmt->ast_type == AST_ASSIGNMENT) ||
-            (stmt->ast_type == AST_FUNCTION_CALL)) {
-            traverseAST((ExpressionAST *)stmt);
-        } else if (stmt->ast_type == AST_RETURN_STATEMENT) {
-            auto ret_stmt = (ReturnStatementAST *)stmt;
-            // we need to check the return expression itself
-            traverseAST(ret_stmt->ret);
+        }
+    }
+
+    // One stage needs to be completely done before the next
+    if (!stageComplete) return;
+
+    if (!deps->operation_check.empty()) {
+
+        u32 index = deps->operation_check.active_item;
+        for (; index < deps->operation_check.work.size(); index++) {
+            auto work = deps->operation_check.work[index];
+            bool r = doWorkAST(work);
+            if (!r) {
+                return;
+            } else {
+                work->action = IA_NOP;
+                deps->operation_check.active_item++;
+            }
+        }
+    }
+
+}
+
+u64 Interpreter::overallDepsItems()
+{
+    u64 total = 0;
+    for (auto dep : overall_deps) {
+        total += dep->remaining_items();
+    }
+    return total;
+}
+
+bool Interpreter::doWorkAST(interp_work * work)
+{
+    // null pointer is valid, like if a type does not exist 
+    if (work->action == IA_NOP) return true;
+    BaseAST *ast = work->ast;
+
+    switch (work->ast->ast_type) {
+    case AST_VARIABLE_DECLARATION: {
+        auto decl = (VariableDeclarationAST *)ast;
+
+        //traversePostfixAST(decl->specified_type, deps);
+        //traversePostfixAST(decl->definition, deps);
+
+        if (work->action == IA_RESOLVE_TYPE) {
+            if (decl->specified_type) return true;
+
+            // only when we do not have a type we better have a definition
+            assert(decl->definition); // if we do not have a type we must have something to compare against
+            switch (decl->definition->ast_type) {
+            case AST_FUNCTION_DEFINITION: {
+                FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
+                decl->specified_type = fundef->declaration;
+                decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
+                assert(decl->specified_type->size_in_bits);
+                return true;
+            }
+            case AST_STRUCT_DEFINITION: {
+                auto struct_def = (StructDefinitionAST *)decl->definition;
+                decl->specified_type = &struct_def->struct_type;
+                decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
+                decl->flags |= DECL_FLAG_IS_TYPE; // Use this so we do not reserve space for types
+                assert(decl->specified_type->size_in_bits == 0);
+                break;
+            }
+            default: {
+                // expect this to be an expression, and the expression type needs to be deduced
+                // operation, literal, function call, etc
+                auto expr = (ExpressionAST *)(decl->definition);
+                TypeAST *t = expr->expr_type;
+                if (t != nullptr) {
+                    decl->specified_type = t;
+                    decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
+                    //assert(t->size_in_bits);
+                    return true;
+                }
+                break;
+            }
+            }
+
+        } else if (work->action == IA_COMPUTE_SIZE) {
             
+        } else if (work->action == IA_OPERATION_CHECK) {
+
+        } else {
+            assert(!"Unknown dependency work type");
+        }
+        //addTypeWork(&pool, ast, deps);
+        //addSizeWork(&pool, ast, deps);
+        //addCheckWork(&pool, ast, deps);
+        break;
+    }
+    case AST_FUNCTION_TYPE: {
+        auto funtype = (FunctionTypeAST *)ast;
+        //for (auto arg : funtype->arguments) {
+        //    traversePostfixAST(arg, deps);
+        //}
+        //traversePostfixAST(funtype->return_type, deps);
+
+        // No other checks for just a function type
+        break;
+    }
+    case AST_STRUCT_DEFINITION: {
+        auto struct_def = (StructDefinitionAST *)ast;
+        //traversePostfixAST(&struct_def->struct_type, deps);
+        break;
+    }
+    case AST_STRUCT_TYPE: {
+        auto struct_type = (StructTypeAST *)ast;
+        //for (auto var : struct_type->struct_scope.decls) {
+        //    traversePostfixAST(var, deps);
+        //}
+        //addSizeWork(&pool, ast, deps);
+        assert(work->action == IA_COMPUTE_SIZE);
+
+        break;
+    }
+    case AST_VAR_REFERENCE: {
+        auto var_ref = (VarReferenceAST *)ast;
+        // Special case, where we need to process this node before
+        // the next one
+        //addTypeWork(&pool, ast, deps);
+        assert(work->action == IA_RESOLVE_TYPE);
+
+        //traversePostfixAST(var_ref->next, deps);
+
+        if (var_ref->decl == nullptr) {
+            VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
+            if (decl == nullptr) {
+                if (var_ref->prev) {
+                    auto prev_decl = findVariable(var_ref->prev->name, var_ref->prev->scope);
+                    Error(var_ref, "Variable [%s] cannot be found on struct %s\n", var_ref->name,
+                        prev_decl->varname);
+                } else {
+                    Error(var_ref, "Variable [%s] could not be found on this scope\n", var_ref->name);
+                }
+                return false;
+            }
+
+            if (!isTypeStruct(decl->specified_type)) {
+                Error(var_ref, "The variable [%s] is not of struct type", var_ref->name);
+                return false;
+            }
+
+            var_ref->decl = decl;
+
+            auto struct_type = (StructTypeAST *)decl->specified_type;
+
+            Scope *struct_scope = struct_type->scope;
+            var_ref->next->scope = struct_scope;
+        } else {
+            if (!var_ref->next->expr_type) {
+                return false;
+            }
+            assert(var_ref->next->expr_type);
+            var_ref->expr_type = var_ref->next->expr_type;
+        }
+
+        break;
+    }
+    case AST_STATEMENT_BLOCK: {
+        auto block = (StatementBlockAST *)ast;
+        //for (auto stmt : block->statements) {
+        //    traversePostfixAST(stmt, deps);
+        //}
+        break;
+    }
+    case AST_RETURN_STATEMENT: {
+        auto ret_stmt = (ReturnStatementAST *)ast;
+        //traversePostfixAST(ret->ret, deps);
+
+        if (work->action == IA_RESOLVE_TYPE) {
+
+        } else if (work->action == IA_COMPUTE_SIZE) {
+
+        } else if (work->action == IA_OPERATION_CHECK) {
             // next we need to type check the return expression
             // with the enclosing function (!!)
-            TypeAST *ret_type = deduceType(ret_stmt->ret);
+            TypeAST *ret_type = ret_stmt->ret->expr_type;
             FunctionDefinitionAST *fundef = findEnclosingFunction(ret_stmt);
             if (!fundef) {
                 Error(ret_stmt, "Return statement not within a function\n");
-                return;
+                return false;
             }
             TypeAST *func_ret_type = fundef->declaration->return_type;
             if (!compatibleTypes(ret_type, func_ret_type)) {
@@ -819,45 +781,292 @@ void Interpreter::traverseAST(StatementBlockAST *root)
                 Error(ret_stmt, "Incompatible types between the return statement: %s and the return type %s for function %s\n",
                     ltype, rtype, fundef->var_decl->varname);
             }
+
         } else {
-            assert(!"Unhandled traverseAST check in statement block");
+            assert(!"Unknown dependency work type");
         }
-    }
-    current_scope = previous_scope;
-}
 
-void Interpreter::printErrors()
-{
-    for (auto err : errors) {
-        printf("%s", err);
-    }
-}
+        //addTypeWork(&pool, ast, deps);
+        //addSizeWork(&pool, ast, deps);
+        //addCheckWork(&pool, ast, deps);
 
-void Interpreter::traverseAST(FileAST *root)
-{
-    process_all_scope_variables(&root->global_scope);
-    current_scope = &root->global_scope;
-    for (auto &ast : root->items) {
-        switch (ast->ast_type) {
-        case AST_VARIABLE_DECLARATION: {
-            auto decl = (VariableDeclarationAST *)ast;
-            if (isFunctionDeclaration(decl)) {
-                FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
-                traverseAST(fundef->function_body);
+        break;
+    }
+    case AST_FUNCTION_DEFINITION: {
+        auto fundef = (FunctionDefinitionAST *)ast;
+        //traversePostfixAST(fundef->declaration, deps);
+        //traversePostfixAST(fundef->function_body, deps);
+        // No other checks for a function definition? 
+
+        // This check is to ensure the last statement on the block
+        // matches our return type
+
+        //addCheckWork(&pool, ast, deps);
+        assert(work->action == IA_OPERATION_CHECK);
+
+
+        break;
+    }
+    case AST_FUNCTION_CALL: {
+        auto funcall = (FunctionCallAST *)ast;
+        //for (auto arg : funcall->args) {
+        //    traversePostfixAST(arg, deps);
+        //}
+
+        //addTypeWork(&pool, ast, deps);
+        //addSizeWork(&pool, ast, deps);
+        //addCheckWork(&pool, ast, deps);
+
+        if (work->action == IA_RESOLVE_TYPE) {
+            VariableDeclarationAST *decl = validateFunctionCall(funcall);
+            if (!decl) return false;
+
+            // do not recurse on inferring types as this could cause infinite recursion
+            if (decl->specified_type == nullptr) {
+                return false;
             }
-            break;
-        }
-        case AST_RUN_DIRECTIVE: {
-            // @TODO: implement checks for run directive
-            // At some point we want to execute the run directive, after checks
-            // and sizes
-            break;
-        }
-        default:
-            assert(!"Unsupported type on top level expression");
-        }
-    }
-    if (!success) return;
 
-    perform_bytecode(root);
+            assert(isFunctionDeclaration(decl));
+            assert(decl->definition->ast_type == AST_FUNCTION_DEFINITION);
+            funcall->fundef = (FunctionDefinitionAST *)decl->definition;
+            FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
+            if (!fundecl->return_type) {
+                Error(funcall, "Cannot use the return value of a void function [%s]\n", funcall->function_name);
+            }
+            funcall->expr_type = fundecl->return_type;
+            return true;
+
+        } else if (work->action == IA_COMPUTE_SIZE) {
+
+        } else if (work->action == IA_OPERATION_CHECK) {
+            assert(funcall->fundef);
+
+            // check that the types of expressions and function definition matches
+
+            FunctionTypeAST *fundecl = funcall->fundef->declaration;
+            if (fundecl->hasVariableArguments) {
+                // for variable number of argument functions we only need to check a lower bound
+                if (fundecl->arguments.size() > funcall->args.size()) {
+                    Error(funcall, "Function %s called with %d arguments but it expects at least %d\n",
+                        funcall->function_name, funcall->args.size(), fundecl->arguments.size());
+                    return false;
+                }
+            } else {
+                if (fundecl->arguments.size() != funcall->args.size()) {
+                    Error(funcall, "Function %s called with %d arguments but it expects %d\n",
+                        funcall->function_name, funcall->args.size(), fundecl->arguments.size());
+                    return false;
+                }
+            }
+
+            for (u32 i = 0; i < fundecl->arguments.size(); i++) {
+                TypeAST *lhsType, *rhsType;
+                lhsType = funcall->args[i]->expr_type;
+                rhsType = fundecl->arguments[i]->specified_type;
+                assert(lhsType); assert(rhsType);
+                if (!compatibleTypes(lhsType, rhsType)) {
+                    char ltype[64] = {}, rtype[64] = {};
+                    printTypeToStr(ltype, lhsType);
+                    printTypeToStr(rtype, rhsType);
+                    Error(funcall, "Incompatible types during function call: provided: %s and expected: %s\n",
+                        ltype, rtype);
+                    return false;
+                }
+            }
+
+        } else {
+            assert(!"Unknown dependency work type");
+        }
+
+
+        break;
+    }
+    case AST_DIRECT_TYPE: {
+        auto dt = (DirectTypeAST *)ast;
+
+        //addTypeWork(&pool, ast, deps);
+        assert(work->action == IA_RESOLVE_TYPE);
+
+        if (dt->basic_type == BASIC_TYPE_CUSTOM) {
+            // we have to find the type here and provide a reference
+            if (dt->custom_type) {
+                // early out, the custom type is found
+                return true;
+            } else {
+                VariableDeclarationAST *type_var = findVariable(dt->name, dt->scope);
+                if (!type_var) {
+                    Error(dt, "Type %s could not be resolved", dt->name);
+                    return false;
+                }
+                assert(type_var->specified_type);
+                dt->custom_type = type_var->specified_type;
+            }
+        }
+        return true;
+
+        break;
+    }
+    case AST_IDENTIFIER: {
+        auto id = (IdentifierAST *)ast;
+
+        //addTypeWork(&pool, ast, deps);
+        //addSizeWork(&pool, ast, deps);
+        if (work->action == IA_RESOLVE_TYPE) {
+            VariableDeclarationAST *decl = validateVariable(id);
+
+            // do not recurse on inferring types as this could cause infinite recursion
+            if (!decl) return false;
+
+            id->decl = decl;
+            id->expr_type = decl->specified_type;
+
+            return true;
+
+        } else if (work->action == IA_COMPUTE_SIZE) {
+
+        } else if (work->action == IA_OPERATION_CHECK) {
+            assert(!"No check for a single identifier");
+        } else {
+            assert(!"Unknown dependency work type");
+        }
+
+        break;
+    }
+    case AST_LITERAL: {
+        auto lit = (LiteralAST *)ast;
+        // Something to do here?
+        lit->expr_type = &lit->typeAST;
+        break;
+    }
+    case AST_BINARY_OPERATION: {
+        auto binop = (BinaryOperationAST *)ast;
+        //traversePostfixAST(binop->lhs, deps);
+        //traversePostfixAST(binop->rhs, deps);
+
+        //addTypeWork(&pool, ast, deps);
+        //addSizeWork(&pool, ast, deps);
+        //addCheckWork(&pool, ast, deps);
+
+        TypeAST *lhsType = binop->lhs->expr_type;
+        TypeAST *rhsType = binop->rhs->expr_type;
+
+        assert(lhsType);
+        assert(rhsType);
+
+
+        if (work->action == IA_RESOLVE_TYPE) {
+            // @TODO: the type should be a combination of both lhs and rhs?
+            // @TODO: The type here should also depend on the operator
+
+            // Very hacky! needs much more work
+            binop->expr_type = lhsType;
+
+        } else if (work->action == IA_COMPUTE_SIZE) {
+
+        } else if (work->action == IA_OPERATION_CHECK) {
+
+            // @TODO: Check that the operator matches the types of rhs, lhs
+            if (!compatibleTypes(lhsType, rhsType)) {
+                char ltype[64] = {}, rtype[64] = {};
+                printTypeToStr(ltype, lhsType);
+                printTypeToStr(rtype, rhsType);
+                Error(binop, "Incompatible types during binary operation %s: %s and %s\n",
+                    TokenTypeToCOP(binop->op),
+                    ltype, rtype);
+                return false;
+            }
+
+        } else {
+            assert(!"Unknown dependency work type");
+        }
+
+        break;
+    }
+    case AST_UNARY_OPERATION: {
+        auto unop = (UnaryOperationAST *)ast;
+        //traversePostfixAST(unop->expr, deps);
+
+        //addTypeWork(&pool, ast, deps);
+        //addSizeWork(&pool, ast, deps);
+        //addCheckWork(&pool, ast, deps);
+
+        if (work->action == IA_RESOLVE_TYPE) {
+            TypeAST *type = unop->expr->expr_type;
+
+            assert(type);
+
+            // Very hacky! needs much more work
+            unop->expr_type = type;
+
+        } else if (work->action == IA_COMPUTE_SIZE) {
+
+        } else if (work->action == IA_OPERATION_CHECK) {
+
+        } else {
+            assert(!"Unknown dependency work type");
+        }
+
+        break;
+    }
+    case AST_ASSIGNMENT: {
+        auto assign = (AssignmentAST *)ast;
+        //traversePostfixAST(assign->lhs, deps);
+        //traversePostfixAST(assign->rhs, deps);
+
+        //addTypeWork(&pool, ast, deps);
+        //addSizeWork(&pool, ast, deps);
+        //addCheckWork(&pool, ast, deps);
+
+        if (work->action == IA_RESOLVE_TYPE) {
+            if (assign->lhs->expr_type == nullptr) {
+                return false;
+            }
+            assert(assign->lhs->expr_type);
+            assign->expr_type = assign->lhs->expr_type;
+
+        } else if (work->action == IA_COMPUTE_SIZE) {
+
+        } else if (work->action == IA_OPERATION_CHECK) {
+
+            // lhs cannot be const (or a literal, same thing)
+            if (isConstExpression(assign->lhs)) {
+                Error(assign, "The left hand side of an assignment must be an l-value\n");
+            }
+
+            // lhs and rhs need to have the same type
+            TypeAST *lhsType, *rhsType;
+            lhsType = assign->lhs->expr_type;
+            rhsType = assign->rhs->expr_type;
+            if (!compatibleTypes(lhsType, rhsType)) {
+                char ltype[64] = {}, rtype[64] = {};
+                printTypeToStr(ltype, lhsType);
+                printTypeToStr(rtype, rhsType);
+                Error(assign, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
+            }
+
+            // @TODO: check for width of operands (in case of literals), like assigning 512 to an u8.
+            // one of the hard things here is what to do on complex expressions with literals, promote?
+
+        } else {
+            assert(!"Unknown dependency work type");
+        }
+        break;
+    }
+    case AST_RUN_DIRECTIVE: {
+        auto run = (RunDirectiveAST *)ast;
+        if (work->action == IA_RESOLVE_TYPE) {
+            TypeAST *type = run->expr->expr_type;
+            assert(type);
+
+            run->expr_type = type;
+        } else {
+            assert(!"Unimplemented");
+        }
+        break;
+    }
+    default:
+        assert(!"AST type not being handled on traversePostfixAST");
+    }
+
+    return true;
 }

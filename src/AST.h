@@ -11,6 +11,7 @@ struct ExpressionAST;
 struct VariableDeclarationAST;
 struct FunctionDefinitionAST;
 struct bytecode_function;
+struct interp_deps;
 
 struct Scope {
     Scope *parent = nullptr;
@@ -29,15 +30,10 @@ enum BasicType {
 enum AST_CLASS_TYPE {
     AST_UNKNOWN,
     AST_FILE,
-    AST_STATEMENT,
-    AST_DEFINITION,
-    AST_TYPE,
-    AST_ARGUMENT_DECLARATION,
     AST_FUNCTION_TYPE,
     AST_STATEMENT_BLOCK,
     AST_RETURN_STATEMENT,
     AST_FUNCTION_DEFINITION,
-    AST_EXPRESSION,
     AST_FUNCTION_CALL,
     AST_DIRECT_TYPE,
     AST_ARRAY_TYPE,
@@ -126,6 +122,7 @@ struct RunDirectiveAST : ExpressionAST
 {
     RunDirectiveAST() { ast_type = AST_RUN_DIRECTIVE; }
     ExpressionAST *expr = nullptr;
+    interp_deps *deps = nullptr; // only applicable for global directives
 };
 
 struct FunctionCallAST : ExpressionAST
@@ -186,19 +183,21 @@ struct VariableDeclarationAST : StatementAST
     DefinitionAST *definition = nullptr;
     u32 flags = 0;
     u64 bc_mem_offset = 0;
+    interp_deps *deps = nullptr; // only applicable for global variables
 };
 
 struct VarReferenceAST : ExpressionAST
 {
     VarReferenceAST() { ast_type = AST_VAR_REFERENCE; }
     TextType name = nullptr;
+    VariableDeclarationAST *decl = nullptr;
     VarReferenceAST *next = nullptr;
+    VarReferenceAST *prev = nullptr; // for errors
 };
 
 struct IdentifierAST : VarReferenceAST
 {
     IdentifierAST() { ast_type = AST_IDENTIFIER; }
-    VariableDeclarationAST *decl = nullptr;
 };
 
 struct LiteralAST : ExpressionAST

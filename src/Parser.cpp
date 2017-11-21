@@ -584,6 +584,12 @@ VarReferenceAST * Parser::parseVarReference()
             return nullptr;
         }
         comp->next = parseVarReference();
+        if (comp->next) {
+            comp->next->prev = comp;
+            // the scope for a variable reference is that of the enclosing struct
+            // since we do not yet know it, just null it to be safe
+            comp->next->scope = nullptr;
+        }
         return comp;
     } else if (lex->checkAheadToken(TK_OPEN_SQBRACKET, 0)) {
         // This is an array access
