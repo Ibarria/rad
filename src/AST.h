@@ -20,6 +20,7 @@ struct Scope {
 };
 
 enum BasicType {
+    BASIC_TYPE_VOID,
     BASIC_TYPE_BOOL,
     BASIC_TYPE_STRING,
     BASIC_TYPE_INTEGER,

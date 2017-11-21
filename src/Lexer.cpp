@@ -49,6 +49,7 @@ struct ReservedKeyword {
     { "bool",     TK_BOOL },
     { "true",     TK_TRUE },
     { "false",    TK_FALSE },
+    { "void",     TK_VOID },
     { "string",   TK_STRING_KEYWORD },
     { "int",      TK_INT },
     { "u8",       TK_U8 },
@@ -221,6 +222,10 @@ void Lexer::parseNumber(Token & tok, char c)
     int base = 10;
     bool decimal = false;
     int dec_index = 0;
+    char snum[64] = {};
+    char *s = snum;
+
+    *s++ = c;
 
     file.peek(c);
     if (c == 'x') {
@@ -228,6 +233,9 @@ void Lexer::parseNumber(Token & tok, char c)
             Error("Hex numbers must start with prefix 0x, the compiler saw %d%c\n", (int)total, c);
         }
         base = 16;
+
+        file.getc(c);
+        *s++ = c;
     }
 
     while (file.peek(c)) {
@@ -235,6 +243,7 @@ void Lexer::parseNumber(Token & tok, char c)
             // handle the conversion to float right now
             if (base == 16) Error("Hex numbers cannot have a period in them\n");
             file.getc(c);
+            *s++ = c;
             decimal = true;
             dtotal = (double)total;
             continue;
@@ -254,7 +263,7 @@ void Lexer::parseNumber(Token & tok, char c)
                 total += c - '0';
             } else {
                 c &= 0xDF; // this makes this character lowercase
-                total += c - 'A';
+                total += 10 + c - 'A';
             }
         } else {
             dec_index++;
@@ -262,6 +271,7 @@ void Lexer::parseNumber(Token & tok, char c)
             dtotal = dtotal + num / pow(10, dec_index);
         }
         file.getc(c);
+        *s++ = c;
     }
     if (decimal) {
         tok._f64 = dtotal;
@@ -270,6 +280,7 @@ void Lexer::parseNumber(Token & tok, char c)
         tok._u64 = total;
         tok.type = TK_NUMBER;
     }
+    tok.string = CreateTextType(pool, snum);
 }
 
 void Lexer::consumeWhiteSpace()

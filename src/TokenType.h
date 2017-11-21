@@ -63,6 +63,7 @@ enum TOKEN_TYPE {
     TK_BOOL,
     TK_TRUE,
     TK_FALSE,
+    TK_VOID,
     TK_INT,
     TK_U8,
     TK_U16,

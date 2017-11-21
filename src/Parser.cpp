@@ -220,11 +220,41 @@ static bool isVariableTypeToken(TOKEN_TYPE t)
         || (t == TK_STRING_KEYWORD);
 }
 
+static bool isHexNumber(Token &t)
+{
+    if (t.type == TK_NUMBER) {
+        return strcmp("0x", t.string) == 0;
+    }
+    return false;
+}
+
+static f64 computeDecimal(Token &t)
+{
+    assert(t.type == TK_NUMBER);
+    assert(!isHexNumber(t));
+
+    double total = 0;
+    double divisor = 10;
+    char *s = t.string;
+    while (*s != 0) {
+        float num = (float)(*s - '0');        
+        total += num / divisor;
+        divisor *= 10;
+        s++;
+    }
+
+    return total;
+}
+
 DirectTypeAST *Parser::createType(TOKEN_TYPE tktype, TextType name)
 {
     DirectTypeAST *type = NEW_AST(DirectTypeAST);
     type->name = name;
     switch (tktype) {
+    case TK_VOID:
+        type->basic_type = BASIC_TYPE_VOID;
+        type->size_in_bits = 0; // Basically this can never be a direct type
+        break;
     case TK_BOOL:
         type->basic_type = BASIC_TYPE_BOOL;
         type->size_in_bits = 8; // This could change, but enough for now
@@ -678,6 +708,30 @@ ExpressionAST * Parser::parseLiteral()
         }
 
         return expr;
+    } else if (t.type == TK_PERIOD) {
+        // We support period for expressions like `.5`
+        if (lex->checkAheadToken(TK_NUMBER, 1)) {
+            lex->consumeToken();
+            lex->getNextToken(t);
+
+            if (isHexNumber(t)) {
+                Error("After a period we need to see normal numbers, not hex numbers");
+                return nullptr;
+            }
+
+            auto ex = NEW_AST(LiteralAST);
+            setASTinfo(this, &ex->typeAST);
+
+            ex->typeAST.isLiteral = true;
+            ex->typeAST.basic_type = BASIC_TYPE_FLOATING;
+            ex->typeAST.size_in_bits = 64;
+
+            ex->_f64 = computeDecimal(t);
+            return ex;
+        } else {
+            Error("Could not parse a literal expression! Unknown token type: %s", TokenTypeToStr(t.type));
+            return nullptr;
+        }
     }
     Error("Could not parse a literal expression! Unknown token type: %s", TokenTypeToStr(t.type));
     return nullptr;

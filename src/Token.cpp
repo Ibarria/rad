@@ -100,6 +100,7 @@ const char * TokenTypeToStr(TOKEN_TYPE type)
         CASE_TOKEN_TYPE(TK_BOOL);
         CASE_TOKEN_TYPE(TK_TRUE);
         CASE_TOKEN_TYPE(TK_FALSE);
+        CASE_TOKEN_TYPE(TK_VOID);
         CASE_TOKEN_TYPE(TK_INT);
         CASE_TOKEN_TYPE(TK_U8);
         CASE_TOKEN_TYPE(TK_U16);

@@ -8,6 +8,7 @@ a : bool;
 
 main :: ()
 {
+    fl : float = .543;
     x1 := 1;
     x1 = add(3, 0);
 
