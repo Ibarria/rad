@@ -9,30 +9,30 @@ const char *BasicTypeToStr(const DirectTypeAST *t)
     case BASIC_TYPE_STRING:  return "string";
     case BASIC_TYPE_INTEGER: {
         if (t->isSigned) {
-            switch (t->size_in_bits) {
-            case 8: return "s8";
-            case 16: return "s16";
-            case 32: return "s32";
+            switch (t->size_in_bytes) {
+            case 1: return "s8";
+            case 2: return "s16";
+            case 4: return "s32";
             default:
-            case 64: return "s64";
+            case 8: return "s64";
             }
             assert(false);
             return "UNKNOWN";
         } else {
-            switch (t->size_in_bits) {
-            case 8: return "u8";
-            case 16: return "u16";
-            case 32: return "u32";
+            switch (t->size_in_bytes) {
+            case 1: return "u8";
+            case 2: return "u16";
+            case 4: return "u32";
             default:
-            case 64: return "u64";
+            case 8: return "u64";
             }
             assert(false);
             return "UNKNOWN";
         }
     }
     case BASIC_TYPE_FLOATING: 
-        if (t->size_in_bits == 32) return "f32";
-        if (t->size_in_bits == 64) return "f64";
+        if (t->size_in_bytes == 4) return "f32";
+        if (t->size_in_bytes == 8) return "f64";
         return "f64";
         // assert(false);
         return "UNKNOWN";

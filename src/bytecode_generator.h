@@ -74,9 +74,9 @@ struct bytecode_generator
 
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const);
     void createStoreInstruction(VariableDeclarationAST *decl, s16 reg);
-    void createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bits, s16 reg);
+    void createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg);
     void createLoadInstruction(VariableDeclarationAST *decl, s16 reg);
-    void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bits, s16 reg);
+    void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg);
     void issue_instruction(BCI *bci);
     void issueReserveStackSpace(u64 size);
 

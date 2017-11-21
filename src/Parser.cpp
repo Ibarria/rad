@@ -253,61 +253,61 @@ DirectTypeAST *Parser::createType(TOKEN_TYPE tktype, TextType name)
     switch (tktype) {
     case TK_VOID:
         type->basic_type = BASIC_TYPE_VOID;
-        type->size_in_bits = 0; // Basically this can never be a direct type
+        type->size_in_bytes = 0; // Basically this can never be a direct type
         break;
     case TK_BOOL:
         type->basic_type = BASIC_TYPE_BOOL;
-        type->size_in_bits = 8; // This could change, but enough for now
+        type->size_in_bytes = 1; // This could change, but enough for now
         break;
     case TK_STRING_KEYWORD:
         type->basic_type = BASIC_TYPE_STRING;
-        type->size_in_bits = 64 + 64; // for the pointer to data and the size of the string
+        type->size_in_bytes = 8 + 8; // for the pointer to data and the size of the string
         break;
     case TK_U8:
         type->basic_type = BASIC_TYPE_INTEGER;
-        type->size_in_bits = 8;
+        type->size_in_bytes = 1;
         break;
     case TK_U16:
         type->basic_type = BASIC_TYPE_INTEGER;
-        type->size_in_bits = 16;
+        type->size_in_bytes = 2;
         break;
     case TK_U32:
         type->basic_type = BASIC_TYPE_INTEGER;
-        type->size_in_bits = 32;
+        type->size_in_bytes = 4;
         break;
     case TK_INT:
     case TK_U64:
         type->basic_type = BASIC_TYPE_INTEGER;
-        type->size_in_bits = 64;
+        type->size_in_bytes = 8;
         break;
     case TK_S8:
         type->basic_type = BASIC_TYPE_INTEGER;
         type->isSigned = true;
-        type->size_in_bits = 8;
+        type->size_in_bytes = 1;
         break;
     case TK_S16:
         type->basic_type = BASIC_TYPE_INTEGER;
         type->isSigned = true;
-        type->size_in_bits = 16;
+        type->size_in_bytes = 2;
         break;
     case TK_S32:
         type->basic_type = BASIC_TYPE_INTEGER;
         type->isSigned = true;
-        type->size_in_bits = 32;
+        type->size_in_bytes = 4;
         break;
     case TK_S64:
         type->basic_type = BASIC_TYPE_INTEGER;
         type->isSigned = true;
-        type->size_in_bits = 64;
+        type->size_in_bytes = 8;
         break;
     case TK_F32:
         type->basic_type = BASIC_TYPE_FLOATING;
-        type->size_in_bits = 32;
+        type->size_in_bytes = 4;
         break;
     case TK_FLOAT:
     case TK_F64:
         type->basic_type = BASIC_TYPE_FLOATING;
-        type->size_in_bits = 64;
+        type->size_in_bytes = 8;
         break;
     case TK_IDENTIFIER:
         type->basic_type = BASIC_TYPE_CUSTOM;
@@ -670,23 +670,23 @@ ExpressionAST * Parser::parseLiteral()
 
         if (t.type == TK_NUMBER) {
             ex->typeAST.basic_type = BASIC_TYPE_INTEGER;
-            ex->typeAST.size_in_bits = 64;
+            ex->typeAST.size_in_bytes = 8;
             ex->_u64 = t._u64;
         } else if (t.type == TK_FNUMBER) {
             ex->typeAST.basic_type = BASIC_TYPE_FLOATING;
-            ex->typeAST.size_in_bits = 64;
+            ex->typeAST.size_in_bytes = 8;
             ex->_f64 = t._f64;
         } else if (t.type == TK_STRING) {
             ex->typeAST.basic_type = BASIC_TYPE_STRING;
-            ex->typeAST.size_in_bits = 64+64;
+            ex->typeAST.size_in_bytes = 8+8;
             ex->str = t.string;
         } else if (t.type == TK_TRUE) {
             ex->typeAST.basic_type = BASIC_TYPE_BOOL;
-            ex->typeAST.size_in_bits = 8;
+            ex->typeAST.size_in_bytes = 1;
             ex->_bool = true;
         } else if (t.type == TK_FALSE) {
             ex->typeAST.basic_type = BASIC_TYPE_BOOL;
-            ex->typeAST.size_in_bits = 8;
+            ex->typeAST.size_in_bytes = 1;
             ex->_bool = false;
         }
         return ex;
@@ -724,7 +724,7 @@ ExpressionAST * Parser::parseLiteral()
 
             ex->typeAST.isLiteral = true;
             ex->typeAST.basic_type = BASIC_TYPE_FLOATING;
-            ex->typeAST.size_in_bits = 64;
+            ex->typeAST.size_in_bytes = 8;
 
             ex->_f64 = computeDecimal(t);
             return ex;

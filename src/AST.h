@@ -79,12 +79,12 @@ struct DefinitionAST : StatementAST
 
 struct TypeAST : BaseAST
 {
-    u32 size_in_bits = 0;
+    u32 size_in_bytes = 0;
 };
 
 struct FunctionTypeAST : TypeAST
 {
-    FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; size_in_bits = 64; }
+    FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; size_in_bytes = 8; }
     Array<VariableDeclarationAST *> arguments;
     TypeAST *return_type = nullptr;
     bool isForeign = false;
@@ -110,7 +110,7 @@ struct FunctionDefinitionAST : DefinitionAST
     FunctionTypeAST *declaration = nullptr;
     StatementBlockAST *function_body = nullptr;
     VariableDeclarationAST *var_decl = nullptr; // so that we can find the name of the function
-    u32 size_in_bits = 64;
+    u32 size_in_bytes = 8;
     bytecode_function *bc_function = nullptr;
 };
 
@@ -195,7 +195,7 @@ struct VarReferenceAST : ExpressionAST
     VariableDeclarationAST *decl = nullptr;
     VarReferenceAST *next = nullptr;
     VarReferenceAST *prev = nullptr; // for errors
-    u32 size_in_bits = 0; // this is to refer to the size in bits of the whole reference 
+    u32 size_in_bytes = 0; // this is to refer to the size in bits of the whole reference 
 };
 
 struct IdentifierAST : VarReferenceAST

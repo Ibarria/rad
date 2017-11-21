@@ -662,7 +662,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
                 decl->specified_type = fundef->declaration;
                 decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
-                assert(decl->specified_type->size_in_bits);
+                assert(decl->specified_type->size_in_bytes);
                 return true;
             }
             case AST_STRUCT_DEFINITION: {
@@ -670,7 +670,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 decl->specified_type = &struct_def->struct_type;
                 decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
                 decl->flags |= DECL_FLAG_IS_TYPE; // Use this so we do not reserve space for types
-                assert(decl->specified_type->size_in_bits == 0);
+                assert(decl->specified_type->size_in_bytes == 0);
                 break;
             }
             default: {
@@ -692,12 +692,12 @@ bool Interpreter::doWorkAST(interp_work * work)
             if (decl->definition && decl->definition->ast_type == AST_STRUCT_DEFINITION) {
                 auto struct_def = (StructDefinitionAST *)decl->definition;
                 assert((struct_def->struct_type.struct_scope.decls.size() == 0) ||
-                    (struct_def->struct_type.size_in_bits > 0));
+                    (struct_def->struct_type.size_in_bytes > 0));
                 // Go around all the members of the struct and assign relative bc_mem_offset (offset from struct parent)
                 u64 bc_offset = 0;
                 for (auto member : struct_def->struct_type.struct_scope.decls) {
                     member->bc_mem_offset = bc_offset;
-                    bc_offset += member->specified_type->size_in_bits / 8;
+                    bc_offset += member->specified_type->size_in_bytes;
                 }
 
             }
@@ -733,13 +733,13 @@ bool Interpreter::doWorkAST(interp_work * work)
         //addSizeWork(&pool, ast, deps);
         assert(work->action == IA_COMPUTE_SIZE);
 
-        struct_type->size_in_bits = 0;
+        struct_type->size_in_bytes = 0;
         for (auto var : struct_type->struct_scope.decls) {
-            if (var->specified_type->size_in_bits == 0) {
+            if (var->specified_type->size_in_bytes == 0) {
                 return false;
             }
-            assert(var->specified_type->size_in_bits > 0);
-            struct_type->size_in_bits += var->specified_type->size_in_bits;
+            assert(var->specified_type->size_in_bytes > 0);
+            struct_type->size_in_bytes += var->specified_type->size_in_bytes;
         }
 
         break;
@@ -781,7 +781,7 @@ bool Interpreter::doWorkAST(interp_work * work)
             }
 
         } else if (work->action == IA_COMPUTE_SIZE) {
-            var_ref->size_in_bits = var_ref->next->size_in_bits;
+            var_ref->size_in_bytes = var_ref->next->size_in_bytes;
         } else {
             assert(!"Not implemented");
         }
@@ -946,7 +946,7 @@ bool Interpreter::doWorkAST(interp_work * work)
         } else if (work->action == IA_COMPUTE_SIZE) {
             if (dt->basic_type == BASIC_TYPE_CUSTOM) {
                 assert(dt->custom_type);
-                dt->size_in_bits = dt->custom_type->size_in_bits;
+                dt->size_in_bytes = dt->custom_type->size_in_bytes;
             }
         }
         return true;
@@ -973,7 +973,7 @@ bool Interpreter::doWorkAST(interp_work * work)
         } else if (work->action == IA_COMPUTE_SIZE) {
             assert(id->decl);
             assert(id->decl->specified_type);
-            id->size_in_bits = id->decl->specified_type->size_in_bits;
+            id->size_in_bytes = id->decl->specified_type->size_in_bytes;
         } else if (work->action == IA_OPERATION_CHECK) {
             assert(!"No check for a single identifier");
         } else {
@@ -1016,7 +1016,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 copyASTloc(binop, dt);
                 binop->expr_type = dt;
                 dt->basic_type = BASIC_TYPE_BOOL;
-                dt->size_in_bits = 8;
+                dt->size_in_bytes = 1;
             } else {
                 // @TODO this is integer or float, the final type might need upcasting
                 binop->expr_type = lhsType;
