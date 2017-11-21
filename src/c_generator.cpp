@@ -133,14 +133,53 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl, boo
     
 }
 
+void c_generator::generate_struct_prototype(VariableDeclarationAST * decl)
+{
+ 
+    auto stype = (StructTypeAST *)decl->specified_type;
+
+    fprintf(output_file, "struct %s;\n", decl->varname);
+}
+
+void c_generator::ensure_deps_are_generated(StructTypeAST *stype)
+{
+    for (auto mem : stype->struct_scope.decls) {
+        if (mem->specified_type->ast_type == AST_DIRECT_TYPE) {
+            auto dt = (DirectTypeAST *)mem->specified_type;
+            if (dt->custom_type && (dt->custom_type->ast_type == AST_STRUCT_TYPE)) {
+                auto st = (StructTypeAST *)dt->custom_type;
+                if (st->decl && !(st->decl->flags & DECL_FLAG_HAS_BEEN_GENERATED)) {
+                    generate_variable_declaration(st->decl);
+                }
+            }
+        }
+    }
+}
+
+
 void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
 {
+    // If this is a struct, ensure dependent types are declared first
+    if (decl->specified_type->ast_type == AST_STRUCT_TYPE) {        
+        auto stype = (StructTypeAST *)decl->specified_type;
+        ensure_deps_are_generated(stype);
+    }
+
+    if (decl->flags & DECL_FLAG_HAS_BEEN_GENERATED) {
+        // if we generated this already, nothing to do
+        return;
+    }
+
     generate_line_info(decl);
     do_ident();
 
     if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
         auto dt = (DirectTypeAST *)decl->specified_type;
-        fprintf(output_file, BasicTypeToStr(dt));
+        if (dt->basic_type == BASIC_TYPE_CUSTOM) {
+            fprintf(output_file, "%s", dt->name);
+        } else {
+            fprintf(output_file, BasicTypeToStr(dt));
+        }
         fprintf(output_file, " %s", decl->varname);
         
         if (decl->definition) {
@@ -240,7 +279,6 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
 
         }
     } else if (decl->specified_type->ast_type == AST_STRUCT_TYPE) {
-        //assert(!"Struct type not implemented in C code generation");
         auto stype = (StructTypeAST *)decl->specified_type;
         fprintf(output_file, "struct %s {\n", decl->varname);
         ident += 4;
@@ -254,6 +292,7 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         assert(!"Type not suported on C code generation yet");
     }
 
+    decl->flags |= DECL_FLAG_HAS_BEEN_GENERATED;
 }
 
 void c_generator::generate_argument_declaration(VariableDeclarationAST * arg)
@@ -442,6 +481,8 @@ void c_generator::generate_c_file(const char * filename, FileAST * root)
             auto decl = (VariableDeclarationAST *)ast;
             if (decl->specified_type->ast_type == AST_FUNCTION_TYPE) {
                 generate_function_prototype(decl);
+            } else if (decl->specified_type->ast_type == AST_STRUCT_TYPE) {
+                generate_struct_prototype(decl);
             }
         }            
     };

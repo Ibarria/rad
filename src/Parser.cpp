@@ -972,6 +972,10 @@ VariableDeclarationAST * Parser::parseDeclaration(bool isStruct)
             // we want to be able to find the name of the function
             auto fundef = (FunctionDefinitionAST *)decl->definition;
             fundef->var_decl = decl;
+        } else if (decl->definition->ast_type == AST_STRUCT_DEFINITION) {
+            // we need this pointer for C generation ordering
+            auto sdef = (StructDefinitionAST *)decl->definition;
+            sdef->struct_type.decl = decl;
         }
         lex->lookaheadToken(t);
     } else if (t.type != TK_SEMICOLON) {

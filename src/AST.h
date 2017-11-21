@@ -158,6 +158,7 @@ struct StructTypeAST : TypeAST
 {
     StructTypeAST() { ast_type = AST_STRUCT_TYPE; }
     Scope struct_scope;
+    VariableDeclarationAST *decl = nullptr; // which declaration used this type, if any
 };
 
 struct StructDefinitionAST : DefinitionAST 
