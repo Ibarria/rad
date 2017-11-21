@@ -544,6 +544,13 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
             issue_instruction(bci);
             break;
         }
+        case BASIC_TYPE_BOOL: {
+            BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, lit->_bool);
+            bci->op_size = lit->typeAST.size_in_bits / 8;
+            issue_instruction(bci);
+            break;
+        }
+
         default:
             assert(false);
                                  // @TODO: add here float, bool... 

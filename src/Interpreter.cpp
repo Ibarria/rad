@@ -13,6 +13,8 @@
 
 extern bool option_printBytecode;
 
+bool isBoolOperator(TOKEN_TYPE type);
+
 static void printTypeToStr(char *s, TypeAST *type)
 {
     switch (type->ast_type) {
@@ -40,6 +42,12 @@ static void printTypeToStr(char *s, TypeAST *type)
     default:
         assert(!"Unsupported type");
     }
+}
+
+static void copyASTloc(BaseAST *src, BaseAST *dst)
+{
+    dst->filename = src->filename;
+    dst->line_num = src->line_num;
 }
 
 static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
@@ -141,12 +149,6 @@ void Interpreter::reset_errors()
 {
     success = true;
     errors.reset();
-}
-
-void copyASTloc(BaseAST *src, BaseAST *dst)
-{
-    dst->filename = src->filename;
-    dst->line_num = src->line_num;
 }
 
 static FunctionDefinitionAST * findEnclosingFunction(StatementAST * stmt)
@@ -1004,24 +1006,81 @@ bool Interpreter::doWorkAST(interp_work * work)
 
         if (work->action == IA_RESOLVE_TYPE) {
             // @TODO: the type should be a combination of both lhs and rhs?
-            // @TODO: The type here should also depend on the operator
 
             // Very hacky! needs much more work
-            binop->expr_type = lhsType;
+            if (isBoolOperator(binop->op)) {
+                // the resulting operation is of type bool
+
+                // Check for compatible types is done later
+                DirectTypeAST *dt = new (&pool) DirectTypeAST;
+                copyASTloc(binop, dt);
+                binop->expr_type = dt;
+                dt->basic_type = BASIC_TYPE_BOOL;
+                dt->size_in_bits = 8;
+            } else {
+                // @TODO this is integer or float, the final type might need upcasting
+                binop->expr_type = lhsType;
+            }
+
 
         } else if (work->action == IA_COMPUTE_SIZE) {
 
         } else if (work->action == IA_OPERATION_CHECK) {
 
             // @TODO: Check that the operator matches the types of rhs, lhs
-            if (!compatibleTypes(lhsType, rhsType)) {
-                char ltype[64] = {}, rtype[64] = {};
-                printTypeToStr(ltype, lhsType);
-                printTypeToStr(rtype, rhsType);
-                Error(binop, "Incompatible types during binary operation %s: %s and %s\n",
-                    TokenTypeToCOP(binop->op),
-                    ltype, rtype);
-                return false;
+            if (!isBoolOperator(binop->op) || 
+                (binop->op == TK_EQ) ||
+                (binop->op == TK_NEQ)) {
+                // Non boolean operators demand types that match
+                // same if we check for equality
+                if (!compatibleTypes(lhsType, rhsType)) {
+                    char ltype[64] = {}, rtype[64] = {};
+                    printTypeToStr(ltype, lhsType);
+                    printTypeToStr(rtype, rhsType);
+                    Error(binop, "Incompatible types during binary operation %s: %s and %s\n",
+                        TokenTypeToCOP(binop->op),
+                        ltype, rtype);
+                    return false;
+                }
+            } else {
+                // Here we have a comparison operator
+                // @TODO: be a bit lenient on comparisons... 
+                // For now the types have to match and they need to be INTEGER or FLOAT only
+                if (!compatibleTypes(lhsType, rhsType)) {
+                    char ltype[64] = {}, rtype[64] = {};
+                    printTypeToStr(ltype, lhsType);
+                    printTypeToStr(rtype, rhsType);
+                    Error(binop, "Incompatible types during binary operation %s: %s and %s\n",
+                        TokenTypeToCOP(binop->op),
+                        ltype, rtype);
+                    return false;
+                }
+
+                if ((lhsType->ast_type == rhsType->ast_type) && 
+                    (lhsType->ast_type == AST_DIRECT_TYPE)) {
+                    // Only support direct type (for float and integer)
+                    auto dtlhs = (DirectTypeAST *)lhsType;
+                    auto dtrhs = (DirectTypeAST *)rhsType;
+
+                    if (dtlhs->basic_type != dtrhs->basic_type) {
+                        char ltype[64] = {}, rtype[64] = {};
+                        printTypeToStr(ltype, lhsType);
+                        printTypeToStr(rtype, rhsType);
+                        Error(binop, "Both types on a comparison must match: %s, %s",
+                            ltype, rtype);
+                        return false;
+                    }
+                    if ((dtlhs->basic_type != BASIC_TYPE_FLOATING) &&
+                        (dtlhs->basic_type != BASIC_TYPE_INTEGER)) {
+                        // we do not support string comparison 
+                        char ltype[64] = {}, rtype[64] = {};
+                        printTypeToStr(ltype, lhsType);
+                        printTypeToStr(rtype, rhsType);
+                        Error(binop, "Only Integer and Floating point numbers can be used in comparisons, but we found %s",
+                            ltype);
+                        return false;
+                    }
+                }
             }
 
         } else {

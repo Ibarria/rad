@@ -61,6 +61,7 @@ struct Interpreter
 
     void reset_errors();
 
+
     VariableDeclarationAST *validateVariable(IdentifierAST *a);
     VariableDeclarationAST *validateFunctionCall(FunctionCallAST *a);
 

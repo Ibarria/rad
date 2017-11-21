@@ -156,6 +156,17 @@ static bool isBinOperator(TOKEN_TYPE type)
         || (type == TK_MINUS);
 }
 
+bool isBoolOperator(TOKEN_TYPE type)
+{
+    return (type == TK_EQ)
+        || (type == TK_LEQ)
+        || (type == TK_GEQ)
+        || (type == TK_NEQ)
+        || (type == TK_LT)
+        || (type == TK_GT);
+}
+
+
 static u32 getPrecedence(TOKEN_TYPE t)
 {
     switch (t) {
@@ -209,22 +220,11 @@ static bool isVariableTypeToken(TOKEN_TYPE t)
         || (t == TK_STRING_KEYWORD);
 }
 
-
-TypeAST *Parser::parseDirectType()
+DirectTypeAST *Parser::createType(TOKEN_TYPE tktype, TextType name)
 {
-    // @TODO: support pointer, arrays, etc
-    Token t;
-    lex->lookaheadToken(t);
-    if ((t.type != TK_IDENTIFIER) && !isVariableTypeToken(t.type)) {
-        Error("Variable type token could not be found, but we found: %s\n",
-            TokenTypeToStr(t.type));
-        return nullptr;
-    }
-    lex->consumeToken();
-
     DirectTypeAST *type = NEW_AST(DirectTypeAST);
-    type->name = t.string;
-    switch (t.type) {
+    type->name = name;
+    switch (tktype) {
     case TK_BOOL:
         type->basic_type = BASIC_TYPE_BOOL;
         type->size_in_bits = 8; // This could change, but enough for now
@@ -279,15 +279,29 @@ TypeAST *Parser::parseDirectType()
         type->basic_type = BASIC_TYPE_FLOATING;
         type->size_in_bits = 64;
         break;
-    case TK_IDENTIFIER :
+    case TK_IDENTIFIER:
         type->basic_type = BASIC_TYPE_CUSTOM;
         break;
     default:
         assert(!"Identifier types, custom types are not implemented");
     }
 
-    // @TODO: support custom types
     return type;
+}
+
+TypeAST *Parser::parseDirectType()
+{
+    // @TODO: support pointer, arrays, etc
+    Token t;
+    lex->lookaheadToken(t);
+    if ((t.type != TK_IDENTIFIER) && !isVariableTypeToken(t.type)) {
+        Error("Variable type token could not be found, but we found: %s\n",
+            TokenTypeToStr(t.type));
+        return nullptr;
+    }
+    lex->consumeToken();
+
+    return createType(t.type, t.string);
 }
 
 TypeAST * Parser::parseType()
