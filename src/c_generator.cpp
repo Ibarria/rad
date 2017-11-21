@@ -163,7 +163,7 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
     } else if (decl->specified_type->ast_type == AST_FUNCTION_TYPE) {
         auto ft = (FunctionTypeAST *)decl->specified_type;
 
-	    bool isMain = !strcmp(decl->varname, "main");
+        bool isMain = !strcmp(decl->varname, "main");
 
         // foreign functions are prototype only
         if (ft->isForeign) return;
@@ -197,12 +197,12 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         if (ft->return_type) {
             generate_type(ft->return_type);
         } else {
-	        if (isMain) {
-	            // main is a special case, to make the C compiler happy, allow void to be int
-	            fprintf(output_file, "int");
-	        } else {
-	            fprintf(output_file, "void");           
-	        }
+            if (isMain) {
+                // main is a special case, to make the C compiler happy, allow void to be int
+                fprintf(output_file, "int");
+            } else {
+                fprintf(output_file, "void");
+            }
         }
         if (decl->flags & DECL_FLAG_IS_CONSTANT) {
             fprintf(output_file, " %s ", decl->varname);
@@ -239,6 +239,17 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
             fprintf(output_file, ";\n");
 
         }
+    } else if (decl->specified_type->ast_type == AST_STRUCT_TYPE) {
+        //assert(!"Struct type not implemented in C code generation");
+        auto stype = (StructTypeAST *)decl->specified_type;
+        fprintf(output_file, "struct %s {\n", decl->varname);
+        ident += 4;
+        for (auto mem : stype->struct_scope.decls) {
+            generate_variable_declaration(mem);
+        }
+        ident -= 4;
+        do_ident();
+        fprintf(output_file, "};\n");
     } else {
         assert(!"Type not suported on C code generation yet");
     }
@@ -371,6 +382,13 @@ void c_generator::generate_expression(ExpressionAST * expr)
     case AST_RUN_DIRECTIVE: {
         // we should never get here, do something crappy for now
         fprintf(output_file, "0");
+        break;
+    } 
+    case AST_VAR_REFERENCE: {
+        auto vref = (VarReferenceAST *)expr;
+
+        fprintf(output_file, "%s.", vref->name);
+        generate_expression(vref->next);
         break;
     }
     default:

@@ -97,6 +97,7 @@ bool Parser::AddDeclarationToStruct(StructDefinitionAST * struct_def, VariableDe
         }
     }
     struct_def->struct_type.struct_scope.decls.push_back(decl);
+    decl->scope = &struct_def->struct_type.struct_scope;
     decl->flags |= DECL_FLAG_IS_STRUCT_MEMBER;
     return true;
 }
@@ -517,7 +518,7 @@ StructDefinitionAST * Parser::parseStructDefinition()
     if (t.type == TK_OPEN_BRACKET) {
         while (t.type != TK_CLOSE_BRACKET) {
             // now we process the different elements inside the struct, recursively
-            VariableDeclarationAST *decl = parseDeclaration();
+            VariableDeclarationAST *decl = parseDeclaration(true);
             if (!success) {
                 return nullptr;
             }

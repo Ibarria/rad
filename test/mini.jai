@@ -1,18 +1,39 @@
 
 #import "modules/basic.jai"
 
-x1 : u8 = 3;
-s := "Hello there";
+//x1 : u8 = 3;
+//s := "Hello there";
 
 MyType :: struct {
-  x: float;
+  x: u32;
   y: string;
 }
 
+
+Out1 :: struct {
+  a: string;
+  b: Out2;
+  c: u8;
+}
+
+Out2 :: struct {
+  d: u32;
+  e: Out3;
+  a: u8;
+}
+
+Out3 :: struct {
+  a1: u8;
+  a2: u8;
+  a3: u8;
+}
+
+
 main :: ()
 {
-    a : MyType;
-    a.x = 3.0;
+    so: u32;
+    a : Out1;
+    a.b.e.a2 = 3;
 
 
     x1 := 1;

@@ -193,6 +193,7 @@ struct VarReferenceAST : ExpressionAST
     VariableDeclarationAST *decl = nullptr;
     VarReferenceAST *next = nullptr;
     VarReferenceAST *prev = nullptr; // for errors
+    u32 size_in_bits = 0; // this is to refer to the size in bits of the whole reference 
 };
 
 struct IdentifierAST : VarReferenceAST
@@ -237,3 +238,4 @@ struct AssignmentAST : ExpressionAST
 void printAST(const BaseAST*ast, int ident);
 const char *BasicTypeToStr(const DirectTypeAST* t);
 bool isFunctionDeclaration(VariableDeclarationAST *decl);
+bool isStructDeclaration(VariableDeclarationAST *decl);

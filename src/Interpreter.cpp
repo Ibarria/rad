@@ -53,6 +53,21 @@ static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
     return findVariable(name, scope->parent);
 }
 
+static StructTypeAST *findStructType(TypeAST *type)
+{
+    if (type->ast_type == AST_STRUCT_TYPE) {
+        return (StructTypeAST *)type;
+    } else if (type->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)type;
+        if (dt->basic_type != BASIC_TYPE_CUSTOM) {
+            return nullptr; // normal direct types are not structs
+        }
+        assert(dt->custom_type);
+        return findStructType(dt->custom_type);
+    }
+    return nullptr;
+}
+
 static bool isTypeStruct(TypeAST *type)
 {
     if (type->ast_type == AST_STRUCT_TYPE) {
@@ -430,6 +445,7 @@ void Interpreter::traversePostfixAST(BaseAST * ast, interp_deps & deps)
         traversePostfixAST(var_ref->next, deps);
         // do post processing to grab the type
         addTypeWork(&pool, ast, deps);
+        addSizeWork(&pool, ast, deps);
         break;
     }
     case AST_STATEMENT_BLOCK: {
@@ -477,6 +493,7 @@ void Interpreter::traversePostfixAST(BaseAST * ast, interp_deps & deps)
         auto dt = (DirectTypeAST *)ast;
 
         addTypeWork(&pool, ast, deps);
+        addSizeWork(&pool, ast, deps);
 
         break;
     }
@@ -670,9 +687,19 @@ bool Interpreter::doWorkAST(interp_work * work)
             }
 
         } else if (work->action == IA_COMPUTE_SIZE) {
-            
-        } else if (work->action == IA_OPERATION_CHECK) {
+            if (decl->definition && decl->definition->ast_type == AST_STRUCT_DEFINITION) {
+                auto struct_def = (StructDefinitionAST *)decl->definition;
+                assert((struct_def->struct_type.struct_scope.decls.size() == 0) ||
+                    (struct_def->struct_type.size_in_bits > 0));
+                // Go around all the members of the struct and assign relative bc_mem_offset (offset from struct parent)
+                u64 bc_offset = 0;
+                for (auto member : struct_def->struct_type.struct_scope.decls) {
+                    member->bc_mem_offset = bc_offset;
+                    bc_offset += member->specified_type->size_in_bits / 8;
+                }
 
+            }
+        } else if (work->action == IA_OPERATION_CHECK) {
         } else {
             assert(!"Unknown dependency work type");
         }
@@ -704,47 +731,57 @@ bool Interpreter::doWorkAST(interp_work * work)
         //addSizeWork(&pool, ast, deps);
         assert(work->action == IA_COMPUTE_SIZE);
 
+        struct_type->size_in_bits = 0;
+        for (auto var : struct_type->struct_scope.decls) {
+            if (var->specified_type->size_in_bits == 0) {
+                return false;
+            }
+            assert(var->specified_type->size_in_bits > 0);
+            struct_type->size_in_bits += var->specified_type->size_in_bits;
+        }
+
         break;
     }
     case AST_VAR_REFERENCE: {
         auto var_ref = (VarReferenceAST *)ast;
-        // Special case, where we need to process this node before
-        // the next one
-        //addTypeWork(&pool, ast, deps);
-        assert(work->action == IA_RESOLVE_TYPE);
 
-        //traversePostfixAST(var_ref->next, deps);
-
-        if (var_ref->decl == nullptr) {
-            VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
-            if (decl == nullptr) {
-                if (var_ref->prev) {
-                    auto prev_decl = findVariable(var_ref->prev->name, var_ref->prev->scope);
-                    Error(var_ref, "Variable [%s] cannot be found on struct %s\n", var_ref->name,
-                        prev_decl->varname);
-                } else {
-                    Error(var_ref, "Variable [%s] could not be found on this scope\n", var_ref->name);
+        if (work->action == IA_RESOLVE_TYPE) {
+            if (var_ref->decl == nullptr) {
+                VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
+                if (decl == nullptr) {
+                    if (var_ref->prev) {
+                        auto prev_decl = findVariable(var_ref->prev->name, var_ref->prev->scope);
+                        Error(var_ref, "Variable [%s] cannot be found on struct %s\n", var_ref->name,
+                            prev_decl->varname);
+                    } else {
+                        Error(var_ref, "Variable [%s] could not be found on this scope\n", var_ref->name);
+                    }
+                    return false;
                 }
-                return false;
+
+                if (!isTypeStruct(decl->specified_type)) {
+                    Error(var_ref, "The variable [%s] is not of struct type", var_ref->name);
+                    return false;
+                }
+
+                var_ref->decl = decl;
+
+                auto struct_type = findStructType(decl->specified_type);
+
+                Scope *struct_scope = &struct_type->struct_scope;
+                var_ref->next->scope = struct_scope;
+            } else {
+                if (!var_ref->next->expr_type) {
+                    return false;
+                }
+                assert(var_ref->next->expr_type);
+                var_ref->expr_type = var_ref->next->expr_type;
             }
 
-            if (!isTypeStruct(decl->specified_type)) {
-                Error(var_ref, "The variable [%s] is not of struct type", var_ref->name);
-                return false;
-            }
-
-            var_ref->decl = decl;
-
-            auto struct_type = (StructTypeAST *)decl->specified_type;
-
-            Scope *struct_scope = struct_type->scope;
-            var_ref->next->scope = struct_scope;
+        } else if (work->action == IA_COMPUTE_SIZE) {
+            var_ref->size_in_bits = var_ref->next->size_in_bits;
         } else {
-            if (!var_ref->next->expr_type) {
-                return false;
-            }
-            assert(var_ref->next->expr_type);
-            var_ref->expr_type = var_ref->next->expr_type;
+            assert(!"Not implemented");
         }
 
         break;
@@ -884,25 +921,34 @@ bool Interpreter::doWorkAST(interp_work * work)
     case AST_DIRECT_TYPE: {
         auto dt = (DirectTypeAST *)ast;
 
-        //addTypeWork(&pool, ast, deps);
-        assert(work->action == IA_RESOLVE_TYPE);
-
-        if (dt->basic_type == BASIC_TYPE_CUSTOM) {
-            // we have to find the type here and provide a reference
-            if (dt->custom_type) {
-                // early out, the custom type is found
-                return true;
-            } else {
-                VariableDeclarationAST *type_var = findVariable(dt->name, dt->scope);
-                if (!type_var) {
-                    Error(dt, "Type %s could not be resolved", dt->name);
-                    return false;
+        if (work->action == IA_RESOLVE_TYPE) {
+            if (dt->basic_type == BASIC_TYPE_CUSTOM) {
+                // we have to find the type here and provide a reference
+                if (dt->custom_type) {
+                    // early out, the custom type is found
+                    return true;
+                } else {
+                    VariableDeclarationAST *type_var = findVariable(dt->name, dt->scope);
+                    if (!type_var) {
+                        Error(dt, "Type %s could not be resolved", dt->name);
+                        return false;
+                    }
+                    if (!type_var->specified_type) {
+                        // this could be a declaration that happens later
+                        return false;
+                    }
+                    assert(type_var->specified_type);
+                    dt->custom_type = type_var->specified_type;
                 }
-                assert(type_var->specified_type);
-                dt->custom_type = type_var->specified_type;
+            }
+        } else if (work->action == IA_COMPUTE_SIZE) {
+            if (dt->basic_type == BASIC_TYPE_CUSTOM) {
+                assert(dt->custom_type);
+                dt->size_in_bits = dt->custom_type->size_in_bits;
             }
         }
         return true;
+
 
         break;
     }
@@ -923,7 +969,9 @@ bool Interpreter::doWorkAST(interp_work * work)
             return true;
 
         } else if (work->action == IA_COMPUTE_SIZE) {
-
+            assert(id->decl);
+            assert(id->decl->specified_type);
+            id->size_in_bits = id->decl->specified_type->size_in_bits;
         } else if (work->action == IA_OPERATION_CHECK) {
             assert(!"No check for a single identifier");
         } else {

@@ -73,7 +73,7 @@ static inline void copy_bytes(u64 *src, u64 *dst, u8 count)
 static inline u64 getVariableSize(VariableDeclarationAST *decl)
 {
     if ((decl->flags & DECL_FLAG_IS_CONSTANT) &&
-        isFunctionDeclaration(decl)) {
+        (isFunctionDeclaration(decl) || isStructDeclaration(decl))) {
         // constant functions do not need space
         return 0;
     }
@@ -151,6 +151,49 @@ static inline u64 roundToPage(u64 size, u64 page_size)
 {
     size = (page_size - 1)&size ? ((size + page_size) & ~(page_size - 1)) : size;
     return size;
+}
+
+static inline u64 computeOffset(VarReferenceAST *var_ref)
+{
+    u64 off;
+
+    // top start offset of the struct or group of structs
+    off = var_ref->decl->bc_mem_offset; 
+
+    auto vnext = var_ref->next;
+    do {
+        off += vnext->decl->bc_mem_offset;
+        vnext = vnext->next;
+    } while (vnext != nullptr);
+    return off;
+}
+
+static BytecodeInstructionOpcode getStoreOpcode(VariableDeclarationAST *decl)
+{
+    BytecodeInstructionOpcode opcode;
+    if (isGlobal(decl)) {
+        opcode = BC_STORE_TO_BSS_PLUS_CONSTANT;
+    } else if (isLocal(decl)) {
+        opcode = BC_STORE_TO_STACK_PLUS_CONSTANT;
+    } else {
+        assert(!"Variable without scope set!");
+    }
+    return opcode;
+}
+
+static BytecodeInstructionOpcode getLoadOpcode(VariableDeclarationAST *decl)
+{
+    BytecodeInstructionOpcode opcode;
+    if (isGlobal(decl)) {
+        opcode = BC_LOAD_FROM_BSS_PLUS_CONSTANT;
+    } else if (isLocal(decl)) {
+        opcode = BC_LOAD_FROM_STACK_PLUS_CONSTANT;
+    } else if (isArgument(decl)) {
+        opcode = BC_LOAD_FROM_STACK_PLUS_CONSTANT;
+    } else {
+        assert(!"Variable without scope set!");
+    }
+    return opcode;
 }
 
 #define CASE_BC_OPCODE(a) case a: return #a
@@ -240,14 +283,7 @@ void bytecode_generator::createStoreInstruction(BytecodeInstructionOpcode opcode
 
 void bytecode_generator::createStoreInstruction(VariableDeclarationAST *decl, s16 reg)
 {
-    BytecodeInstructionOpcode opcode;
-    if (isGlobal(decl)) {
-        opcode = BC_STORE_TO_BSS_PLUS_CONSTANT;
-    } else if (isLocal(decl)) {
-        opcode = BC_STORE_TO_STACK_PLUS_CONSTANT;
-    }  else {
-        assert(!"Variable without scope set!");
-    }
+    BytecodeInstructionOpcode opcode = getStoreOpcode(decl);
     
     createStoreInstruction(opcode, decl->bc_mem_offset,
                            decl->specified_type->size_in_bits, reg);
@@ -278,16 +314,7 @@ void bytecode_generator::createLoadInstruction(BytecodeInstructionOpcode opcode,
 
 void bytecode_generator::createLoadInstruction(VariableDeclarationAST *decl, s16 reg)
 {
-    BytecodeInstructionOpcode opcode;
-    if (isGlobal(decl)) {
-        opcode = BC_LOAD_FROM_BSS_PLUS_CONSTANT;
-    } else if (isLocal(decl)) {
-        opcode = BC_LOAD_FROM_STACK_PLUS_CONSTANT;
-    } else if (isArgument(decl)) {
-        opcode = BC_LOAD_FROM_STACK_PLUS_CONSTANT;
-    } else {
-        assert(!"Variable without scope set!");
-    }
+    BytecodeInstructionOpcode opcode = getLoadOpcode(decl);
 
     createLoadInstruction(opcode, decl->bc_mem_offset,
         decl->specified_type->size_in_bits, reg);
@@ -406,6 +433,12 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
                 if (assign->lhs->ast_type == AST_IDENTIFIER) {
                     auto iden = (IdentifierAST *)assign->lhs;
                     createStoreInstruction(iden->decl, reg);
+                } else if (assign->lhs->ast_type == AST_VAR_REFERENCE) {
+                    auto var_ref = (VarReferenceAST *)assign->lhs;
+                    u64 var_offset = computeOffset(var_ref);
+                    assert(var_ref->size_in_bits > 0);
+                    createStoreInstruction(getStoreOpcode(var_ref->decl), var_offset,
+                        var_ref->size_in_bits, reg);
                 } else {
                     assert (! "We do not support anything else than an identifier for lhs for now");
                 }
@@ -456,6 +489,11 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
     if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
         auto fundef = (FunctionDefinitionAST *)decl->definition;
         generate_function(decl->varname, fundef);
+        return;
+    }
+    if (decl->definition->ast_type == AST_STRUCT_DEFINITION) {
+        // struct definitions do not cause any code to be created
+        // when they are instantiated, yes
         return;
     }
     // @TODO: we do not support function pointers yet

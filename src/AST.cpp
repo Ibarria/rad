@@ -234,3 +234,12 @@ bool isFunctionDeclaration(VariableDeclarationAST *decl)
     return false;
 }
 
+bool isStructDeclaration(VariableDeclarationAST *decl)
+{
+    if (decl && (decl->definition) &&
+        (decl->definition->ast_type == AST_STRUCT_DEFINITION)) {
+        return true;
+    }
+
+    return false;
+}
