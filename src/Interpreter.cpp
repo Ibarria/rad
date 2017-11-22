@@ -830,8 +830,6 @@ bool Interpreter::doWorkAST(interp_work * work)
                     break;
                 }
                 default: {
-                    // expect this to be an expression, and the expression type needs to be deduced
-                    // operation, literal, function call, etc
                     auto expr = (ExpressionAST *)(decl->definition);
                     TypeAST *rhsType = expr->expr_type;
                     TypeAST *lhsType = decl->specified_type;
@@ -884,13 +882,25 @@ bool Interpreter::doWorkAST(interp_work * work)
                             return false;
                         }
                     } else {
-                        if (!lhsDType->isSigned && rhsDType->isSigned) {
-                            Error(decl, "The variable %s is unsigned but a signed value is being assigned to it.\n",
-                                decl->varname);
+                        if (rhsDType->isLiteral) {
+                            auto lit = (LiteralAST *)expr;
+
+                            if (!lhsDType->isSigned && rhsDType->isSigned) {
+                                Error(decl, "The variable %s is unsigned but a signed value is being assigned to it.\n",
+                                    decl->varname);
+                                return false;
+                            } else if (lhsDType->isSigned && !rhsDType->isSigned &&
+                                (rhsDType->size_in_bytes == lhsDType->size_in_bytes)) {
+                                // there is a possible overflow here
+                                if (!literal_value_fits_in_bytes(lit, lhsDType)) {
+                                    Error(decl, "Initial value for variable %s is too large for its type\n", decl->varname);
+                                    return false;
+                                }
+                            }
+                        } else {
+                            Error(decl, "The start value for this variable %s uses %d bytes, while the expression type can only hold %d bytes\n",
+                                decl->varname, rhsDType->size_in_bytes, lhsDType->size_in_bytes);
                             return false;
-                        } else if (lhsDType->isSigned && !rhsDType->isSigned &&
-                            (rhsDType->size_in_bytes > lhsDType->size_in_bytes)) {
-                            // there is a possible overflow here
                         }
                     }
                     return true;
@@ -1356,12 +1366,118 @@ bool Interpreter::doWorkAST(interp_work * work)
             TypeAST *lhsType, *rhsType;
             lhsType = assign->lhs->expr_type;
             rhsType = assign->rhs->expr_type;
-            if (!compatibleTypes(lhsType, rhsType)) {
+
+            if (rhsType->ast_type != lhsType->ast_type) {
                 char ltype[64] = {}, rtype[64] = {};
-                printTypeToStr(ltype, lhsType);
-                printTypeToStr(rtype, rhsType);
-                Error(assign, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
+                printTypeToStr(ltype, rhsType);
+                printTypeToStr(rtype, lhsType);
+                Error(assign, "Incompatible types on this assignment. Type: %s and the declared type %s\n",
+                    ltype, rtype);
+                return false;
             }
+
+            if (lhsType->ast_type == AST_DIRECT_TYPE) {
+                assert(rhsType->ast_type = AST_DIRECT_TYPE);
+                DirectTypeAST *rhsDType = (DirectTypeAST *)rhsType;
+                DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
+
+                if (lhsDType->basic_type != rhsDType->basic_type) {
+                    char ltype[64] = {}, rtype[64] = {};
+                    printTypeToStr(ltype, lhsType);
+                    printTypeToStr(rtype, rhsType);
+                    Error(assign, "Incompatible types on this assignment: %s and %s\n",
+                        ltype, rtype);
+                    return false;
+                }
+
+                if (!rhsDType->isLiteral) {
+                    // If it is not a literal, we can only do very harsh decisions
+                    if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
+                        char ltype[64] = {}, rtype[64] = {};
+                        printTypeToStr(ltype, lhsType);
+                        printTypeToStr(rtype, rhsType);
+                        Error(assign, "Assignment right hand side type [%s] is too large for the left hand side [%s]\n",
+                            ltype, rtype);
+                        return false;
+                    }
+                    if ((rhsDType->size_in_bytes == lhsDType->size_in_bytes) && (lhsDType->isSigned != rhsDType->isSigned)) {
+                        char ltype[64] = {}, rtype[64] = {};
+                        printTypeToStr(ltype, lhsType);
+                        printTypeToStr(rtype, rhsType);
+                        Error(assign, "The assignment having mismatched sign types: %s and %s.\n", ltype, rtype);
+                        return false;
+                    }
+                    if ((rhsDType->size_in_bytes < lhsDType->size_in_bytes) && (!lhsDType->isSigned && rhsDType->isSigned)) {
+                        char ltype[64] = {}, rtype[64] = {};
+                        printTypeToStr(ltype, lhsType);
+                        printTypeToStr(rtype, rhsType);
+                        Error(assign, "The assignment trying to assign a signed type %s to an unsigned one %s.\n", rtype, ltype);
+                        return false;
+                    }
+                } else {
+                    auto lit = (LiteralAST *)assign->rhs;
+                    if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
+
+                        if (!lhsDType->isSigned && rhsDType->isSigned) {
+                            char ltype[64] = {}, rtype[64] = {};
+                            printTypeToStr(ltype, lhsType);
+                            printTypeToStr(rtype, rhsType);
+                            Error(assign, "The assignment having mismatched sign types: %s and %s.\n", ltype, rtype);
+                            return false;
+                        }
+
+                        // If the RHS is a literal, try to see if it can fit in less bytes
+                        if (literal_value_fits_in_bytes(lit, lhsDType)) {
+                            change_type_bytes(lit, lhsDType);
+                        } else {
+                            char ltype[64] = {}, rtype[64] = {};
+                            printTypeToStr(ltype, lhsType);
+                            printTypeToStr(rtype, rhsType);
+                            Error(assign, "Assignment right hand side type [%s] is too large for the left hand side [%s]\n",
+                                ltype, rtype);
+                            return false;
+                        }
+                    } else {
+
+                        if (!lhsDType->isSigned && rhsDType->isSigned) {
+                            Error(assign, "The assignment is trying to assign a signed value to an unsigned one.\n");
+                            return false;
+                        } else if (lhsDType->isSigned && !rhsDType->isSigned &&
+                            (rhsDType->size_in_bytes == lhsDType->size_in_bytes)) {
+                            // there is a possible overflow here
+                            if (!literal_value_fits_in_bytes(lit, lhsDType)) {
+                                char ltype[64] = {}, rtype[64] = {};
+                                printTypeToStr(ltype, lhsType);
+                                printTypeToStr(rtype, rhsType);
+                                Error(assign, "Assignment right hand side type [%s] is too large for the left hand side [%s]\n",
+                                    ltype, rtype);
+                                return false;
+                            }
+                        } else {
+                            char ltype[64] = {}, rtype[64] = {};
+                            printTypeToStr(ltype, lhsType);
+                            printTypeToStr(rtype, rhsType);
+                            Error(assign, "Assignment right hand side type [%s] is too large for the left hand side [%s]\n",
+                                ltype, rtype);
+                            return false;
+                        }
+                    }
+
+                }
+                return true;
+
+            } else {
+                // for non direct types, just check the basic compatible types checks
+
+                if (!compatibleTypes(lhsType, rhsType)) {
+                    char ltype[64] = {}, rtype[64] = {};
+                    printTypeToStr(ltype, lhsType);
+                    printTypeToStr(rtype, rhsType);
+                    Error(assign, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
+                }
+                return true;
+            }
+
 
             // @TODO: check for width of operands (in case of literals), like assigning 512 to an u8.
             // one of the hard things here is what to do on complex expressions with literals, promote?

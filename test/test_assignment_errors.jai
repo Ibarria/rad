@@ -1,0 +1,21 @@
+
+#import "modules/basic.jai"
+
+
+main :: ()
+{
+    _u32 : u32;
+    _s32 : s32;
+    _u64 : u64;
+    _s8 : s8 = -1;
+
+    // This should error out
+//    _u32 = -3;
+    // This should error out for being too long
+//    _s32 = -32000000000000;
+    // This should work fine
+//    _s32 = -1000000;
+
+     _u32 = _s8 ;
+}
+
