@@ -1,14 +1,14 @@
 
 #import "modules/basic.jai"
 
-//x1 : u8 = 3;
+x1 : float = .000257;
 //s := "Hello there";
 
 a : bool;
 
 main :: ()
 {
-    fl : float = .543;
+    fl : s32 = 32000000;
     x1 := 1;
     x1 = add(3, 0);
 
