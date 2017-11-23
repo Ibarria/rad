@@ -42,6 +42,16 @@ struct bytecode_function
 	u64 function_id;
 };
 
+struct external_library
+{
+    TextType name = nullptr;
+    void *dll = nullptr;
+};
+
+struct call_register {
+    bc_register[128];
+};
+
 struct bytecode_machine
 {
     bc_register regs[128]; // Maybe do SSA, like LLVM wants?
@@ -64,6 +74,7 @@ struct bytecode_program
 	bytecode_function preamble_function;
 	bytecode_function *start_function = nullptr;
     Array<bytecode_function *> functions;
+    Array<external_library *>external_libs;
 };
 
 struct bytecode_generator
@@ -71,6 +82,8 @@ struct bytecode_generator
     PoolAllocator *pool = nullptr;
     bytecode_program *program = nullptr;
 	bytecode_function *current_function = nullptr;
+
+    external_library *findOrLoadLibrary(TextType filename);
 
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const);
     void createStoreInstruction(VariableDeclarationAST *decl, s16 reg);
@@ -95,11 +108,15 @@ struct bytecode_generator
 struct bytecode_runner
 {
     bytecode_program *program = nullptr;
+    call_register *current_call_register = nullptr;
+    call_register *inner_call_register = nullptr;
+    void *CallVM = nullptr;
 
     void run_bc_function(bytecode_function *func);
 
     void run_preamble();
     ExpressionAST * run_directive(RunDirectiveAST *run);
+    void callExternalFunction(FunctionDefinitionAST *fundef, BCI *bci);
 };
 
 void print_bc_program(bytecode_program *program);

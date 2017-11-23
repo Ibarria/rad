@@ -913,7 +913,11 @@ void Parser::parseImportDirective()
     Parser import_parser;
     import_parser.isImport = true;
     import_parser.current_scope = current_scope;
-    import_parser.Parse(t.string, pool, top_level_ast);
+    // All modules are in the modules folder, with the extension
+    // One day this will be a search path
+    char fname[64];
+    sprintf_s(fname, "modules/%s.jai", t.string);
+    import_parser.Parse(fname, pool, top_level_ast);
 
     if (!import_parser.success) {
         strncpy_s(errorString, import_parser.errorString, sizeof(errorString));

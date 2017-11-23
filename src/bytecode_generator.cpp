@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <dyncall.h>
+#include <dynload.h>
+
 const u64 stack_size = 10 * 1024;
 
 template <class T> const T& max(const T& a, const T& b) {
@@ -187,7 +190,7 @@ static BytecodeInstructionOpcode getLoadOpcode(VariableDeclarationAST *decl)
     } else if (isLocal(decl)) {
         opcode = BC_LOAD_FROM_STACK_PLUS_CONSTANT;
     } else if (isArgument(decl)) {
-        opcode = BC_LOAD_FROM_STACK_PLUS_CONSTANT;
+        opcode = BC_LOAD_FROM_CALL_REGISTER;
     } else {
         assert(!"Variable without scope set!");
     }
@@ -203,10 +206,11 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_ZERO_REG);
         CASE_BC_OPCODE(BC_LOAD_BIG_CONSTANT_TO_REG);
         CASE_BC_OPCODE(BC_STORE_TO_STACK_PLUS_CONSTANT);
-        CASE_BC_OPCODE(BC_STORE_TO_TOP_STACK_PLUS_CONSTANT);
+        CASE_BC_OPCODE(BC_STORE_TO_CALL_REGISTER);
         CASE_BC_OPCODE(BC_STORE_TO_BSS_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_LOAD_FROM_STACK_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_LOAD_FROM_BSS_PLUS_CONSTANT);
+        CASE_BC_OPCODE(BC_LOAD_FROM_CALL_REGISTER);
         CASE_BC_OPCODE(BC_CALL_PROCEDURE);
         CASE_BC_OPCODE(BC_RETURN);
         CASE_BC_OPCODE(BC_BINARY_OPERATION);
@@ -319,6 +323,30 @@ void bytecode_generator::createLoadInstruction(VariableDeclarationAST *decl, s16
 }
 
 
+external_library * bytecode_generator::findOrLoadLibrary(TextType filename)
+{
+    char lib_name[128] = {};
+    // very hacky: to make the library name, replace 'jai' for 'dll' at the end of the string
+    u64 l = strlen(filename);
+    strcpy(lib_name, filename);
+    assert(l >= 5);
+    assert(lib_name[l - 3] == 'j');  assert(lib_name[l - 2] == 'a'); assert(lib_name[l - 1] == 'i');
+    lib_name[l - 3] = 'd'; lib_name[l - 2] = 'l'; lib_name[l - 1] = 'l';
+
+    for (auto lib : program->external_libs) {
+        if (!strcmp(lib->name, lib_name)) {
+            return lib;
+        }
+    }
+    // If we are here, we need to load the library
+    external_library *lib = new (pool) external_library;
+    lib->name = CreateTextType(pool, lib_name);
+    lib->dll = dlLoadLibrary(lib_name);
+    assert(lib->dll != nullptr);
+    program->external_libs.push_back(lib);
+    return lib;
+}
+
 BCI * bytecode_generator::create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const)
 {
     BCI *bci = new (pool) BCI;
@@ -367,7 +395,15 @@ bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
 
 void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST * fundef)
 {
-    if (fundef->declaration->isForeign) return; // foreign functions just get called
+    if (fundef->declaration->isForeign) {
+        assert(fundef->declaration->func_ptr == nullptr);
+
+        external_library *exlib = findOrLoadLibrary(fundef->declaration->filename);
+        fundef->declaration->func_ptr = dlFindSymbol((DLLib *)exlib->dll, fundef->var_decl->varname);
+        assert(fundef->declaration->func_ptr);
+        // During bytecode processing is the best time to go and ensure the function is setup
+        return; // foreign functions just get called
+    }
 
     bytecode_function *old_current = current_function;
     bytecode_function *func = new (pool) bytecode_function;
@@ -611,18 +647,38 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
 void bytecode_generator::compute_function_call_into_register(FunctionCallAST *funcall, s16 reg_return)
 {
     auto fundecl = funcall->fundef->declaration;
+    u64 argument_bytes = 0;
+
+    // @TODO: expand this when we support implicit arguments
+    
+    // For now, we only support calling a function with as many or more arguments as declared
+    assert(funcall->args.size() >= fundecl->arguments.size());
 
     s16 mark = program->machine.reg_mark();
     for (u32 index = 0; index < funcall->args.size(); index++) {
         auto arg_expr = funcall->args[index];
-        auto arg_decl = fundecl->arguments[index];
-        // @TODO improvement, implicit cast of arguments here
-        s16 reg = reserveRegistersForSize(&program->machine, arg_decl->specified_type->size_in_bytes);
-        computeExpressionIntoRegister(arg_expr, reg);
-        createStoreInstruction(BC_STORE_TO_TOP_STACK_PLUS_CONSTANT, arg_decl->bc_mem_offset, 
-            arg_decl->specified_type->size_in_bytes, reg);
+        // Here we assume that the type is the same on arg_expr and arg_decl
+        argument_bytes += arg_expr->expr_type->size_in_bytes;
     }
-    BCI *bci = create_instruction(BC_CALL_PROCEDURE, -1, reg_return, straight_convert(funcall->fundef));
+
+    // Now we reserve enough registers for all the args
+    s16 reg = reserveRegistersForSize(&program->machine, argument_bytes);
+    u64 offset = 0;
+    if (fundecl->return_type) {
+        offset += fundecl->return_type->size_in_bytes;
+    }
+
+    for (u32 index = 0; index < funcall->args.size(); index++) {
+        auto arg_expr = funcall->args[index];
+
+        computeExpressionIntoRegister(arg_expr, reg);
+        createStoreInstruction(BC_STORE_TO_CALL_REGISTER, offset,
+            arg_decl->specified_type->size_in_bytes, reg);
+        argument_bytes += arg_decl->specified_type->size_in_bytes;
+    }
+    // We compute and pass the total bytes for the arguments in order to handle 
+    // foreign functions like printf, where we need to know how to load the stack
+    BCI *bci = create_instruction(BC_CALL_PROCEDURE, (s16)argument_bytes, reg_return, straight_convert(funcall->fundef));
     issue_instruction(bci);
     bci->op_size = fundecl->return_type->size_in_bytes;
     program->machine.pop_mark(mark);
@@ -792,7 +848,8 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
 
             if (fundef->declaration->isForeign) {
                 // we need to do special work for foreign functions, dyncall
-                // @TODO
+                assert(fundef->declaration->func_ptr);
+                callExternalFunction(fundef, bci);
             } else {
                 assert(fundef->bc_function);
                 run_bc_function(fundef->bc_function);
@@ -825,4 +882,20 @@ void bytecode_runner::run_preamble()
 ExpressionAST * bytecode_runner::run_directive(RunDirectiveAST * run)
 {
     return nullptr;
+}
+
+void bytecode_runner::callExternalFunction(FunctionDefinitionAST * fundef, BCI * bci)
+{
+    DCCallVM *vm;
+    if (!CallVM) {
+        CallVM = dcNewCallVM(4096);
+        dcMode((DCCallVM *)CallVM, DC_CALL_C_DEFAULT);
+    }
+    vm = (DCCallVM *)CallVM;
+    dcReset(vm);
+
+    for (auto arg : fundef->declaration->arguments) {
+
+    }
+    
 }

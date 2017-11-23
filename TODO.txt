@@ -1,22 +1,16 @@
-* Have an Interpreter class for
-** Pool allocation of AST
-** Predefined types (INT, FLOAT, STRING, BOOL)
+###################### TODO items #######################
+
+* ASSIGN is not an expression! 
+* Always have a type (even void)
+* Pointers and Arrays to be able to do varargs, and an easy way to do printf
+* bytecode can call foreign functions (for printf)
+* plan on making the C backend much more similar to bytecode
+* ensure local functions and local structs do not clash with other locals in other scopes
 * Support pointers
-* Write bytecode instruction specification
-* Write bytecode generator
-* write bytecode interpreter
 * write cast function (built in)
-* check that a variable exists before using it (assignment, expression, etc)
 * implement local functions on the C generator
-* do check for types when calling a function
-* check the type of return values in a function, and the existence of a return statement
-* check that a function call is a variable of type function
-* do check for size when doing explicit declaration (x : s8 = 512)
-* do check for size and sign on explicit declarartion (x : u8 = -1)
-* do check for types on assignment
 * do conditionals
 * do for loop (with it)
-* struct support
 * enum support
 * support default initializers (implicit to 0)
 * support for explicit defaults
@@ -31,13 +25,32 @@
 ** link against (or make it implicit, with a custom dll)
 * support  'load' directive, where the Parser will try to load a new text file and put things together
 ** protect against recursive loads
+* Implement #assert (compile time assert directive)
+* Implement #check_call (compile time check on a function)
+* Future stuff: polymorphism, baking, inline, LLVM
 
+---- DONE -----
 - create `true` and `false` basic types for bool
 - basic 'import' support added
+- Have an Interpreter class for
+-- Pool allocation of AST
+-- Predefined types (INT, FLOAT, STRING, BOOL)
+- Write bytecode instruction specification
+- Write bytecode generator
+- write bytecode interpreter
+- check that a variable exists before using it (assignment, expression, etc)
+- do check for types when calling a function
+- check the type of return values in a function, and the existence of a return statement
+- check that a function call is a variable of type function
+- do check for size when doing explicit declaration (x : s8 = 512)
+- do check for size and sign on explicit declarartion (x : u8 = -1)
+- do check for types on assignment
+- struct support
 
 #####  LEXER  #####
 * Support _ in numbers for clarity
 
+- Floating number can be .5
 - Number to support float (period)
 - Support numbers of differnt precision
 - Handle line comments

@@ -87,6 +87,7 @@ struct FunctionTypeAST : TypeAST
     FunctionTypeAST() { ast_type = AST_FUNCTION_TYPE; size_in_bytes = 8; }
     Array<VariableDeclarationAST *> arguments;
     TypeAST *return_type = nullptr;
+    void *func_ptr = nullptr; // This will hold the address for dyncall
     bool isForeign = false;
     bool hasVariableArguments = false;
 };
