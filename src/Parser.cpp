@@ -408,6 +408,8 @@ FunctionTypeAST *Parser::parseFunctionDeclaration()
     if (lex->checkToken(TK_RETURN_ARROW)) {
         lex->consumeToken();
         fundec->return_type = parseType();
+    } else {
+        fundec->return_type = createType(TK_VOID, "void");
     }
     if (!success) {
         return nullptr;
@@ -454,7 +456,7 @@ StatementAST *Parser::parseStatement()
                 return nullptr;
             }
         } else {
-            statement = parseExpression();
+            statement = parseAssignmentOrExpression();
             MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");
             if (!success) {
                 return nullptr;
@@ -466,7 +468,7 @@ StatementAST *Parser::parseStatement()
     } else if (cur_type == TK_RETURN) {
         return parseReturnStatement();
     } else {
-        statement =  parseExpression();
+        statement = parseAssignmentOrExpression();
         MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");
         if (!success) {
             return nullptr;
@@ -856,7 +858,7 @@ ExpressionAST *Parser::parseBinOpExpression()
     return parseBinOpExpressionRecursive( 0, lhs);
 }
 
-ExpressionAST * Parser::parseAssignmentExpression()
+ExpressionAST * Parser::parseAssignmentOrExpression()
 {
     ExpressionAST *lhs = parseBinOpExpression();
     TOKEN_TYPE type;
@@ -867,7 +869,7 @@ ExpressionAST * Parser::parseAssignmentExpression()
         AssignmentAST *assign = NEW_AST(AssignmentAST);
         assign->lhs = lhs;
         assign->op = type;
-        assign->rhs = parseAssignmentExpression();
+        assign->rhs = parseAssignmentOrExpression();
         return assign;
     } 
     return lhs;
@@ -875,7 +877,7 @@ ExpressionAST * Parser::parseAssignmentExpression()
 
 ExpressionAST * Parser::parseExpression()
 {
-    return parseAssignmentExpression();
+    return parseBinOpExpression();
 }
 
 void Parser::parseImportDirective()

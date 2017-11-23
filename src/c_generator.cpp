@@ -85,16 +85,13 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl, boo
     bool isMain = !strcmp(decl->varname, "main");
     
     // first print the return type
-    if (ft->return_type) {
-        generate_type(ft->return_type);
+    if (isMain && isVoidType(ft->return_type)) {
+        // main is a special case, to make the C compiler happy, allow void to be int
+        fprintf(output_file, "int");
     } else {
-        if (isMain) {
-            // main is a special case, to make the C compiler happy, allow void to be int
-            fprintf(output_file, "int");
-        } else {
-            fprintf(output_file, "void");           
-        }
+        generate_type(ft->return_type);
     }
+
     if (decl->flags & DECL_FLAG_IS_CONSTANT) {
         fprintf(output_file, " %s ", decl->varname);
     } else if (decl->definition) {
@@ -233,16 +230,13 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         }
 
         // first print the return type
-        if (ft->return_type) {
-            generate_type(ft->return_type);
+        if (isMain && isVoidType(ft->return_type)) {
+            // main is a special case, to make the C compiler happy, allow void to be int
+            fprintf(output_file, "int");
         } else {
-            if (isMain) {
-                // main is a special case, to make the C compiler happy, allow void to be int
-                fprintf(output_file, "int");
-            } else {
-                fprintf(output_file, "void");
-            }
+            generate_type(ft->return_type);
         }
+
         if (decl->flags & DECL_FLAG_IS_CONSTANT) {
             fprintf(output_file, " %s ", decl->varname);
         } else {

@@ -5,21 +5,43 @@
 #include "bytecode_instructions.h"
 #include "AST.h"
 
+union bc_register_data {
+    u64 _u64 = 0;
+    u32 _u32;
+    u16 _u16;
+     u8  _u8;
+    s64 _s64;
+    s32 _s32;
+    s16 _s16;
+     s8  _s8;
+    f64 _f64;
+    f32 _f32;
+    u8 *_ptr; // this is really void, but keeping u8 for now
+};
+
+enum RegisterType : u8 {
+    REGTYPE_UNKNOWN,
+    REGTYPE_UINT, // bool are implemented as a u8, at this level
+    REGTYPE_SINT,
+    REGTYPE_FLOAT,
+    REGTYPE_POINTER, 
+};
+
+struct bc_register {
+    bc_register_data data;
+    RegisterType type = REGTYPE_UNKNOWN;
+    u8 bytes = 0; // from 1 through 8 only!
+};
+
 // ByteCode Instruction
 struct BCI {
     u64 big_const = 0;
     BytecodeInstructionOpcode opcode = BC_UNINITIALIZED;
-    u32 inst_index = 0; // to be used as IP reg
     s16 src_reg = -1;
     s16 src2_reg = -1;
     s16 dst_reg = -1;
-    u8 op_size = 0;
-};
-
-union bc_register {
-    u64 _u64 = 0;
-    f64 _f64;
-    u8 *_ptr;
+    u8 dst_type_bytes = 0;
+    RegisterType dst_type = REGTYPE_UNKNOWN;
 };
 
 struct bc_base_memory {
@@ -46,10 +68,6 @@ struct external_library
 {
     TextType name = nullptr;
     void *dll = nullptr;
-};
-
-struct call_register {
-    bc_register[128];
 };
 
 struct bytecode_machine
@@ -87,9 +105,9 @@ struct bytecode_generator
 
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const);
     void createStoreInstruction(VariableDeclarationAST *decl, s16 reg);
-    void createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg);
+    void createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
     void createLoadInstruction(VariableDeclarationAST *decl, s16 reg);
-    void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg);
+    void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
     void issue_instruction(BCI *bci);
     void issueReserveStackSpace(u64 size);
 
@@ -105,11 +123,18 @@ struct bytecode_generator
     void compute_function_call_into_register(FunctionCallAST *funcall, s16 reg);
 };
 
+struct bc_call_register
+{
+    bc_register *regs = nullptr;
+    u64 num_regs;
+};
+
 struct bytecode_runner
 {
     bytecode_program *program = nullptr;
-    call_register *current_call_register = nullptr;
-    call_register *inner_call_register = nullptr;
+    bc_call_register *current_call_register = nullptr;
+    bc_call_register *new_call_register = nullptr;
+
     void *CallVM = nullptr;
 
     void run_bc_function(bytecode_function *func);

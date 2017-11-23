@@ -27,12 +27,8 @@ static void printTypeToStr(char *s, TypeAST *type)
         auto ft = (FunctionTypeAST *)type;
         sprintf(s, "(");
         for (auto arg : ft->arguments) printTypeToStr(s, arg->specified_type);
-        sprintf(s, ") ");
-        if (ft->return_type) {
-            printTypeToStr(s, ft->return_type);
-        } else {
-            sprintf(s, "-> void ");
-        }
+        sprintf(s, ") -> ");
+        printTypeToStr(s, ft->return_type);
         break;
     }
     case AST_ARRAY_TYPE: {
@@ -1075,9 +1071,6 @@ bool Interpreter::doWorkAST(interp_work * work)
             assert(decl->definition->ast_type == AST_FUNCTION_DEFINITION);
             funcall->fundef = (FunctionDefinitionAST *)decl->definition;
             FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
-            if (!fundecl->return_type) {
-                Error(funcall, "Cannot use the return value of a void function [%s]\n", funcall->function_name);
-            }
             funcall->expr_type = fundecl->return_type;
             return true;
 

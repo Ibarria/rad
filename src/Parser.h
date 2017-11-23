@@ -38,7 +38,7 @@ struct Parser {
     ExpressionAST * parseBinOpExpression();
     DefinitionAST * parseDefinition();
     VariableDeclarationAST * parseDeclaration(bool isStruct = false);
-    ExpressionAST * parseAssignmentExpression();
+    ExpressionAST * parseAssignmentOrExpression();
     ExpressionAST * parseExpression();
     void parseImportDirective();
     void parseLoadDirective();

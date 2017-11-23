@@ -5,11 +5,11 @@ enum BytecodeInstructionOpcode : u16 {
     BC_ZERO_REG,
     BC_LOAD_BIG_CONSTANT_TO_REG,
     BC_STORE_TO_STACK_PLUS_CONSTANT,
-    BC_STORE_TO_CALL_REGISTER,
     BC_STORE_TO_BSS_PLUS_CONSTANT,
     BC_LOAD_FROM_STACK_PLUS_CONSTANT,
     BC_LOAD_FROM_BSS_PLUS_CONSTANT,
     BC_LOAD_FROM_CALL_REGISTER,
+    BC_CREATE_CALL_REGISTER,
     BC_CALL_PROCEDURE,
     BC_RETURN,
     BC_BINARY_OPERATION,
@@ -43,3 +43,13 @@ enum BytecodeInstructionOpcode : u16 {
 };
 
 
+/*
+BCI *bci = create_instruction(BC_CREATE_CALL_REGISTER, reg, -1, argument_qwords);
+
+bci = create_instruction(BC_CALL_PROCEDURE, -1, reg_return, straight_convert(funcall->fundef));
+
+bci->op_size = fundecl->return_type->size_in_bytes;
+
+
+
+*/

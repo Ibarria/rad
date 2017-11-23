@@ -185,7 +185,7 @@ struct VariableDeclarationAST : StatementAST
     TypeAST *specified_type = nullptr;
     DefinitionAST *definition = nullptr;
     u32 flags = 0;
-    u64 bc_mem_offset = 0;
+    u64 bc_mem_offset = 0; 
     interp_deps *deps = nullptr; // only applicable for global variables
 };
 
@@ -242,3 +242,13 @@ void printAST(const BaseAST*ast, int ident);
 const char *BasicTypeToStr(const DirectTypeAST* t);
 bool isFunctionDeclaration(VariableDeclarationAST *decl);
 bool isStructDeclaration(VariableDeclarationAST *decl);
+
+inline bool isVoidType(TypeAST *type)
+{
+    assert(type);
+    if (type && type->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)type;
+        return dt->basic_type == BASIC_TYPE_VOID;
+    }
+    return false;
+}
