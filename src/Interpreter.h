@@ -61,6 +61,7 @@ struct Interpreter
 
     void reset_errors();
 
+    bool checkTypesInDeclaration(VariableDeclarationAST *decl, ExpressionAST *expr, TypeAST *lhs, TypeAST *rhs);
 
     VariableDeclarationAST *validateVariable(IdentifierAST *a);
     VariableDeclarationAST *validateFunctionCall(FunctionCallAST *a);

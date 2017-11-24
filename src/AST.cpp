@@ -5,8 +5,10 @@ const char *BasicTypeToStr(const DirectTypeAST *t)
 {
     switch (t->basic_type)
     {
+    case BASIC_TYPE_VOID: return "void";
     case BASIC_TYPE_BOOL:  return "bool";
     case BASIC_TYPE_STRING:  return "string";
+    case BASIC_TYPE_CUSTOM: return t->name;
     case BASIC_TYPE_INTEGER: {
         if (t->isSigned) {
             switch (t->size_in_bytes) {
@@ -33,8 +35,7 @@ const char *BasicTypeToStr(const DirectTypeAST *t)
     case BASIC_TYPE_FLOATING: 
         if (t->size_in_bytes == 4) return "f32";
         if (t->size_in_bytes == 8) return "f64";
-        return "f64";
-        // assert(false);
+        assert(false);
         return "UNKNOWN";
     }
     return "UNKNOWN";
@@ -135,6 +136,12 @@ void printAST(const BaseAST *ast, int ident)
     case AST_DIRECT_TYPE: {
         const DirectTypeAST *a = (const DirectTypeAST *)ast;
         printf("%*sDirectTypeAST %s\n", ident, "", BasicTypeToStr(a)); 
+        break;
+    }
+    case AST_POINTER_TYPE: {
+        auto pt = (const PointerTypeAST *)ast;
+        printf("%*sPointerTypeAST\n", ident, "");
+        printAST(pt->points_to_type, ident + 3);
         break;
     }
     case AST_FUNCTION_TYPE: {
@@ -242,4 +249,36 @@ bool isStructDeclaration(VariableDeclarationAST *decl)
     }
 
     return false;
+}
+
+DirectTypeAST *findFinalDirectType(PointerTypeAST *pt)
+{
+    assert(pt->points_to_type);
+    switch (pt->points_to_type->ast_type) {
+    case AST_POINTER_TYPE:
+        return findFinalDirectType((PointerTypeAST *)pt->points_to_type);
+    case AST_DIRECT_TYPE:
+        return (DirectTypeAST *)pt->points_to_type;
+    case AST_ARRAY_TYPE:
+        return findFinalDirectType((ArrayTypeAST *)pt->points_to_type);
+    default:
+        assert(!"A pointer should not point to anything else");
+        return nullptr;
+    }
+}
+
+DirectTypeAST *findFinalDirectType(ArrayTypeAST *at)
+{
+    assert(at->array_of_type);
+    switch (at->array_of_type->ast_type) {
+    case AST_POINTER_TYPE:
+        return findFinalDirectType((PointerTypeAST *)at->array_of_type);
+    case AST_DIRECT_TYPE:
+        return (DirectTypeAST *)at->array_of_type;
+    case AST_ARRAY_TYPE:
+        return findFinalDirectType((ArrayTypeAST *)at->array_of_type);
+    default:
+        assert(!"A pointer should not point to anything else");
+        return nullptr;
+    }
 }

@@ -2,11 +2,19 @@
 
 * ASSIGN is not an expression! 
 * Always have a type (even void)
+* Ensure we do not support more than 1 pointer for dereference. 
+     This is correct:
+        var: *MyStruct;
+        var.a = 3;
+     This is not valid:
+        var: **MyStruct;
+        var.a = 3;
 * Pointers and Arrays to be able to do varargs, and an easy way to do printf
 * bytecode can call foreign functions (for printf)
 * plan on making the C backend much more similar to bytecode
 * ensure local functions and local structs do not clash with other locals in other scopes
 * Support pointers
+* Maybe support array initializers (a : [] arr = {1, 2, 3, 4};)
 * write cast function (built in)
 * implement local functions on the C generator
 * do conditionals

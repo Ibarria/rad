@@ -141,15 +141,30 @@ void c_generator::generate_struct_prototype(VariableDeclarationAST * decl)
 void c_generator::ensure_deps_are_generated(StructTypeAST *stype)
 {
     for (auto mem : stype->struct_scope.decls) {
-        if (mem->specified_type->ast_type == AST_DIRECT_TYPE) {
-            auto dt = (DirectTypeAST *)mem->specified_type;
-            if (dt->custom_type && (dt->custom_type->ast_type == AST_STRUCT_TYPE)) {
-                auto st = (StructTypeAST *)dt->custom_type;
-                if (st->decl && !(st->decl->flags & DECL_FLAG_HAS_BEEN_GENERATED)) {
-                    generate_variable_declaration(st->decl);
-                }
+        DirectTypeAST *dt = nullptr;
+        switch (mem->specified_type->ast_type)
+        {
+        case AST_DIRECT_TYPE: {
+            dt = (DirectTypeAST *)mem->specified_type;
+            break;
+        }
+        case AST_ARRAY_TYPE: {
+            dt = findFinalDirectType((ArrayTypeAST *)mem->specified_type);
+            break;
+        }
+        case AST_POINTER_TYPE: {
+            dt = findFinalDirectType((PointerTypeAST *)mem->specified_type);
+            break;
+        }
+        }
+        
+        if (dt && dt->custom_type && (dt->custom_type->ast_type == AST_STRUCT_TYPE)) {
+            auto st = (StructTypeAST *)dt->custom_type;
+            if (st->decl && !(st->decl->flags & DECL_FLAG_HAS_BEEN_GENERATED)) {
+                generate_variable_declaration(st->decl);
             }
         }
+
     }
 }
 
@@ -170,13 +185,38 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
     generate_line_info(decl);
     do_ident();
 
-    if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
-        auto dt = (DirectTypeAST *)decl->specified_type;
-        if (dt->basic_type == BASIC_TYPE_CUSTOM) {
-            fprintf(output_file, "%s", dt->name);
-        } else {
+    if (isDirectTypeVariation(decl->specified_type)) {
+        TypeAST *type = decl->specified_type;
+
+        switch (type->ast_type) {
+        case AST_DIRECT_TYPE: {
+            auto dt = (DirectTypeAST *)type;
             fprintf(output_file, BasicTypeToStr(dt));
+            break;
         }
+        case AST_POINTER_TYPE: {
+            auto pt = (PointerTypeAST *)type;
+            auto dt = findFinalDirectType(pt);
+            fprintf(output_file, "%s ", BasicTypeToStr(dt));
+
+            while (1) {
+                fprintf(output_file, "*");
+                if (pt->points_to_type->ast_type == AST_DIRECT_TYPE) {
+                    break;
+                }
+                assert(pt->points_to_type->ast_type = AST_POINTER_TYPE);
+                pt = (PointerTypeAST *)pt->points_to_type;
+            }
+            break;
+        }
+        case AST_ARRAY_TYPE: {
+            assert(!"Array C generation is unimplemented");
+            break;
+        }
+        default:
+            assert(!"No other types should be allowed here");
+        }
+    
         fprintf(output_file, " %s", decl->varname);
         
         if (decl->definition) {
@@ -291,9 +331,17 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
 
 void c_generator::generate_argument_declaration(VariableDeclarationAST * arg)
 {
-    assert(arg->specified_type->ast_type == AST_DIRECT_TYPE);
-    auto dt = (DirectTypeAST *)arg->specified_type;
-    fprintf(output_file, BasicTypeToStr(dt));
+    assert(isDirectTypeVariation(arg->specified_type));
+
+    /*
+    C declaration of types is pretty confusing, with pointers in one side, 
+    arrays in the other, and no way to specify precedence. 
+    It would be best said that we do not support arguments with very complex
+    types, or then we have to do the typedef route. 
+    */
+
+    generate_type(arg->specified_type);
+
     fprintf(output_file, " %s", arg->varname);
 }
 
@@ -443,9 +491,43 @@ void c_generator::generate_function_call(FunctionCallAST * call)
 
 void c_generator::generate_type(BaseAST * ast)
 {
-    assert(ast->ast_type == AST_DIRECT_TYPE);
-    auto dt = (DirectTypeAST *)ast;
-    fprintf(output_file, BasicTypeToStr(dt));
+    switch (ast->ast_type) {
+    case AST_DIRECT_TYPE: {
+        auto dt = (DirectTypeAST *)ast;
+        fprintf(output_file, BasicTypeToStr(dt));
+        break;
+    }
+    case AST_POINTER_TYPE: {
+        TypeAST *type = (TypeAST *)ast;
+        auto pt = (PointerTypeAST *)ast;
+        auto final = findFinalDirectType(pt);
+
+        fprintf(output_file, BasicTypeToStr(final));
+
+        do {
+            if (type->ast_type == AST_POINTER_TYPE) {
+                auto pt = (PointerTypeAST *)type;
+                fprintf(output_file, "*");
+                type = pt->points_to_type;
+            } else {
+                assert(type->ast_type == AST_DIRECT_TYPE);
+                break;
+            }
+        } while (1);
+        break;
+    }
+    case AST_ARRAY_TYPE: {
+        assert(!"Array C generation is unimplemented");
+        break;
+    }
+    case AST_FUNCTION_TYPE: {
+        assert(!"Not implemented yet");
+        break;
+    }
+    default:
+        // we might want to support functions here... we should
+        assert(!"No other types should be allowed here");
+    }
 }
 
 

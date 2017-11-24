@@ -77,11 +77,11 @@ static RegisterType get_regtype_from_type(TypeAST *type)
         // all functions behave as pointers
         return REGTYPE_POINTER;
     }
-    assert(type && type->ast_type == AST_DIRECT_TYPE);
-    auto dt = (DirectTypeAST *)type;
-    if (dt->isPointer) {
+    if (type->ast_type == AST_POINTER_TYPE) {
         return REGTYPE_POINTER;
     }
+    assert(type && type->ast_type == AST_DIRECT_TYPE);
+    auto dt = (DirectTypeAST *)type;
     if (dt->basic_type == BASIC_TYPE_FLOATING) {
         return REGTYPE_FLOAT;
     }

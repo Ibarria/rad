@@ -6,6 +6,8 @@ x1 : float = .000257;
 
 a : bool;
 
+firstPtr: *u32;
+
 main :: ()
 {
     x1 := 1;

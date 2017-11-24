@@ -202,7 +202,7 @@ static u32 getPrecedence(TOKEN_TYPE t)
     return 0;
 }
 
-static bool isVariableTypeToken(TOKEN_TYPE t)
+static bool isBuiltInType(TOKEN_TYPE t)
 {
     return (t == TK_BOOL)
         || (t == TK_INT)
@@ -323,15 +323,24 @@ TypeAST *Parser::parseDirectType()
 {
     // @TODO: support pointer, arrays, etc
     Token t;
-    lex->lookaheadToken(t);
-    if ((t.type != TK_IDENTIFIER) && !isVariableTypeToken(t.type)) {
+    lex->getNextToken(t);
+    if ((t.type == TK_IDENTIFIER) || isBuiltInType(t.type)) {
+        return createType(t.type, t.string);
+    } else if (t.type == TK_STAR) {
+        // This is a pointer to something
+        PointerTypeAST *pt = NEW_AST(PointerTypeAST);
+        pt->points_to_type = parseDirectType();
+        pt->size_in_bytes = 8;
+        return pt;
+    } else if (t.type == TK_OPEN_SQBRACKET) {
+        // this is an array declaration
+        assert(!"Arrays not implemented yet");
+        return nullptr;
+    } else {
         Error("Variable type token could not be found, but we found: %s\n",
             TokenTypeToStr(t.type));
         return nullptr;
     }
-    lex->consumeToken();
-
-    return createType(t.type, t.string);
 }
 
 TypeAST * Parser::parseType()

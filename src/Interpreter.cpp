@@ -31,6 +31,12 @@ static void printTypeToStr(char *s, TypeAST *type)
         printTypeToStr(s, ft->return_type);
         break;
     }
+    case AST_POINTER_TYPE: {
+        auto pt = (PointerTypeAST *)type;
+        sprintf(s, "*");
+        printTypeToStr(s, pt->points_to_type);
+        break;
+    }
     case AST_ARRAY_TYPE: {
         assert(!"Unsupported array type");
         break;
@@ -57,7 +63,7 @@ static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
     return findVariable(name, scope->parent);
 }
 
-static StructTypeAST *findStructType(TypeAST *type)
+StructTypeAST *findStructType(TypeAST *type)
 {
     if (type->ast_type == AST_STRUCT_TYPE) {
         return (StructTypeAST *)type;
@@ -68,11 +74,15 @@ static StructTypeAST *findStructType(TypeAST *type)
         }
         assert(dt->custom_type);
         return findStructType(dt->custom_type);
+    } else if (type->ast_type == AST_POINTER_TYPE) {
+        // Only allow a single pointer dereference! 
+        auto pt = (PointerTypeAST *)type;
+        return findStructType(pt->points_to_type);
     }
     return nullptr;
 }
 
-static bool isTypeStruct(TypeAST *type)
+bool isTypeStruct(TypeAST *type)
 {
     if (type->ast_type == AST_STRUCT_TYPE) {
         return true;
@@ -98,6 +108,9 @@ static bool isTypeStruct(TypeAST *type)
         assert(dt->custom_type);
         // This allows for more than 1 level of indirection
         return isTypeStruct(dt->custom_type);
+    } if (type->ast_type == AST_POINTER_TYPE) {
+        auto pt = (PointerTypeAST *)type;
+        return isTypeStruct(pt->points_to_type);
     }
     return false;
 }
@@ -219,6 +232,87 @@ void Interpreter::reset_errors()
     errors.reset();
 }
 
+bool Interpreter::checkTypesInDeclaration(VariableDeclarationAST * decl, ExpressionAST *expr, TypeAST * lhsType, TypeAST * rhsType)
+{
+    if (rhsType->ast_type != lhsType->ast_type) {
+        char ltype[64] = {}, rtype[64] = {};
+        printTypeToStr(ltype, rhsType);
+        printTypeToStr(rtype, lhsType);
+        Error(decl, "Incompatible types on this variable declaration. Type: %s and the declared type %s for variable %s\n",
+            ltype, rtype, decl->varname);
+        return false;
+    }
+
+    if (rhsType->ast_type == AST_POINTER_TYPE) {
+        // We have two type of pointers, recurse
+        auto lhsPt = (PointerTypeAST *)lhsType;
+        auto rhsPt = (PointerTypeAST *)rhsType;
+        return checkTypesInDeclaration(decl, expr, lhsPt->points_to_type, rhsPt->points_to_type);
+    }
+    // Nothing else supported for now, arrays in the future
+    assert(rhsType->ast_type = AST_DIRECT_TYPE);
+    DirectTypeAST *rhsDType = (DirectTypeAST *)rhsType;
+    DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
+
+    if (lhsDType->basic_type != rhsDType->basic_type) {
+        if (rhsType->ast_type != lhsType->ast_type) {
+            char ltype[64] = {}, rtype[64] = {};
+            printTypeToStr(ltype, rhsType);
+            printTypeToStr(rtype, lhsType);
+            Error(decl, "Incompatible types on this variable declaration. Type: %s and the declared type %s for variable %s\n",
+                ltype, rtype, decl->varname);
+            return false;
+        }
+    }
+
+    if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
+        if (rhsDType->isLiteral) {
+            auto lit = (LiteralAST *)expr;
+
+            if (!lhsDType->isSigned && rhsDType->isSigned) {
+                Error(decl, "The variable %s is unsigned but a signed value is being assigned to it.\n",
+                    decl->varname);
+                return false;
+            }
+
+            // If the RHS is a literal, try to see if it can fit in less bytes
+            if (literal_value_fits_in_bytes(lit, lhsDType)) {
+                change_type_bytes(lit, lhsDType);
+            } else {
+                Error(decl, "Initial value for variable %s is too large for its type\n", decl->varname);
+                return false;
+            }
+        } else {
+            Error(decl, "The start value for this variable %s uses %d bytes, while the expression type can only hold %d bytes\n",
+                decl->varname, rhsDType->size_in_bytes, lhsDType->size_in_bytes);
+            return false;
+        }
+    } else {
+        if (rhsDType->isLiteral) {
+            auto lit = (LiteralAST *)expr;
+
+            if (!lhsDType->isSigned && rhsDType->isSigned) {
+                Error(decl, "The variable %s is unsigned but a signed value is being assigned to it.\n",
+                    decl->varname);
+                return false;
+            } else if (lhsDType->isSigned && !rhsDType->isSigned &&
+                (rhsDType->size_in_bytes == lhsDType->size_in_bytes)) {
+                // there is a possible overflow here
+                if (!literal_value_fits_in_bytes(lit, lhsDType)) {
+                    Error(decl, "Initial value for variable %s is too large for its type\n", decl->varname);
+                    return false;
+                }
+            }
+        } else {
+            Error(decl, "The start value for this variable %s uses %d bytes, while the expression type can only hold %d bytes\n",
+                decl->varname, rhsDType->size_in_bytes, lhsDType->size_in_bytes);
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static FunctionDefinitionAST * findEnclosingFunction(StatementAST * stmt)
 {
     Scope *scope = stmt->scope;
@@ -236,8 +330,8 @@ VariableDeclarationAST *Interpreter::validateVariable(IdentifierAST *a)
     if (decl == nullptr) {
         if (a->prev) {
             auto prev_decl = findVariable(a->prev->name, a->prev->scope);
-            assert(prev_decl->specified_type->ast_type == AST_DIRECT_TYPE);
-            auto dt = (DirectTypeAST *)prev_decl->specified_type;
+            assert(isTypeStruct(prev_decl->specified_type));
+            auto dt = (DirectTypeAST *)findStructType(prev_decl->specified_type);
             Error(a, "Variable [%s] cannot be found on struct %s\n", a->name,
                 dt->name);
         } else {
@@ -296,8 +390,13 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
         auto rdt = (DirectTypeAST *)rhs;
         auto ldt = (DirectTypeAST *)lhs;
         // Modify this when pointer and array support is introduced
-        assert(!(ldt->isArray || ldt->isPointer || rdt->isArray || rdt->isPointer));
         return (rdt->basic_type == ldt->basic_type) && (rdt->isSigned == ldt->isSigned);
+        break;
+    }
+    case AST_POINTER_TYPE: {
+        auto rpt = (PointerTypeAST *)rhs;
+        auto lpt = (PointerTypeAST *)lhs;
+        return compatibleTypes(lpt->points_to_type, rpt->points_to_type);
         break;
     }
     case AST_ARRAY_TYPE: {
@@ -581,6 +680,13 @@ void Interpreter::traversePostfixAST(BaseAST * ast, interp_deps & deps)
 
         break;
     }
+    case AST_POINTER_TYPE: {
+        auto pt = (PointerTypeAST *)ast;
+        traversePostfixAST(pt->points_to_type, deps);
+
+        // No work triggered by the pointer type itself so far
+        break;
+    }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
 
@@ -823,7 +929,6 @@ bool Interpreter::doWorkAST(interp_work * work)
                         return false;
                     }
                     return true;
-                    break;
                 }
                 default: {
                     auto expr = (ExpressionAST *)(decl->definition);
@@ -831,76 +936,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     TypeAST *lhsType = decl->specified_type;
                     assert(rhsType);
 
-                    if (rhsType->ast_type != lhsType->ast_type) {
-                        char ltype[64] = {}, rtype[64] = {};
-                        printTypeToStr(ltype, rhsType);
-                        printTypeToStr(rtype, lhsType);
-                        Error(decl, "Incompatible types on this variable declaration. Type: %s and the declared type %s for variable %s\n",
-                            ltype, rtype, decl->varname);
-                        return false;
-                    }
-
-                    assert(rhsType->ast_type = AST_DIRECT_TYPE);
-                    DirectTypeAST *rhsDType = (DirectTypeAST *)rhsType;
-                    DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
-
-                    if (lhsDType->basic_type != rhsDType->basic_type) {
-                        if (rhsType->ast_type != lhsType->ast_type) {
-                            char ltype[64] = {}, rtype[64] = {};
-                            printTypeToStr(ltype, rhsType);
-                            printTypeToStr(rtype, lhsType);
-                            Error(decl, "Incompatible types on this variable declaration. Type: %s and the declared type %s for variable %s\n",
-                                ltype, rtype, decl->varname);
-                            return false;
-                        }
-                    }
-
-                    if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
-                        if (rhsDType->isLiteral) {
-                            auto lit = (LiteralAST *)expr;
-
-                            if (!lhsDType->isSigned && rhsDType->isSigned) {
-                                Error(decl, "The variable %s is unsigned but a signed value is being assigned to it.\n",
-                                    decl->varname);
-                                return false;
-                            }
-
-                            // If the RHS is a literal, try to see if it can fit in less bytes
-                            if (literal_value_fits_in_bytes(lit, lhsDType)) {
-                                change_type_bytes(lit, lhsDType);
-                            } else {
-                                Error(decl, "Initial value for variable %s is too large for its type\n", decl->varname);
-                                return false;
-                            }
-                        } else {
-                            Error(decl, "The start value for this variable %s uses %d bytes, while the expression type can only hold %d bytes\n",
-                                decl->varname, rhsDType->size_in_bytes, lhsDType->size_in_bytes);
-                            return false;
-                        }
-                    } else {
-                        if (rhsDType->isLiteral) {
-                            auto lit = (LiteralAST *)expr;
-
-                            if (!lhsDType->isSigned && rhsDType->isSigned) {
-                                Error(decl, "The variable %s is unsigned but a signed value is being assigned to it.\n",
-                                    decl->varname);
-                                return false;
-                            } else if (lhsDType->isSigned && !rhsDType->isSigned &&
-                                (rhsDType->size_in_bytes == lhsDType->size_in_bytes)) {
-                                // there is a possible overflow here
-                                if (!literal_value_fits_in_bytes(lit, lhsDType)) {
-                                    Error(decl, "Initial value for variable %s is too large for its type\n", decl->varname);
-                                    return false;
-                                }
-                            }
-                        } else {
-                            Error(decl, "The start value for this variable %s uses %d bytes, while the expression type can only hold %d bytes\n",
-                                decl->varname, rhsDType->size_in_bytes, lhsDType->size_in_bytes);
-                            return false;
-                        }
-                    }
-                    return true;
-                    break;
+                    return checkTypesInDeclaration(decl, expr, lhsType, rhsType);
                 }
                 }
             }
@@ -1153,6 +1189,15 @@ bool Interpreter::doWorkAST(interp_work * work)
 
         break;
     }
+    case AST_POINTER_TYPE: {
+        auto pt = (PointerTypeAST *)ast;
+
+        // No actions for now... 
+        return true;
+
+
+        break;
+    }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
 
@@ -1196,13 +1241,15 @@ bool Interpreter::doWorkAST(interp_work * work)
         //addSizeWork(&pool, ast, deps);
         //addCheckWork(&pool, ast, deps);
 
-        // It does not make sense for any other type than a direct type
-        // for binary operations
-        assert(binop->lhs->expr_type->ast_type == AST_DIRECT_TYPE);
-        assert(binop->rhs->expr_type->ast_type == AST_DIRECT_TYPE);
 
-        DirectTypeAST *lhsType = (DirectTypeAST *)binop->lhs->expr_type;
-        DirectTypeAST *rhsType = (DirectTypeAST *)binop->rhs->expr_type;
+        /*
+            Binary operations can only have direct types
+            or descendents (pointer, or a direct type)
+            Array is expected to be indexed, though. 
+        */
+
+        TypeAST *lhsType = (DirectTypeAST *)binop->lhs->expr_type;
+        TypeAST *rhsType = (DirectTypeAST *)binop->rhs->expr_type;
 
         assert(lhsType);
         assert(rhsType);
@@ -1222,27 +1269,89 @@ bool Interpreter::doWorkAST(interp_work * work)
                 dt->basic_type = BASIC_TYPE_BOOL;
                 dt->size_in_bytes = 1;
             } else {
-                // @TODO this is integer or float, the final type might need upcasting
-                // This does not work, it can copy a isLiteral (plus other line stuff)
-                DirectTypeAST *dt = new (&pool) DirectTypeAST;
-                copyASTloc(binop, dt);
-                binop->expr_type = dt;
-                dt->basic_type = lhsType->basic_type;
-                dt->size_in_bytes = lhsType->size_in_bytes;
-                // The optimization for Literal will require replacement
-                dt->isLiteral = false;
-                // this assumes that we do demand casts for signed to unsigned
-                dt->isSigned = lhsType->isSigned; 
-                // assuming we do the correct type cheking later, pointer operations yield a pointer
-                dt->isPointer = lhsType->isPointer || rhsType->isPointer;
-            }
+                // We assume that both types are the same
+                // Or that we have upcasting automatically happen
+                if (lhsType->ast_type == AST_DIRECT_TYPE) {
+                    auto lhsDtType = (DirectTypeAST *)lhsType;
+                    DirectTypeAST *dt = new (&pool) DirectTypeAST;
+                    copyASTloc(binop, dt);
+                    binop->expr_type = dt;
+                    dt->basic_type = lhsDtType->basic_type;
+                    dt->size_in_bytes = lhsDtType->size_in_bytes;
+                    // The optimization for Literal will require replacement
+                    dt->isLiteral = false;
+                } else if (lhsType->ast_type == AST_POINTER_TYPE) {
+                    PointerTypeAST *pt = new (&pool) PointerTypeAST;
+                    auto lhsPtType = (PointerTypeAST *)lhsType;
 
+                    copyASTloc(binop, pt);
+                    binop->expr_type = pt;
+                    pt->points_to_type = lhsPtType->points_to_type;
+                    pt->size_in_bytes = 8;
+                }
+            }
 
         } else if (work->action == IA_COMPUTE_SIZE) {
 
         } else if (work->action == IA_OPERATION_CHECK) {
 
-            // @TODO: Check that the operator matches the types of rhs, lhs
+            if (lhsType->ast_type == AST_POINTER_TYPE) {
+                /* Pointers are a special case
+                   We allow The following operations:
+                   PTR == PTR (all the boolean operators)
+                   PTR + / - UINT/SINT  Only add or substract ints
+                */
+
+                if (isBoolOperator(binop->op)) {
+                    if (!compatibleTypes(lhsType, rhsType)) {
+                        char ltype[64] = {}, rtype[64] = {};
+                        printTypeToStr(ltype, lhsType);
+                        printTypeToStr(rtype, rhsType);
+                        Error(binop, "Incompatible types during binary operation %s: %s and %s\n",
+                            TokenTypeToCOP(binop->op),
+                            ltype, rtype);
+                        return false;
+                    }
+                    return true;
+                }
+
+                if ((binop->op == TK_PLUS) || (binop->op == TK_MINUS)) {
+                    if (rhsType->ast_type != AST_DIRECT_TYPE) {
+                        char ltype[64] = {}, rtype[64] = {};
+                        printTypeToStr(ltype, lhsType);
+                        printTypeToStr(rtype, rhsType);
+                        Error(binop, "Incompatible type during pointer arithmetic operation: %s\n",
+                            rtype);
+                        return false;
+                    }
+                    auto rhsDt = (DirectTypeAST *)rhsType;
+                    if (rhsDt->basic_type != BASIC_TYPE_INTEGER) {
+                        char ltype[64] = {}, rtype[64] = {};
+                        printTypeToStr(ltype, lhsType);
+                        printTypeToStr(rtype, rhsType);
+                        Error(binop, "Incompatible type during pointer arithmetic: %s\n",
+                            rtype);
+                        return false;
+                    }
+                    return true;
+                }
+
+                // All other operations are not allowed with pointers
+                // like *, /, MOD, shift...
+                {
+                    char ltype[64] = {}, rtype[64] = {};
+                    printTypeToStr(ltype, lhsType);
+                    printTypeToStr(rtype, rhsType);
+                    Error(binop, "Incompatible types during pointer binary operation %s: %s and %s\n",
+                        TokenTypeToCOP(binop->op),
+                        ltype, rtype);
+                    return false;
+                }
+            }
+
+            // we better be a direct type if we get to this point
+            assert(lhsType->ast_type == AST_DIRECT_TYPE);
+
             if (!isBoolOperator(binop->op) || 
                 (binop->op == TK_EQ) ||
                 (binop->op == TK_NEQ)) {
@@ -1259,7 +1368,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 }
             } else {
                 // Here we have a comparison operator
-                // @TODO: be a bit lenient on comparisons... 
+                // @TODO: be a bit lenient on comparisons..., with auto cast
                 // For now the types have to match and they need to be INTEGER or FLOAT only
                 if (!compatibleTypes(lhsType, rhsType)) {
                     char ltype[64] = {}, rtype[64] = {};
@@ -1356,6 +1465,7 @@ bool Interpreter::doWorkAST(interp_work * work)
             }
 
             // lhs and rhs need to have the same type
+            // @TODO: support auto upcast
             TypeAST *lhsType, *rhsType;
             lhsType = assign->lhs->expr_type;
             rhsType = assign->rhs->expr_type;
@@ -1471,8 +1581,6 @@ bool Interpreter::doWorkAST(interp_work * work)
                 return true;
             }
 
-
-            // @TODO: check for width of operands (in case of literals), like assigning 512 to an u8.
             // one of the hard things here is what to do on complex expressions with literals, promote?
 
         } else {

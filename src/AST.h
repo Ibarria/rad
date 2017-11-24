@@ -37,6 +37,7 @@ enum AST_CLASS_TYPE {
     AST_FUNCTION_DEFINITION,
     AST_FUNCTION_CALL,
     AST_DIRECT_TYPE,
+    AST_POINTER_TYPE,
     AST_ARRAY_TYPE,
     AST_IDENTIFIER,
     AST_LITERAL,
@@ -141,18 +142,22 @@ struct DirectTypeAST : TypeAST
 
 	BasicType basic_type;
     bool isSigned = false;
-	bool isArray = false;
-	bool isPointer = false;
     bool isLiteral = false;
 	TextType name = nullptr;
     TypeAST * custom_type = nullptr;
 };
 
+struct PointerTypeAST : TypeAST
+{
+    PointerTypeAST() { ast_type = AST_POINTER_TYPE; }
+    TypeAST * points_to_type = nullptr;
+};
+
 struct ArrayTypeAST : TypeAST
 {
     ArrayTypeAST() { ast_type = AST_ARRAY_TYPE; }
-    TypeAST *contained_type = nullptr;
-    u64 num_elems = 0;
+    TypeAST *array_of_type = nullptr;
+    u64 num_elems = 0; // zero means static of unknown size
     bool isDynamic = false;
 };
 
@@ -251,4 +256,17 @@ inline bool isVoidType(TypeAST *type)
         return dt->basic_type == BASIC_TYPE_VOID;
     }
     return false;
+}
+
+// @TODO: These functions are very similar... maybe merge?
+
+DirectTypeAST *findFinalDirectType(PointerTypeAST *pt);
+DirectTypeAST *findFinalDirectType(ArrayTypeAST *at);
+StructTypeAST *findStructType(TypeAST *type);
+bool isTypeStruct(TypeAST *type);
+ 
+inline bool isDirectTypeVariation(TypeAST *type) {
+    return (type->ast_type == AST_DIRECT_TYPE)
+        || (type->ast_type == AST_ARRAY_TYPE)
+        || (type->ast_type == AST_POINTER_TYPE);
 }
