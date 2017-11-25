@@ -19,6 +19,7 @@ public:
     PoolAllocator(u64 start_size = 0);
     ~PoolAllocator();
     void * alloc(u64 size);
+    bool isAddressInRange(void *p);
 };
 
 void * operator new (u64 size, PoolAllocator *p);

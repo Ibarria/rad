@@ -26,15 +26,15 @@ static void printTypeToStr(char *s, TypeAST *type)
     case AST_FUNCTION_TYPE: {
         auto ft = (FunctionTypeAST *)type;
         sprintf(s, "(");
-        for (auto arg : ft->arguments) printTypeToStr(s, arg->specified_type);
-        sprintf(s, ") -> ");
-        printTypeToStr(s, ft->return_type);
+        for (auto arg : ft->arguments) printTypeToStr(s+strlen(s), arg->specified_type);
+        sprintf(s + strlen(s), ") -> ");
+        printTypeToStr(s + strlen(s), ft->return_type);
         break;
     }
     case AST_POINTER_TYPE: {
         auto pt = (PointerTypeAST *)type;
         sprintf(s, "*");
-        printTypeToStr(s, pt->points_to_type);
+        printTypeToStr(s + strlen(s), pt->points_to_type);
         break;
     }
     case AST_ARRAY_TYPE: {
@@ -61,6 +61,104 @@ static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
         if (!strcmp(name, d->varname)) return d;
     }
     return findVariable(name, scope->parent);
+}
+
+bool isLValue(ExpressionAST *expr, bool allowStar)
+{
+    switch (expr->ast_type) {
+    case AST_FUNCTION_CALL: {
+        return false;
+    }
+    case AST_IDENTIFIER: {
+        return true;
+    }
+    case AST_LITERAL: {
+        return false;
+    }
+    case AST_BINARY_OPERATION: {
+        // All binary operations produce an rvalue
+        return false;
+    }
+    case AST_UNARY_OPERATION: {
+        auto unop = (UnaryOperationAST *)expr;
+        if (unop->op == TK_LSHIFT) {
+            if (allowStar) {
+                return true;
+            }            
+            // pointer dereference always gives an lvalue
+            // except two in a row are not allowed! That is checked elsewhere 
+        }
+        // All other unary operators return an rvalue
+        return false;
+    }
+    case AST_VAR_REFERENCE: {
+        return true;
+    }
+    default:
+        assert(!"We should never be here, we could not parse this type\n");
+    }
+    return false;
+}
+
+bool isConstExpression(ExpressionAST *expr)
+{
+    switch (expr->ast_type) {
+    case AST_FUNCTION_CALL: {
+        return true;
+    }
+    case AST_IDENTIFIER: {
+        IdentifierAST *a = (IdentifierAST *)expr;
+        VariableDeclarationAST *decl = a->decl;
+
+        assert(decl);
+
+        return !!(decl->flags & DECL_FLAG_IS_CONSTANT);
+    }
+    case AST_LITERAL: {
+        return true;
+    }
+    case AST_BINARY_OPERATION: {
+        return true;
+    }
+    case AST_UNARY_OPERATION: {
+        return true;
+    }
+    case AST_VAR_REFERENCE: {
+        auto var_ref = (VarReferenceAST *)expr;
+        VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
+        assert(decl);
+
+        if (decl->flags & DECL_FLAG_IS_CONSTANT) {
+            return true;
+        }
+
+        var_ref = var_ref->next;
+
+        // if the topmost element of a reference is not constant, check the rest
+        while (var_ref != nullptr) {
+            // At the start of the loop, we have an unchecked var_ref and the scope it applies to
+            auto inner_decl = var_ref->decl;
+            assert(inner_decl);
+
+            if (inner_decl->flags & DECL_FLAG_IS_CONSTANT) {
+                return true;
+            }
+
+            if (var_ref->ast_type == AST_IDENTIFIER) {
+                var_ref = nullptr;
+            } else if (var_ref->ast_type = AST_VAR_REFERENCE) {
+                var_ref = var_ref->next;
+            } else {
+                assert(!"We should never be here!, wrong type on struct variable checking");
+            }
+        }
+        // If we get here, we have not found a constant
+        return false;
+    }
+    default:
+        assert(!"We should never be here, we could not parse this type\n");
+    }
+    return false;
 }
 
 StructTypeAST *findStructType(TypeAST *type)
@@ -115,7 +213,7 @@ bool isTypeStruct(TypeAST *type)
     return false;
 }
 
-static void addTypeWork(PoolAllocator *pool, BaseAST *ast, interp_deps &deps)
+static void addTypeWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
 {
     interp_work *res_work = new (pool) interp_work;
     res_work->action = IA_RESOLVE_TYPE;
@@ -123,7 +221,7 @@ static void addTypeWork(PoolAllocator *pool, BaseAST *ast, interp_deps &deps)
     deps.resolve_type.work.push_back(res_work);
 }
 
-static void addSizeWork(PoolAllocator *pool, BaseAST *ast, interp_deps &deps)
+static void addSizeWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
 {
     interp_work *res_work = new (pool) interp_work;
     res_work->action = IA_COMPUTE_SIZE;
@@ -131,7 +229,7 @@ static void addSizeWork(PoolAllocator *pool, BaseAST *ast, interp_deps &deps)
     deps.compute_size.work.push_back(res_work);
 }
 
-static void addCheckWork(PoolAllocator *pool, BaseAST *ast, interp_deps &deps)
+static void addCheckWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
 {
     interp_work *res_work = new (pool) interp_work;
     res_work->action = IA_OPERATION_CHECK;
@@ -390,7 +488,9 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
         auto rdt = (DirectTypeAST *)rhs;
         auto ldt = (DirectTypeAST *)lhs;
         // Modify this when pointer and array support is introduced
-        return (rdt->basic_type == ldt->basic_type) && (rdt->isSigned == ldt->isSigned);
+        return (rdt->basic_type == ldt->basic_type) 
+            && (rdt->isSigned == ldt->isSigned)
+            && (rdt->size_in_bytes == ldt->size_in_bytes);
         break;
     }
     case AST_POINTER_TYPE: {
@@ -437,67 +537,6 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
     return false;
 }
 
-bool Interpreter::isConstExpression(ExpressionAST *expr)
-{
-    switch (expr->ast_type) {
-    case AST_FUNCTION_CALL: {
-        return true;
-    }
-    case AST_IDENTIFIER: {
-        IdentifierAST *a = (IdentifierAST *)expr;
-        VariableDeclarationAST *decl = a->decl;
-
-        assert(decl);
-
-        return !!(decl->flags & DECL_FLAG_IS_CONSTANT);
-    }
-    case AST_LITERAL: {
-        return true;
-    }
-    case AST_BINARY_OPERATION: {
-        return true;
-    }
-    case AST_UNARY_OPERATION: {
-        return true;
-    }
-    case AST_VAR_REFERENCE: {
-        auto var_ref = (VarReferenceAST *)expr;
-        VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
-        assert(decl);
-
-        if (decl->flags & DECL_FLAG_IS_CONSTANT) {
-            return true;
-        }
-
-        var_ref = var_ref->next;
-
-        // if the topmost element of a reference is not constant, check the rest
-        while (var_ref != nullptr) {
-            // At the start of the loop, we have an unchecked var_ref and the scope it applies to
-            auto inner_decl = var_ref->decl;
-            assert(inner_decl);
-
-            if (inner_decl->flags & DECL_FLAG_IS_CONSTANT) {
-                return true;
-            }
-
-            if (var_ref->ast_type == AST_IDENTIFIER) {
-                var_ref = nullptr;
-            } else if (var_ref->ast_type = AST_VAR_REFERENCE) {
-                var_ref = var_ref->next;
-            } else {
-                assert(!"We should never be here!, wrong type on struct variable checking");
-            }
-        }
-        // If we get here, we have not found a constant
-        return false;
-    }
-    default:
-        assert(!"We should never be here, we could not parse this type\n");
-    }
-    return false;
-}
-
 void Interpreter::perform_bytecode(FileAST * root)
 {
     bytecode_generator bcgen;
@@ -516,6 +555,7 @@ void Interpreter::perform_bytecode(FileAST * root)
     bytecode_runner runner;
     runner.program = bp;
 
+    // @TODO: remove, this is only for testing
     // Just code to test the bytecode runner
     runner.run_preamble();
     runner.run_bc_function(bp->start_function);
@@ -540,13 +580,16 @@ void Interpreter::semanticProcess(FileAST *root)
     perform_bytecode(root);
 }
 
+#define PPC(ast) (BaseAST **)(&ast)
+
 void Interpreter::traversePostfixTopLevel(FileAST * root)
 {
-    for (auto ast : root->items) {
+    for (u32 i = 0; i < root->items.size(); i++) {
+        auto &ast = root->items[i];
         switch (ast->ast_type) {
         case AST_VARIABLE_DECLARATION: {
             auto decl = (VariableDeclarationAST *)ast;
-            traversePostfixTopLevelDeclaration(decl);
+            traversePostfixTopLevelDeclaration((VariableDeclarationAST **)&root->items[i]);
             break;
         }
         case AST_RUN_DIRECTIVE: {
@@ -564,12 +607,13 @@ void Interpreter::traversePostfixTopLevel(FileAST * root)
     }
 }
 
-void Interpreter::traversePostfixTopLevelDeclaration(VariableDeclarationAST * decl)
+void Interpreter::traversePostfixTopLevelDeclaration(VariableDeclarationAST ** declp)
 {
+    auto decl = *declp;
     assert(decl->deps == nullptr);
     decl->deps = new (&pool) interp_deps;
 
-    traversePostfixAST(decl, *decl->deps);
+    traversePostfixAST((BaseAST **)declp, *decl->deps);
 
     if (!decl->deps->empty()) {
         overall_deps.push_back(decl->deps);
@@ -581,108 +625,109 @@ void Interpreter::traversePostfixTopLevelDirective(RunDirectiveAST * run)
     assert(!"Not implemented top level directive in new dependency system");
 }
 
-void Interpreter::traversePostfixAST(BaseAST * ast, interp_deps & deps)
+void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
 {
+    auto ast = *astp;
     // null pointer is valid, like if a type does not exist 
     if (ast == nullptr) return;
 
     switch (ast->ast_type) {
     case AST_VARIABLE_DECLARATION: {
         auto decl = (VariableDeclarationAST *)ast;
-        traversePostfixAST(decl->specified_type, deps);
-        traversePostfixAST(decl->definition, deps);
+        traversePostfixAST( PPC(decl->specified_type), deps);
+        traversePostfixAST( PPC(decl->definition), deps);
 
-        addTypeWork(&pool, ast, deps);
-        addSizeWork(&pool, ast, deps);
-        addCheckWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
         break;
     }
     case AST_FUNCTION_TYPE: {
         auto funtype = (FunctionTypeAST *)ast;
-        for (auto arg : funtype->arguments) {
-            traversePostfixAST(arg, deps);
+        for (u32 i = 0; i < funtype->arguments.size(); i++) {
+            traversePostfixAST(PPC(funtype->arguments[i]), deps);
         }
-        traversePostfixAST(funtype->return_type, deps);
+        traversePostfixAST(PPC(funtype->return_type), deps);
 
         // No other checks for just a function type
         break;
     }
     case AST_STRUCT_DEFINITION: {
         auto struct_def = (StructDefinitionAST *)ast;
-        traversePostfixAST(&struct_def->struct_type, deps);
+        traversePostfixAST(PPC(struct_def->struct_type), deps);
         break;
     }
     case AST_STRUCT_TYPE: {
         auto struct_type = (StructTypeAST *)ast;
-        for (auto var : struct_type->struct_scope.decls) {
-            traversePostfixAST(var, deps);
+        for (u32 i = 0; i < struct_type->struct_scope.decls.size(); i++) {
+            traversePostfixAST(PPC(struct_type->struct_scope.decls[i]), deps);
         }
-        addSizeWork(&pool, ast, deps);
+        addSizeWork(&pool, astp, deps);
         break;
     }
     case AST_VAR_REFERENCE: {
         auto var_ref = (VarReferenceAST *)ast;
         // Special case, where we need to process this node before
         // the next one
-        addTypeWork(&pool, ast, deps);
-        traversePostfixAST(var_ref->next, deps);
+        addTypeWork(&pool, astp, deps);
+        traversePostfixAST(PPC(var_ref->next), deps);
         // do post processing to grab the type
-        addTypeWork(&pool, ast, deps);
-        addSizeWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
         break;
     }
     case AST_STATEMENT_BLOCK: {
         auto block = (StatementBlockAST *)ast;
-        for (auto stmt : block->statements) {
-            traversePostfixAST(stmt, deps);
+        for (u32 i = 0; i < block->statements.size(); i++) {
+            traversePostfixAST(PPC(block->statements[i]), deps);
         }
         break;
     }
     case AST_RETURN_STATEMENT: {
         auto ret = (ReturnStatementAST *)ast;
-        traversePostfixAST(ret->ret, deps);
+        traversePostfixAST(PPC(ret->ret), deps);
 
-        addTypeWork(&pool, ast, deps);
-        addSizeWork(&pool, ast, deps);
-        addCheckWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
 
         break;
     }
     case AST_FUNCTION_DEFINITION: {
         auto fundef = (FunctionDefinitionAST *)ast;
-        traversePostfixAST(fundef->declaration, deps);
-        traversePostfixAST(fundef->function_body, deps);
+        traversePostfixAST(PPC(fundef->declaration), deps);
+        traversePostfixAST(PPC(fundef->function_body), deps);
         // No other checks for a function definition? 
 
         // This check is to ensure the last statement on the block
         // matches our return type
-        addCheckWork(&pool, ast, deps);
+        addCheckWork(&pool, astp, deps);
 
         break;
     }
     case AST_FUNCTION_CALL: {
         auto funcall = (FunctionCallAST *)ast;
-        for (auto arg : funcall->args) {
-            traversePostfixAST(arg, deps);
+        for (u32 i = 0; i < funcall->args.size(); i++) {
+            traversePostfixAST(PPC(funcall->args[i]), deps);
         }
 
-        addTypeWork(&pool, ast, deps);
-        addSizeWork(&pool, ast, deps);
-        addCheckWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
 
         break;
     }
     case AST_DIRECT_TYPE: {
         auto dt = (DirectTypeAST *)ast;
 
-        addTypeWork(&pool, ast, deps);
-        addSizeWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
 
         break;
     }
     case AST_POINTER_TYPE: {
         auto pt = (PointerTypeAST *)ast;
-        traversePostfixAST(pt->points_to_type, deps);
+        traversePostfixAST(PPC(pt->points_to_type), deps);
 
         // No work triggered by the pointer type itself so far
         break;
@@ -690,42 +735,42 @@ void Interpreter::traversePostfixAST(BaseAST * ast, interp_deps & deps)
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
 
-        addTypeWork(&pool, ast, deps);
-        addSizeWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
         break;
     }
     case AST_LITERAL: {
         auto lit = (LiteralAST *)ast;
-        addTypeWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
         break;
     }
     case AST_BINARY_OPERATION: {
         auto binop = (BinaryOperationAST *)ast;
-        traversePostfixAST(binop->lhs, deps);
-        traversePostfixAST(binop->rhs, deps);
+        traversePostfixAST(PPC(binop->lhs), deps);
+        traversePostfixAST(PPC(binop->rhs), deps);
 
-        addTypeWork(&pool, ast, deps);
-        addSizeWork(&pool, ast, deps);
-        addCheckWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
         break;
     }
     case AST_UNARY_OPERATION: {
         auto unop = (UnaryOperationAST *)ast;
-        traversePostfixAST(unop->expr, deps);
+        traversePostfixAST(PPC(unop->expr), deps);
 
-        addTypeWork(&pool, ast, deps);
-        addSizeWork(&pool, ast, deps);
-        addCheckWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
+        //addSizeWork(&pool, ast, deps);
+        //addCheckWork(&pool, ast, deps);
         break;
     }
     case AST_ASSIGNMENT: {
         auto assign = (AssignmentAST *)ast;
-        traversePostfixAST(assign->lhs, deps);
-        traversePostfixAST(assign->rhs, deps);
+        traversePostfixAST(PPC(assign->lhs), deps);
+        traversePostfixAST(PPC(assign->rhs), deps);
 
-        addTypeWork(&pool, ast, deps);
-        addSizeWork(&pool, ast, deps);
-        addCheckWork(&pool, ast, deps);
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
         break;
     }
     default:
@@ -831,9 +876,9 @@ bool Interpreter::doWorkAST(interp_work * work)
 {
     // null pointer is valid, like if a type does not exist 
     if (work->action == IA_NOP) return true;
-    BaseAST *ast = work->ast;
+    BaseAST *ast = *(work->ast);
 
-    switch (work->ast->ast_type) {
+    switch (ast->ast_type) {
     case AST_VARIABLE_DECLARATION: {
         auto decl = (VariableDeclarationAST *)ast;
 
@@ -1426,6 +1471,114 @@ bool Interpreter::doWorkAST(interp_work * work)
 
             assert(type);
 
+            if ((unop->op == TK_PLUS) || (unop->op == TK_MINUS)) {
+                // We only support number types
+                char ltype[64] = {};
+                printTypeToStr(ltype, type);
+                if (type->ast_type != AST_DIRECT_TYPE) {
+                    Error(unop, "Unary operation [%s] is only allowed on numeric types, found: %s\n",
+                        TokenTypeToCOP(unop->op), ltype);
+                    return false;
+                }
+
+                auto dt = (DirectTypeAST *)type;
+                if (!((dt->basic_type == BASIC_TYPE_FLOATING) || (dt->basic_type == BASIC_TYPE_INTEGER))) {
+                    char ltype[64] = {};
+                    printTypeToStr(ltype, type);
+                    Error(unop, "Unary operation [%s] is only allowed on numeric types, found: %s\n",
+                        TokenTypeToCOP(unop->op), ltype);
+                    return false;
+                }
+                // take the type and bytes from the enclosing expression
+                if ((unop->op == TK_PLUS) || dt->isSigned) {
+                    unop->expr_type = type;
+                } else {
+                    // if we use the - operand, and before we had an unsigned value, now we have
+                    // a signed one
+                    DirectTypeAST *dtype = new (&pool) DirectTypeAST;
+                    copyASTloc(unop, dtype);
+                    dtype->basic_type = dt->basic_type;
+                    dtype->isSigned = true;
+                    dtype->size_in_bytes = dt->size_in_bytes;
+                    unop->expr_type = dtype;
+                }
+                return true;
+            } else if (unop->op == TK_BANG) {
+                // bang negates booleans, and for numbers and pointers, converts non 0 to true
+                switch (type->ast_type) {
+                case AST_STRUCT_TYPE:
+                case AST_FUNCTION_TYPE:
+                case AST_ARRAY_TYPE: {
+                    char ltype[64] = {};
+                    printTypeToStr(ltype, type);
+                    Error(unop, "Unary operation [%s] is only allowed on numeric and pointer types, found: %s\n",
+                        TokenTypeToCOP(unop->op), ltype);
+                    return false;
+                }
+                case AST_DIRECT_TYPE: {
+                    auto dt = (DirectTypeAST *)type;
+
+                    if (!((dt->basic_type == BASIC_TYPE_FLOATING) || (dt->basic_type == BASIC_TYPE_INTEGER))) {
+                        char ltype[64] = {};
+                        printTypeToStr(ltype, type);
+                        Error(unop, "Unary operation [%s] is only allowed on numeric types, found: %s\n",
+                            TokenTypeToCOP(unop->op), ltype);
+                        return false;
+                    }                
+                    // exit the switch for success
+                    break;
+                }
+                case AST_POINTER_TYPE: {
+                    // trivial success here, exit the switch
+                    break;
+                }
+                }
+
+                DirectTypeAST *dt = new (&pool) DirectTypeAST;
+                copyASTloc(unop, dt);
+                dt->basic_type = BASIC_TYPE_BOOL;
+                dt->size_in_bytes = 1;
+                unop->expr_type = dt;
+                return true;
+            } else if (unop->op == TK_STAR) {
+                // The address operator works only on lvalues
+
+                if (!isLValue(unop->expr, false)) {
+                    Error(unop, "It is not possible to use the address operator [*] on an rvalue\n");
+                }
+
+                if (unop->expr->ast_type == AST_UNARY_OPERATION) {
+                    auto innerop = (UnaryOperationAST *)unop->expr;
+                    if (innerop->op == TK_LSHIFT) {
+                        // Simplify the * << val to just be val
+                        *work->ast = innerop->expr;
+                        return true;
+                    }
+                }
+
+                PointerTypeAST *pt = new (&pool) PointerTypeAST;
+                copyASTloc(unop, pt);
+                pt->points_to_type = type;
+                pt->size_in_bytes = 8;
+                unop->expr_type = pt;
+                return true;
+
+            } else if (unop->op == TK_LSHIFT) {
+                // Pointer dereference only works on Pointer types
+                if (type->ast_type != AST_POINTER_TYPE) {
+                    char ltype[64] = {};
+                    printTypeToStr(ltype, type);
+                    Error(unop, "Pointer dereference operator [%s] is only allowed on pointer types, found: %s\n",
+                        TokenTypeToCOP(unop->op), ltype);
+                    return false;
+                }
+                auto pt = (PointerTypeAST *)type;
+                unop->expr_type = pt->points_to_type;
+                return true;
+            } else {
+                assert(!"Unknown operand type");
+                return false;
+            }
             // Very hacky! needs much more work
             unop->expr_type = type;
 
@@ -1460,8 +1613,12 @@ bool Interpreter::doWorkAST(interp_work * work)
         } else if (work->action == IA_OPERATION_CHECK) {
 
             // lhs cannot be const (or a literal, same thing)
-            if (isConstExpression(assign->lhs)) {
+            if (!isLValue(assign->lhs)) {
                 Error(assign, "The left hand side of an assignment must be an l-value\n");
+            }
+
+            if (isConstExpression(assign->lhs)) {
+                Error(assign, "The left hand side of an assignment cannot be constant\n");
             }
 
             // lhs and rhs need to have the same type

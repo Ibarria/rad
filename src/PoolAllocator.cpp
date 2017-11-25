@@ -90,3 +90,12 @@ void * PoolAllocator::alloc(u64 size)
     root_block.next = b;
     return allocateFromBlock(b, size);
 }
+
+bool PoolAllocator::isAddressInRange(void * p)
+{
+    if ((p >= root_block.start_address) &&
+        (p < root_block.free_address)) {
+        return true;
+    }
+    return false;
+}

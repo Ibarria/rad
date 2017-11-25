@@ -1,7 +1,5 @@
 ###################### TODO items #######################
 
-* ASSIGN is not an expression! 
-* Always have a type (even void)
 * Ensure we do not support more than 1 pointer for dereference. 
      This is correct:
         var: *MyStruct;
@@ -14,6 +12,7 @@
 * plan on making the C backend much more similar to bytecode
 * ensure local functions and local structs do not clash with other locals in other scopes
 * Support pointers
+** Have a dereference operator for pointers
 * Maybe support array initializers (a : [] arr = {1, 2, 3, 4};)
 * write cast function (built in)
 * implement local functions on the C generator
@@ -38,6 +37,8 @@
 * Future stuff: polymorphism, baking, inline, LLVM
 
 ---- DONE -----
+- ASSIGN is not an expression! 
+- Always have a type (even void)
 - create `true` and `false` basic types for bool
 - basic 'import' support added
 - Have an Interpreter class for

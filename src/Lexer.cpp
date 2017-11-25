@@ -82,7 +82,6 @@ struct StringToken {
     const char *str;
     TOKEN_TYPE token;
 } strTok[] = {
-    { "<<=", TK_LEFT_ASSIGN},
     { "<<",  TK_LSHIFT },
     { "<=",  TK_LEQ },
     { "<",   TK_LT },
@@ -90,8 +89,7 @@ struct StringToken {
     { "==",  TK_EQ },
     { "=",   TK_ASSIGN},
 
-    { ">>=", TK_RIGHT_ASSIGN },
-    { ">>",  TK_RSHIFT },
+//    { ">>",  TK_RSHIFT },
     { ">=",  TK_GEQ },
     { ">",   TK_GT },
 

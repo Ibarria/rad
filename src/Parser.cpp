@@ -116,7 +116,9 @@ static bool isUnaryPrefixOperator(TOKEN_TYPE type)
 {
     return (type == TK_PLUS)
         || (type == TK_MINUS)
-        || (type == TK_BANG);
+        || (type == TK_BANG)
+        || (type == TK_STAR)
+        || (type == TK_LSHIFT);
 }
 
 static bool isAssignmentOperator(TOKEN_TYPE type)
@@ -127,8 +129,6 @@ static bool isAssignmentOperator(TOKEN_TYPE type)
         || (type == TK_MOD_ASSIGN)
         || (type == TK_ADD_ASSIGN)
         || (type == TK_SUB_ASSIGN)
-        || (type == TK_LEFT_ASSIGN)
-        || (type == TK_RIGHT_ASSIGN)
         || (type == TK_AND_ASSIGN)
         || (type == TK_XOR_ASSIGN)
         || (type == TK_OR_ASSIGN);
@@ -142,8 +142,6 @@ static bool isBinOperator(TOKEN_TYPE type)
         || (type == TK_NEQ)
         || (type == TK_LT)
         || (type == TK_GT)
-        || (type == TK_RSHIFT)
-        || (type == TK_LSHIFT)
         || (type == TK_STAR)
         || (type == TK_DIV)
         || (type == TK_MOD)
@@ -177,9 +175,6 @@ static u32 getPrecedence(TOKEN_TYPE t)
     case TK_MINUS:
     case TK_PLUS:
         return 2;
-    case TK_LSHIFT:
-    case TK_RSHIFT:
-        return 3;
     case TK_LT:
     case TK_GT:
     case TK_LEQ:

@@ -7,14 +7,18 @@ x1 : float = .000257;
 a : bool;
 
 firstPtr: *u32;
+secondPtr : *u32;
 
 main :: ()
 {
-    x1 := 1;
-    x1 = add(3, 0);
+    te : u32;
+    // x1 := 1;
+    // x1 = add(3, 0);
 
-    a = x1 < 4;
-    printf("X is %llu\n", x1);
+    firstPtr = *te;
+
+    // a = x1 < 4;
+    // printf("X is %llu\n", x1);
 
 //    x = #run (3 + 2);
 }
@@ -25,3 +29,5 @@ add := (x: u64, y: u64) -> u64
 }
 
 // #run main()
+
+

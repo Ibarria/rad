@@ -10,7 +10,7 @@ enum InterpAction {
 
 struct interp_work {
     InterpAction action;
-    BaseAST *ast;
+    BaseAST **ast;
 };
 
 struct interp_list {
@@ -66,14 +66,13 @@ struct Interpreter
     VariableDeclarationAST *validateVariable(IdentifierAST *a);
     VariableDeclarationAST *validateFunctionCall(FunctionCallAST *a);
 
-    bool isConstExpression(ExpressionAST *expr);
     bool compatibleTypes(TypeAST *lhs, TypeAST *rhs);
 
     void traversePostfixTopLevel(FileAST *root);
-    void traversePostfixTopLevelDeclaration(VariableDeclarationAST *decl);
+    void traversePostfixTopLevelDeclaration(VariableDeclarationAST **decl);
     void traversePostfixTopLevelDirective(RunDirectiveAST *run);
 
-    void traversePostfixAST(BaseAST *ast, interp_deps &deps);
+    void traversePostfixAST(BaseAST **ast, interp_deps &deps);
 
     void processAllDependencies();
     void processDependencies(interp_deps *deps); 

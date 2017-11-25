@@ -108,6 +108,7 @@ struct bytecode_generator
     void createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
     void createLoadInstruction(VariableDeclarationAST *decl, s16 reg);
     void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
+    void createAddressInstruction(VariableDeclarationAST *decl, s16 reg);
     void issue_instruction(BCI *bci);
     void issueReserveStackSpace(u64 size);
 
@@ -119,6 +120,7 @@ struct bytecode_generator
     void generate_function(TextType name, FunctionDefinitionAST *fundef);
     void generate_statement_block(StatementBlockAST *block);
 
+    void computeAddressIntoRegister(ExpressionAST *expr, s16 reg);
     void computeExpressionIntoRegister(ExpressionAST *expr, s16 reg);
     void compute_function_call_into_register(FunctionCallAST *funcall, s16 reg);
 };
@@ -145,3 +147,7 @@ struct bytecode_runner
 };
 
 void print_bc_program(bytecode_program *program);
+
+
+// Fix bytecode runner UNARY operation to match expression or address
+// Write VAR_REFERENCE for computeExpression, ComputeAddress

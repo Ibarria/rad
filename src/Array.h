@@ -38,8 +38,8 @@ public:
         return &elems[used_elems];
     }
 
-    T operator[] (u32 index) { assert(index < used_elems); return elems[index]; }
-    const T operator[] (u32 index) const { assert(index < used_elems); return elems[index]; }
+    T& operator[] (u32 index) { assert(index < used_elems); return elems[index]; }
+    const T& operator[] (u32 index) const { assert(index < used_elems); return elems[index]; }
 
     u32 push_back(T elem) {
         if (used_elems + 1 >= num_elems) {

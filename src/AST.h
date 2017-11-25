@@ -264,7 +264,9 @@ DirectTypeAST *findFinalDirectType(PointerTypeAST *pt);
 DirectTypeAST *findFinalDirectType(ArrayTypeAST *at);
 StructTypeAST *findStructType(TypeAST *type);
 bool isTypeStruct(TypeAST *type);
- 
+bool isConstExpression(ExpressionAST *expr);
+bool isLValue(ExpressionAST *expr, bool allowStar = true);
+
 inline bool isDirectTypeVariation(TypeAST *type) {
     return (type->ast_type == AST_DIRECT_TYPE)
         || (type->ast_type == AST_ARRAY_TYPE)
