@@ -150,6 +150,3 @@ struct bytecode_runner
 
 void print_bc_program(bytecode_program *program);
 
-
-// Fix bytecode runner UNARY operation to match expression or address
-// Write VAR_REFERENCE for computeExpression, ComputeAddress

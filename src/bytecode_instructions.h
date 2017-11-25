@@ -48,13 +48,3 @@ enum BytecodeInstructionOpcode : u16 {
 };
 
 
-/*
-BCI *bci = create_instruction(BC_CREATE_CALL_REGISTER, reg, -1, argument_qwords);
-
-bci = create_instruction(BC_CALL_PROCEDURE, -1, reg_return, straight_convert(funcall->fundef));
-
-bci->op_size = fundecl->return_type->size_in_bytes;
-
-
-
-*/
