@@ -109,6 +109,7 @@ struct bytecode_generator
     void createLoadInstruction(VariableDeclarationAST *decl, s16 reg);
     void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
     void createAddressInstruction(VariableDeclarationAST *decl, s16 reg);
+    void createLoadOffsetInstruction(ExpressionAST *expr, s16 reg);
     void issue_instruction(BCI *bci);
     void issueReserveStackSpace(u64 size);
 

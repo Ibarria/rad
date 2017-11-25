@@ -204,7 +204,7 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
                 if (pt->points_to_type->ast_type == AST_DIRECT_TYPE) {
                     break;
                 }
-                assert(pt->points_to_type->ast_type = AST_POINTER_TYPE);
+                assert(pt->points_to_type->ast_type == AST_POINTER_TYPE);
                 pt = (PointerTypeAST *)pt->points_to_type;
             }
             break;

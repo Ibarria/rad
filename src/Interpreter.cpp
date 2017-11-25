@@ -146,7 +146,7 @@ bool isConstExpression(ExpressionAST *expr)
 
             if (var_ref->ast_type == AST_IDENTIFIER) {
                 var_ref = nullptr;
-            } else if (var_ref->ast_type = AST_VAR_REFERENCE) {
+            } else if (var_ref->ast_type == AST_VAR_REFERENCE) {
                 var_ref = var_ref->next;
             } else {
                 assert(!"We should never be here!, wrong type on struct variable checking");
@@ -348,7 +348,7 @@ bool Interpreter::checkTypesInDeclaration(VariableDeclarationAST * decl, Express
         return checkTypesInDeclaration(decl, expr, lhsPt->points_to_type, rhsPt->points_to_type);
     }
     // Nothing else supported for now, arrays in the future
-    assert(rhsType->ast_type = AST_DIRECT_TYPE);
+    assert(rhsType->ast_type == AST_DIRECT_TYPE);
     DirectTypeAST *rhsDType = (DirectTypeAST *)rhsType;
     DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
 
@@ -534,7 +534,6 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
     default:
         return false;
     }
-    return false;
 }
 
 void Interpreter::perform_bytecode(FileAST * root)
@@ -588,7 +587,6 @@ void Interpreter::traversePostfixTopLevel(FileAST * root)
         auto &ast = root->items[i];
         switch (ast->ast_type) {
         case AST_VARIABLE_DECLARATION: {
-            auto decl = (VariableDeclarationAST *)ast;
             traversePostfixTopLevelDeclaration((VariableDeclarationAST **)&root->items[i]);
             break;
         }
@@ -1473,9 +1471,9 @@ bool Interpreter::doWorkAST(interp_work * work)
 
             if ((unop->op == TK_PLUS) || (unop->op == TK_MINUS)) {
                 // We only support number types
-                char ltype[64] = {};
-                printTypeToStr(ltype, type);
                 if (type->ast_type != AST_DIRECT_TYPE) {
+                    char ltype[64] = {};
+                    printTypeToStr(ltype, type);
                     Error(unop, "Unary operation [%s] is only allowed on numeric types, found: %s\n",
                         TokenTypeToCOP(unop->op), ltype);
                     return false;
@@ -1579,8 +1577,6 @@ bool Interpreter::doWorkAST(interp_work * work)
                 assert(!"Unknown operand type");
                 return false;
             }
-            // Very hacky! needs much more work
-            unop->expr_type = type;
 
         } else if (work->action == IA_COMPUTE_SIZE) {
 
@@ -1637,7 +1633,7 @@ bool Interpreter::doWorkAST(interp_work * work)
             }
 
             if (lhsType->ast_type == AST_DIRECT_TYPE) {
-                assert(rhsType->ast_type = AST_DIRECT_TYPE);
+                assert(rhsType->ast_type == AST_DIRECT_TYPE);
                 DirectTypeAST *rhsDType = (DirectTypeAST *)rhsType;
                 DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
 

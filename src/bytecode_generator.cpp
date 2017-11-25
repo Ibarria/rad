@@ -211,6 +211,7 @@ static BytecodeInstructionOpcode getStoreOpcode(VariableDeclarationAST *decl)
         opcode = BC_STORE_TO_STACK_PLUS_CONSTANT;
     } else {
         assert(!"Variable without scope set!");
+        opcode = BC_UNINITIALIZED;
     }
     return opcode;
 }
@@ -226,6 +227,7 @@ static BytecodeInstructionOpcode getLoadOpcode(VariableDeclarationAST *decl)
         opcode = BC_LOAD_FROM_CALL_REGISTER;
     } else {
         assert(!"Variable without scope set!");
+        opcode = BC_UNINITIALIZED;
     }
     return opcode;
 }
@@ -326,7 +328,7 @@ void bytecode_generator::createStoreInstruction(BytecodeInstructionOpcode opcode
         bytes -= 8;
         reg++;
         do {
-            BCI *bci = create_instruction(opcode, reg, -1, offset);
+            bci = create_instruction(opcode, reg, -1, offset);
             issue_instruction(bci);
             bci->dst_type_bytes = truncate_op_size(bytes);
             bci->dst_type = regtype;
@@ -363,7 +365,7 @@ void bytecode_generator::createLoadInstruction(BytecodeInstructionOpcode opcode,
         bytes -= 8;
         reg++;
         do {
-            BCI *bci = create_instruction(opcode, -1, reg, offset);
+            bci = create_instruction(opcode, -1, reg, offset);
             issue_instruction(bci);
             bci->dst_type_bytes = truncate_op_size(bytes);
             bci->dst_type = regtype;
@@ -385,12 +387,48 @@ void bytecode_generator::createAddressInstruction(VariableDeclarationAST * decl,
         opcode = BC_ADDRESS_FROM_CALL_REGISTER;
     } else {
         assert(!"Variable without scope set!");
+        opcode = BC_UNINITIALIZED;
     }
 
     BCI *bci = create_instruction(opcode, -1, reg, decl->bc_mem_offset);
     bci->dst_type_bytes = 8;
     bci->dst_type = REGTYPE_POINTER;
     issue_instruction(bci);
+}
+
+void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 reg)
+{
+    switch (expr->ast_type)
+    {
+    case AST_VAR_REFERENCE: {
+        auto vref = (VarReferenceAST *)expr;
+        s16 nreg = reserveRegistersForSize(&program->machine, 8*2);
+        // load the current offset
+        BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, nreg, vref->decl->bc_mem_offset);
+        bci->dst_type = REGTYPE_UINT;
+        bci->dst_type_bytes = 8;
+        issue_instruction(bci);
+        // load the inner offset
+        createLoadOffsetInstruction(vref->next, nreg + 1);
+        // add them up together
+        bci = create_instruction(BC_BINARY_OPERATION, nreg, reg, TK_PLUS);
+        bci->src2_reg = nreg + 1;
+        bci->dst_type = REGTYPE_UINT;
+        bci->dst_type_bytes = 8;
+        issue_instruction(bci);
+        break;
+    }
+    case AST_IDENTIFIER: {
+        auto id = (IdentifierAST *)expr;
+        BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, id->decl->bc_mem_offset);
+        bci->dst_type = REGTYPE_UINT;
+        bci->dst_type_bytes = 8;
+        issue_instruction(bci);
+        break;
+    }
+    default:
+        assert(!"This function can only be called with something that can yield a declaration");
+    }
 }
 
 void bytecode_generator::createLoadInstruction(VariableDeclarationAST *decl, s16 reg)
@@ -637,7 +675,8 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
             if (lit->typeAST.isSigned) val = straight_convert(lit->_s64);
             else val = lit->_u64;
             BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
-            bci->dst_type_bytes = lit->typeAST.size_in_bytes;
+            assert(lit->typeAST.size_in_bytes < 256);
+            bci->dst_type_bytes = (u8)lit->typeAST.size_in_bytes;
             bci->dst_type = (lit->typeAST.isSigned ? REGTYPE_SINT : REGTYPE_UINT);
             issue_instruction(bci);
             break;
@@ -665,15 +704,17 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         }
         case BASIC_TYPE_BOOL: {
             BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, lit->_bool);
-            bci->dst_type_bytes = lit->typeAST.size_in_bytes;
+            assert(lit->typeAST.size_in_bytes < 256);
+            bci->dst_type_bytes = (u8)lit->typeAST.size_in_bytes;
             bci->dst_type = REGTYPE_UINT;
             issue_instruction(bci);
             break;
         }
         case BASIC_TYPE_FLOATING: {
             u64 val = straight_convert(lit->_f64);
+            assert(lit->typeAST.size_in_bytes < 256);
             BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
-            bci->dst_type_bytes = lit->typeAST.size_in_bytes;
+            bci->dst_type_bytes = (u8)lit->typeAST.size_in_bytes;
             bci->dst_type = REGTYPE_FLOAT;
             issue_instruction(bci);
             break;
@@ -728,7 +769,8 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         // All other unary operators do behave normally, included the dereference op
 
         BCI *bci = create_instruction(BC_UNARY_OPERATION, regexp, reg, unop->op);
-        bci->dst_type_bytes = unop->expr_type->size_in_bytes;
+        assert(unop->expr_type->size_in_bytes < 256);
+        bci->dst_type_bytes = (u8)unop->expr_type->size_in_bytes;
         bci->dst_type = get_regtype_from_type(unop->expr_type);
 
         issue_instruction(bci);
@@ -751,7 +793,8 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         computeExpressionIntoRegister(binop->rhs, regrhs);
         BCI *bci = create_instruction(BC_BINARY_OPERATION, reglhs, reg, binop->op);
         bci->src2_reg = regrhs;
-        bci->dst_type_bytes = expr->expr_type->size_in_bytes;
+        assert(expr->expr_type->size_in_bytes < 256);
+        bci->dst_type_bytes = (u8)expr->expr_type->size_in_bytes;
         bci->dst_type = get_regtype_from_type(expr->expr_type);
 
         issue_instruction(bci);
@@ -769,7 +812,26 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         break;
     }
     case AST_VAR_REFERENCE: {
-        assert(!"Unimplmented var reference for bytecode expression");
+        auto vref = (VarReferenceAST *)expr;
+        // size for an address
+        s16 preg = reserveRegistersForSize(&program->machine, 8*3);
+        createAddressInstruction(vref->decl, preg);
+        createLoadOffsetInstruction(vref->next, preg + 1);
+
+        // Add both preg and preg + 1
+        BCI *bci = create_instruction(BC_BINARY_OPERATION, preg, preg+2, TK_PLUS);
+        bci->src2_reg = preg + 1;
+        bci->dst_type_bytes = 8;
+        bci->dst_type = REGTYPE_POINTER;
+        issue_instruction(bci);
+
+        // dereference the pointer to get the expression value
+        bci = create_instruction(BC_UNARY_OPERATION, preg+2, reg , TK_STAR);
+        assert(vref->expr_type->size_in_bytes < 256);
+        bci->dst_type_bytes = (u8)vref->expr_type->size_in_bytes;
+        bci->dst_type = get_regtype_from_type(vref->expr_type);
+        issue_instruction(bci);
+
         break;
     }
     default:
@@ -800,6 +862,8 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
         assert(unop->op == TK_STAR);
         computeAddressIntoRegister(unop->expr, regexp);
 
+        program->machine.pop_mark(mark);
+
         break;
     }
     case AST_BINARY_OPERATION: {
@@ -811,7 +875,19 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
         break;
     }
     case AST_VAR_REFERENCE: {
-        assert(!"Unimplemented var reference for bytecode address");
+        auto vref = (VarReferenceAST *)expr;
+        // size for an address
+        s16 preg = reserveRegistersForSize(&program->machine, 8 * 2);
+        createAddressInstruction(vref->decl, preg);
+        createLoadOffsetInstruction(vref->next, preg + 1);
+
+        // Add both preg and preg + 1
+        BCI *bci = create_instruction(BC_BINARY_OPERATION, preg, reg, TK_PLUS);
+        bci->src2_reg = preg + 1;
+        bci->dst_type_bytes = 8;
+        bci->dst_type = REGTYPE_POINTER;
+        issue_instruction(bci);
+
         break;
     }
     default:
@@ -847,7 +923,7 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     s16 offset = 0;
     if (!isVoidType(fundecl->return_type)) {
         offset += roundToQWord(fundecl->return_type->size_in_bytes);
-        for (s32 ind = 0; ind < offset; ind++) {
+        for (s16 ind = 0; ind < offset; ind++) {
             BCI *bci = create_instruction(BC_ZERO_REG, -1, reg+ind, 0);
             bci->dst_type = REGTYPE_UINT;
             bci->dst_type_bytes = 8;
@@ -876,19 +952,20 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     // And now we actually call the function
     bci = create_instruction(BC_CALL_PROCEDURE, -1, reg_return, straight_convert(funcall->fundef));
     issue_instruction(bci);
-    bci->dst_type_bytes = fundecl->return_type->size_in_bytes;
+    assert(fundecl->return_type->size_in_bytes < 256);
+    bci->dst_type_bytes = (u8)fundecl->return_type->size_in_bytes;
     program->machine.pop_mark(mark);
 }
 
 
-void bc_base_memory::initMem(u8 * basemem, u64 bss_size, u64 stack_size)
+void bc_base_memory::initMem(u8 * basemem, u64 bss_size, u64 stack_sz)
 {
     mem = basemem;
-    alloc_size = bss_size + stack_size;
+    alloc_size = bss_size + stack_sz;
     used_size = 0;
     stack_start = mem + bss_size;
     stack_base = stack_pointer = stack_start;
-    this->stack_size = stack_size;
+    stack_size = stack_sz;
 }
 
 void bytecode_runner::run_bc_function(bytecode_function * func)
@@ -1003,10 +1080,6 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             break;
         }
         case BC_BINARY_OPERATION: {
-            auto &dstreg = program->machine.regs[bci->dst_reg];
-            auto &srcreg = program->machine.regs[bci->src_reg];
-            auto &src2reg = program->machine.regs[bci->src2_reg];
-
             assert(bci->dst_type != REGTYPE_UNKNOWN);
 
             // at this level, types have to match. It is up to the higher levels to put casts in
@@ -1245,9 +1318,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             case TK_PLUS: {
                 assert(bci->src_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
                 assert(bci->dst_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
-                copy_bytes(&program->machine.regs[bci->src_reg].data._u64,
-                    &program->machine.regs[bci->dst_reg].data._u64,
-                    bci->dst_type_bytes);
+                copy_bytes(&srcreg.data._u64, &dstreg.data._u64, bci->dst_type_bytes);
                 program->machine.regs[bci->dst_reg].bytes = bci->dst_type_bytes;
                 program->machine.regs[bci->dst_reg].type = bci->dst_type;
                 break;
@@ -1255,63 +1326,59 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             case TK_MINUS: {
                 assert(bci->src_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
                 assert(bci->dst_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
-                auto &src = program->machine.regs[bci->src_reg];
-                auto &dst = program->machine.regs[bci->dst_reg];
 
-                if (src.type == REGTYPE_UINT) {
-                    if (src.bytes == 1) {
-                        dst.data._s8 = -(s8)src.data._u8;
-                    } else if (src.bytes == 2) {
-                        dst.data._s16 = -(s16)src.data._u16;
-                    } else if (src.bytes == 4) {
-                        dst.data._s32 = -(s32)src.data._u32;
+                if (srcreg.type == REGTYPE_UINT) {
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._s8 = -(s8)srcreg.data._u8;
+                    } else if (srcreg.bytes == 2) {
+                        dstreg.data._s16 = -(s16)srcreg.data._u16;
+                    } else if (srcreg.bytes == 4) {
+                        dstreg.data._s32 = -(s32)srcreg.data._u32;
                     } else {
-                        assert(src.bytes == 8);
-                        dst.data._s64 = -(s64)src.data._u64;
+                        assert(srcreg.bytes == 8);
+                        dstreg.data._s64 = -(s64)srcreg.data._u64;
                     }
-                    dst.type = REGTYPE_SINT;
-                } else if (src.type == REGTYPE_SINT) {
-                    if (src.bytes == 1) {
-                        dst.data._s8 = -src.data._s8;
-                    } else if (src.bytes == 2) {
-                        dst.data._s16 = -src.data._s16;
-                    } else if (src.bytes == 4) {
-                        dst.data._s32 = -src.data._s32;
+                    dstreg.type = REGTYPE_SINT;
+                } else if (srcreg.type == REGTYPE_SINT) {
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._s8 = -srcreg.data._s8;
+                    } else if (srcreg.bytes == 2) {
+                        dstreg.data._s16 = -srcreg.data._s16;
+                    } else if (srcreg.bytes == 4) {
+                        dstreg.data._s32 = -srcreg.data._s32;
                     } else {
-                        assert(src.bytes == 8);
-                        dst.data._s64 = -src.data._s64;
+                        assert(srcreg.bytes == 8);
+                        dstreg.data._s64 = -srcreg.data._s64;
                     }
-                    dst.type = REGTYPE_SINT;
-                } else if (src.type == REGTYPE_FLOAT) {
-                    if (src.bytes == 4) {
-                        dst.data._f32 = -src.data._f32;
+                    dstreg.type = REGTYPE_SINT;
+                } else if (srcreg.type == REGTYPE_FLOAT) {
+                    if (srcreg.bytes == 4) {
+                        dstreg.data._f32 = -srcreg.data._f32;
                     } else {
-                        assert(src.bytes == 8);
-                        dst.data._f64 = -src.data._f64;
+                        assert(srcreg.bytes == 8);
+                        dstreg.data._f64 = -srcreg.data._f64;
                     }
-                    dst.type = REGTYPE_FLOAT;
+                    dstreg.type = REGTYPE_FLOAT;
                 } else {
                     assert(!"We should never be here");
                 }
 
-                program->machine.regs[bci->dst_reg].bytes = bci->dst_type_bytes;
+                dstreg.bytes = bci->dst_type_bytes;
                 break;
             }
             case TK_BANG: {
                 assert(bci->src_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
                 assert(bci->dst_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
-                auto &src = program->machine.regs[bci->src_reg];
-                auto &dst = program->machine.regs[bci->dst_reg];
                 u64 masked_bytes = 0;
 
                 u64 mask = 0xFFFFFFFFFFFFFFFF;
-                if (src.bytes < 8) {
-                    mask = (1ULL << (src.bytes * 8)) - 1;
+                if (srcreg.bytes < 8) {
+                    mask = (1ULL << (srcreg.bytes * 8)) - 1;
                 }
-                masked_bytes = src.data._u64 & mask;
-                dst.data._u8 = (masked_bytes != 0) ? 1 : 0;
-                dst.bytes = 1;
-                dst.type = REGTYPE_UINT;
+                masked_bytes = srcreg.data._u64 & mask;
+                dstreg.data._u8 = (masked_bytes != 0) ? 1 : 0;
+                dstreg.bytes = 1;
+                dstreg.type = REGTYPE_UINT;
                 break;
             }
             case TK_STAR: {
@@ -1321,31 +1388,29 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             case TK_LSHIFT: {
                 assert(bci->src_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
                 assert(bci->dst_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
-                auto &src = program->machine.regs[bci->src_reg];
-                auto &dst = program->machine.regs[bci->dst_reg];
-                assert(src.type == REGTYPE_POINTER);
+                assert(srcreg.type == REGTYPE_POINTER);
                 assert(bci->dst_type_bytes <= 8);
                 switch (bci->dst_type_bytes) {
                 case 1: {
-                    dst.data._u8 = *(u8 *)src.data._ptr;
+                    dstreg.data._u8 = *(u8 *)srcreg.data._ptr;
                     break;
                 }
                 case 2: {
-                    dst.data._u16 = *(u16 *)src.data._ptr;
+                    dstreg.data._u16 = *(u16 *)srcreg.data._ptr;
                     break;
                 }
                 case 4: {
-                    dst.data._u32 = *(u32 *)src.data._ptr;
+                    dstreg.data._u32 = *(u32 *)srcreg.data._ptr;
                     break;
                 }
                 case 8: {
-                    dst.data._u64 = *(u64 *)src.data._ptr;
+                    dstreg.data._u64 = *(u64 *)srcreg.data._ptr;
                     break;
                 }
                 }
 
-                dst.type = bci->dst_type;
-                dst.bytes = bci->dst_type_bytes;
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
                 break;
             }
             default:
@@ -1363,13 +1428,13 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             call->num_regs = bci->big_const;
             assert(new_call_register == nullptr);
             for (s16 ind = 0; ind < bci->big_const; ind++) {
-                s16 srcreg = bci->src_reg + ind;
+                s16 src_reg = bci->src_reg + ind;
                 
-                copy_bytes(&program->machine.regs[srcreg].data._u64,
+                copy_bytes(&program->machine.regs[src_reg].data._u64,
                     &call->regs[ind].data._u64,
-                    program->machine.regs[srcreg].bytes);
-                call->regs[ind].bytes = program->machine.regs[bci->dst_reg].bytes;
-                call->regs[ind].type = program->machine.regs[bci->dst_reg].type;
+                    program->machine.regs[src_reg].bytes);
+                call->regs[ind].bytes = dstreg.bytes;
+                call->regs[ind].type = dstreg.type;
             }
             new_call_register = call;
             break;
@@ -1394,11 +1459,9 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
                 assert(fundef->bc_function);
                 run_bc_function(fundef->bc_function);
                 if (bci->dst_reg != -1) {
-                    copy_bytes(old_stack_pointer,
-                        (u8 *)&program->machine.regs[bci->dst_reg], 
-                        bci->dst_type_bytes);
-                    program->machine.regs[bci->dst_reg].bytes = bci->dst_type_bytes;
-                    program->machine.regs[bci->dst_reg].type = get_regtype_from_type(fundef->declaration);
+                    copy_bytes(old_stack_pointer, (u8 *)&dstreg, bci->dst_type_bytes);
+                    dstreg.bytes = bci->dst_type_bytes;
+                    dstreg.type = get_regtype_from_type(fundef->declaration);
                 }
             }
 
