@@ -121,6 +121,12 @@ bool isConstExpression(ExpressionAST *expr)
         return true;
     }
     case AST_UNARY_OPERATION: {
+        auto unop = (UnaryOperationAST *)expr;
+        if (unop->op == TK_LSHIFT) {
+            // dereferencing something does not make it constant, need to check more
+            return isConstExpression(unop->expr);
+        }
+        // All other operands return effectively a const
         return true;
     }
     case AST_VAR_REFERENCE: {

@@ -106,6 +106,7 @@ struct bytecode_generator
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const);
     void createStoreInstruction(VariableDeclarationAST *decl, s16 reg);
     void createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
+    void createStoreInstruction(BytecodeInstructionOpcode opcode, s16 ptrreg, s16 datareg, u64 size_in_bytes);
     void createLoadInstruction(VariableDeclarationAST *decl, s16 reg);
     void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
     void createAddressInstruction(VariableDeclarationAST *decl, s16 reg);

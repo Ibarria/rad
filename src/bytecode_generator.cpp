@@ -242,9 +242,11 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_LOAD_BIG_CONSTANT_TO_REG);
         CASE_BC_OPCODE(BC_STORE_TO_STACK_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_STORE_TO_BSS_PLUS_CONSTANT);
+        CASE_BC_OPCODE(BC_STORE_TO_MEM_PTR);
         CASE_BC_OPCODE(BC_LOAD_FROM_STACK_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_LOAD_FROM_BSS_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_LOAD_FROM_CALL_REGISTER);
+        CASE_BC_OPCODE(BC_LOAD_FROM_MEM_PTR);
         CASE_BC_OPCODE(BC_ADDRESS_FROM_STACK_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_ADDRESS_FROM_BSS_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_ADDRESS_FROM_CALL_REGISTER);
@@ -333,6 +335,31 @@ void bytecode_generator::createStoreInstruction(BytecodeInstructionOpcode opcode
             bci->dst_type_bytes = truncate_op_size(bytes);
             bci->dst_type = regtype;
             reg++;
+            bytes -= 8;
+            offset += 8;
+        } while (bytes > 0);
+    }
+}
+
+void bytecode_generator::createStoreInstruction(BytecodeInstructionOpcode opcode, s16 ptrreg, s16 datareg, u64 size_in_bytes)
+{
+    BCI *bci;
+
+    bci = create_instruction(opcode, datareg, ptrreg, 0);
+    bci->dst_type_bytes = truncate_op_size(size_in_bytes);
+    bci->dst_type = REGTYPE_UNKNOWN;
+    issue_instruction(bci);
+    if (size_in_bytes > 8) {
+        s64 bytes = size_in_bytes;
+        u64 offset = 8;
+        bytes -= 8;
+        datareg++;
+        do {
+            bci = create_instruction(opcode, datareg, ptrreg, offset);
+            issue_instruction(bci);
+            bci->dst_type_bytes = truncate_op_size(bytes);
+            bci->dst_type = REGTYPE_UNKNOWN;
+            datareg++;
             bytes -= 8;
             offset += 8;
         } while (bytes > 0);
@@ -588,12 +615,20 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
                     createStoreInstruction(iden->decl, reg);
                 } else if (assign->lhs->ast_type == AST_VAR_REFERENCE) {
                     auto var_ref = (VarReferenceAST *)assign->lhs;
+                    // @TODO: This will not work for arrays, or when the offset is not constant!
                     u64 var_offset = computeOffset(var_ref);
                     assert(var_ref->size_in_bytes > 0);
                     createStoreInstruction(getStoreOpcode(var_ref->decl), var_offset,
                         var_ref->size_in_bytes, reg, get_regtype_from_type(var_ref->expr_type));
-                } else {
-                    assert (! "We do not support anything else than an identifier for lhs for now");
+                } else if (assign->lhs->ast_type == AST_UNARY_OPERATION) {
+                    auto unop = (UnaryOperationAST *)assign->lhs;
+                    assert(unop->op == TK_LSHIFT);
+                    s16 nreg = reserveRegistersForSize(&program->machine, 8);
+                    computeAddressIntoRegister(unop->expr, nreg);
+                    createStoreInstruction(BC_STORE_TO_MEM_PTR, nreg, reg, unop->expr_type->size_in_bytes);
+                }
+                else {
+                    assert (! "We do not support anything else for an lvalue");
                 }
                 
                 program->machine.pop_mark(mark);
@@ -854,15 +889,10 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
     }
     case AST_UNARY_OPERATION: {
         auto unop = (UnaryOperationAST *)expr;
-        s16 mark = program->machine.reg_mark();
         TypeAST *type = unop->expr->expr_type;
 
-        s16 regexp = reserveRegistersForSize(&program->machine, type->size_in_bytes);
-
         assert(unop->op == TK_STAR);
-        computeAddressIntoRegister(unop->expr, regexp);
-
-        program->machine.pop_mark(mark);
+        computeAddressIntoRegister(unop->expr, reg);
 
         break;
     }
@@ -1011,6 +1041,20 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             copy_bytes((u8 *)&srcreg.data._u64, 
                 &program->bss.mem[bci->big_const],
                 bci->dst_type_bytes);
+            break;
+        }
+        case BC_STORE_TO_MEM_PTR: {
+            assert(dstreg.type == REGTYPE_POINTER);
+            u8 * ptr = (u8 *)dstreg.data._ptr;
+            ptr += bci->big_const;
+            copy_bytes((u8 *)&srcreg.data._u64, ptr, bci->dst_type_bytes);
+            break;
+        }
+        case BC_LOAD_FROM_MEM_PTR: {
+            assert(srcreg.type == REGTYPE_POINTER);
+            u8 * ptr = (u8 *)srcreg.data._ptr;
+            ptr += bci->big_const;
+            copy_bytes(ptr, (u8 *)&srcreg.data._u64, bci->dst_type_bytes);
             break;
         }
         case BC_LOAD_FROM_STACK_PLUS_CONSTANT: {

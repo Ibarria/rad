@@ -15,7 +15,7 @@ main :: ()
     // x1 := 1;
     // x1 = add(3, 0);
 
-    firstPtr = *te;
+    <<firstPtr = <<*te;
 
     // a = x1 < 4;
     // printf("X is %llu\n", x1);
