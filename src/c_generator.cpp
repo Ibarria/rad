@@ -455,7 +455,14 @@ void c_generator::generate_expression(ExpressionAST * expr)
     }
     case AST_UNARY_OPERATION: {
         auto unop = (UnaryOperationAST *)expr;
-        fprintf(output_file, TokenTypeToCOP(unop->op));
+        // Special case for two operators with different meaning
+        if (unop->op == TK_STAR) {
+            fprintf(output_file, "&");
+        } else if (unop->op == TK_LSHIFT) {
+            fprintf(output_file, "*");
+        } else {
+            fprintf(output_file, TokenTypeToCOP(unop->op));
+        }
 
         generate_expression(unop->expr);
         break;
