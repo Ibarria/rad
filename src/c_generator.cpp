@@ -132,10 +132,49 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl, boo
 
 void c_generator::generate_struct_prototype(VariableDeclarationAST * decl)
 {
- 
-    auto stype = (StructTypeAST *)decl->specified_type;
+    if (decl->flags & DECL_FLAG_HAS_PROTOTYPE_GEN) return;
 
+    auto stype = (StructTypeAST *)decl->specified_type;
+    
     fprintf(output_file, "struct %s;\n", decl->varname);
+    decl->flags |= DECL_FLAG_HAS_PROTOTYPE_GEN;
+}
+
+void c_generator::generate_array_type_prototype(ArrayTypeAST *at)
+{
+    if (at->array_of_type->ast_type == AST_ARRAY_TYPE) {
+        auto innerat = (ArrayTypeAST *)at->array_of_type;
+        if (!(innerat->flags & ARRAY_TYPE_FLAG_C_GENERATED)) {
+            generate_array_type_prototype(innerat);
+        }
+    } else if (at->array_of_type->ast_type == AST_STRUCT_TYPE) {
+        auto st = (StructTypeAST *)at->array_of_type;
+        if (!(st->decl->flags & DECL_FLAG_HAS_PROTOTYPE_GEN)) {
+            generate_struct_prototype(st->decl);
+        }
+    }
+
+    if (at->flags & ARRAY_TYPE_FLAG_C_GENERATED) {
+        return;
+    }
+
+    fprintf(output_file, "struct _generated_array_type_%d {\n", (int)at->s);
+    fprintf(output_file, "    ");
+    if (at->array_of_type->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)at->array_of_type;
+        fprintf(output_file, BasicTypeToStr(dt));
+    } else if (at->array_of_type->ast_type == AST_ARRAY_TYPE) {
+        auto innerat = (ArrayTypeAST *)at->array_of_type;
+        fprintf(output_file, "    _generated_array_type_%d *data;\n", (int)innerat->s);
+    } else if (at->array_of_type->ast_type == AST_STRUCT_TYPE) {
+        auto st = (StructTypeAST *)at->array_of_type;
+        fprintf(output_file, "    %s *data;\n", st->decl->varname);
+    } else {
+        assert(!"Not implemented!");
+    }
+
+    fprintf(output_file, "    u64 count;\n};\n");
+    at->flags |= ARRAY_TYPE_FLAG_C_GENERATED;
 }
 
 void c_generator::ensure_deps_are_generated(StructTypeAST *stype)
@@ -192,6 +231,8 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         case AST_DIRECT_TYPE: {
             auto dt = (DirectTypeAST *)type;
             fprintf(output_file, BasicTypeToStr(dt));
+
+            fprintf(output_file, " %s", decl->varname);
             break;
         }
         case AST_POINTER_TYPE: {
@@ -207,18 +248,37 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
                 assert(pt->points_to_type->ast_type == AST_POINTER_TYPE);
                 pt = (PointerTypeAST *)pt->points_to_type;
             }
+    
+            fprintf(output_file, " %s", decl->varname);
             break;
         }
         case AST_ARRAY_TYPE: {
-            assert(!"Array C generation is unimplemented");
+            auto at = (ArrayTypeAST *)type;
+            auto dt = findFinalDirectType(at);
+            fprintf(output_file, "%s ", BasicTypeToStr(dt));
+
+            fprintf(output_file, " %s", decl->varname);
+
+            while (1) {
+                fprintf(output_file, "[");
+                if (at->num_elems > 0) {
+                    fprintf(output_file, "%d", (int)at->num_elems);
+                }
+                fprintf(output_file, "]");
+
+                if (at->array_of_type->ast_type == AST_DIRECT_TYPE) {
+                    break;
+                }
+                assert(at->array_of_type->ast_type == AST_ARRAY_TYPE);
+                at = (ArrayTypeAST *)at->array_of_type;
+            }
+
             break;
         }
         default:
             assert(!"No other types should be allowed here");
         }
-    
-        fprintf(output_file, " %s", decl->varname);
-        
+            
         if (decl->definition) {
             fprintf(output_file, " = ");
 
@@ -475,7 +535,12 @@ void c_generator::generate_expression(ExpressionAST * expr)
     case AST_VAR_REFERENCE: {
         auto vref = (VarReferenceAST *)expr;
 
-        fprintf(output_file, "%s.", vref->name);
+        fprintf(output_file, "%s", vref->name);
+        if (vref->decl->specified_type->ast_type == AST_POINTER_TYPE) {
+            fprintf(output_file, "->");
+        } else {
+            fprintf(output_file, ".");
+        }
         generate_expression(vref->next);
         break;
     }
@@ -566,6 +631,9 @@ void c_generator::generate_c_file(const char * filename, FileAST * root)
                 generate_function_prototype(decl);
             } else if (decl->specified_type->ast_type == AST_STRUCT_TYPE) {
                 generate_struct_prototype(decl);
+            } else if (decl->specified_type->ast_type == AST_ARRAY_TYPE) {
+                auto at = (ArrayTypeAST *)decl->specified_type;
+                generate_array_type_prototype(at);
             }
         }            
     };

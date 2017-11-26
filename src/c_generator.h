@@ -18,6 +18,7 @@ class c_generator
     void ensure_deps_are_generated(StructTypeAST *stype);
     void generate_function_prototype(VariableDeclarationAST *decl, bool second_pass = false);
     void generate_struct_prototype(VariableDeclarationAST *decl);
+    void generate_array_type_prototype(ArrayTypeAST *at = nullptr);
     void generate_variable_declaration(VariableDeclarationAST *decl);
     void generate_argument_declaration(VariableDeclarationAST *arg);
     void generate_statement_block(StatementBlockAST *block);

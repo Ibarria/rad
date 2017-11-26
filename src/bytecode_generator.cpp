@@ -861,7 +861,7 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         issue_instruction(bci);
 
         // dereference the pointer to get the expression value
-        bci = create_instruction(BC_UNARY_OPERATION, preg+2, reg , TK_STAR);
+        bci = create_instruction(BC_UNARY_OPERATION, preg+2, reg , TK_LSHIFT);
         assert(vref->expr_type->size_in_bytes < 256);
         bci->dst_type_bytes = (u8)vref->expr_type->size_in_bytes;
         bci->dst_type = get_regtype_from_type(vref->expr_type);
@@ -1128,8 +1128,9 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
 
             // at this level, types have to match. It is up to the higher levels to put casts in
             // bytecode
-            assert(srcreg.type == src2reg.type);
-            assert(srcreg.bytes == src2reg.bytes);
+            // Relaxing this for now until we have casts
+            //assert(srcreg.type == src2reg.type);
+            //assert(srcreg.bytes == src2reg.bytes);
 
 #define BOOL_OP_REG(dst, src, src2, op)                     \
     if (src.type == REGTYPE_UINT) {                         \
@@ -1313,7 +1314,44 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
                 } else if (srcreg.type == REGTYPE_FLOAT) {
                     BINOP_FLOAT(dstreg, srcreg, src2reg, +);
                 } else if (srcreg.type == REGTYPE_POINTER) {
-                    assert(!"Not implemented yet");
+                    if (src2reg.type == REGTYPE_SINT) {
+                        switch (src2reg.bytes) {
+                        case 8:
+                            dstreg.data._ptr = srcreg.data._ptr + src2reg.data._s64;
+                            break;
+                        case 4: 
+                            dstreg.data._ptr = srcreg.data._ptr + src2reg.data._s32;
+                            break;
+                        case 2: 
+                            dstreg.data._ptr = srcreg.data._ptr + src2reg.data._s16;
+                            break;
+                        case 1:
+                            dstreg.data._ptr = srcreg.data._ptr + src2reg.data._s8;
+                            break;
+                        default:
+                            assert(!"Wrong size for a register!");
+                        }
+
+                    } else if (src2reg.type == REGTYPE_UINT) {
+                        switch (src2reg.bytes) {
+                        case 8:
+                            dstreg.data._ptr = srcreg.data._ptr + src2reg.data._u64;
+                            break;
+                        case 4:
+                            dstreg.data._ptr = srcreg.data._ptr + src2reg.data._u32;
+                            break;
+                        case 2:
+                            dstreg.data._ptr = srcreg.data._ptr + src2reg.data._u16;
+                            break;
+                        case 1:
+                            dstreg.data._ptr = srcreg.data._ptr + src2reg.data._u8;
+                            break;
+                        default:
+                            assert(!"Wrong size for a register!");
+                        }
+                    } else {
+                        assert(!"Wrong register type for a pointer operation!");
+                    }
                     /*
                     This should not be too bad, just ensure the 2nd operand is an integer, 
                     any size, and then do the operation, freezing the first op
@@ -1335,13 +1373,44 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
                 } else if (srcreg.type == REGTYPE_FLOAT) {
                     BINOP_FLOAT(dstreg, srcreg, src2reg, +);
                 } else if (srcreg.type == REGTYPE_POINTER) {
-                    assert(!"Not implemented yet");
-                    /*
-                    This should not be too bad, just ensure the 2nd operand is an integer,
-                    any size, and then do the operation, freezing the first op
-                    Well, the type of the pointer matters, but we could push to the upper
-                    layer do multiply the second operand by the size of the ptr type first
-                    */
+                    if (src2reg.type == REGTYPE_SINT) {
+                        switch (src2reg.bytes) {
+                        case 8:
+                            dstreg.data._ptr = srcreg.data._ptr - src2reg.data._s64;
+                            break;
+                        case 4:
+                            dstreg.data._ptr = srcreg.data._ptr - src2reg.data._s32;
+                            break;
+                        case 2:
+                            dstreg.data._ptr = srcreg.data._ptr - src2reg.data._s16;
+                            break;
+                        case 1:
+                            dstreg.data._ptr = srcreg.data._ptr - src2reg.data._s8;
+                            break;
+                        default:
+                            assert(!"Wrong size for a register!");
+                        }
+
+                    } else if (src2reg.type == REGTYPE_UINT) {
+                        switch (src2reg.bytes) {
+                        case 8:
+                            dstreg.data._ptr = srcreg.data._ptr - src2reg.data._u64;
+                            break;
+                        case 4:
+                            dstreg.data._ptr = srcreg.data._ptr - src2reg.data._u32;
+                            break;
+                        case 2:
+                            dstreg.data._ptr = srcreg.data._ptr - src2reg.data._u16;
+                            break;
+                        case 1:
+                            dstreg.data._ptr = srcreg.data._ptr - src2reg.data._u8;
+                            break;
+                        default:
+                            assert(!"Wrong size for a register!");
+                        }
+                    } else {
+                        assert(!"Wrong register type for a pointer operation!");
+                    }
                 }
 
                 dstreg.type = srcreg.type;

@@ -90,14 +90,14 @@ bool Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
 
 bool Parser::AddDeclarationToStruct(StructDefinitionAST * struct_def, VariableDeclarationAST * decl)
 {
-    for (auto d : struct_def->struct_type.struct_scope.decls) {
+    for (auto d : struct_def->struct_type->struct_scope.decls) {
         if (!strcmp(d->varname, decl->varname)) {
             Error("Variable %s is already defined within this struct", decl->varname);
             return false;
         }
     }
-    struct_def->struct_type.struct_scope.decls.push_back(decl);
-    decl->scope = &struct_def->struct_type.struct_scope;
+    struct_def->struct_type->struct_scope.decls.push_back(decl);
+    decl->scope = &struct_def->struct_type->struct_scope;
     decl->flags |= DECL_FLAG_IS_STRUCT_MEMBER;
     return true;
 }
@@ -329,11 +329,55 @@ TypeAST *Parser::parseDirectType()
         return pt;
     } else if (t.type == TK_OPEN_SQBRACKET) {
         // this is an array declaration
+        // The only supported options are: [] , [..] , [constant number expression]
+        // option 3 is evaluated at Interpreter time
+        if (lex->checkToken(TK_CLOSE_SQBRACKET)) {
+            lex->consumeToken();
+            ArrayTypeAST *at = NEW_AST(ArrayTypeAST);
+            at->array_of_type = parseType();
+            return at;
+        } else if (lex->checkToken(TK_DOUBLE_PERIOD)) {
+            lex->consumeToken();
+            MustMatchToken(TK_CLOSE_SQBRACKET, "Declaration of array type needs a closed square bracket");
+            if (!success) {
+                return nullptr;
+            }
+
+            ArrayTypeAST *at = NEW_AST(ArrayTypeAST);
+            at->array_of_type = parseType();
+            if (!success) {
+                return nullptr;
+            }
+            at->isDynamic = true;
+            return at;
+        } else {
+            ArrayTypeAST *at = NEW_AST(ArrayTypeAST);
+            at->num_expr = parseExpression();
+            if (!success) {
+                return nullptr;
+            }
+
+            MustMatchToken(TK_CLOSE_SQBRACKET, "Declaration of array type needs a closed square bracket");
+            if (!success) {
+                return nullptr;
+            }
+
+            at->array_of_type = parseType();
+            if (!success) {
+                return nullptr;
+            }
+
+            return at;
+        }
         assert(!"Arrays not implemented yet");
         return nullptr;
     } else {
-        Error("Variable type token could not be found, but we found: %s\n",
-            TokenTypeToStr(t.type));
+        if (t.type == TK_STRUCT) {
+            Error("To declare a struct you need to use the form of <var> := struct { ... }");
+        } else {
+            Error("Variable type token could not be found, but we found: %s\n",
+                TokenTypeToStr(t.type));
+        }
         return nullptr;
     }
 }
@@ -557,6 +601,7 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
 StructDefinitionAST * Parser::parseStructDefinition()
 {
     StructDefinitionAST *struct_def = NEW_AST(StructDefinitionAST);
+    struct_def->struct_type = NEW_AST(StructTypeAST);
     Token t;
     lex->getNextToken(t);
 
@@ -1053,7 +1098,7 @@ VariableDeclarationAST * Parser::parseDeclaration(bool isStruct)
         } else if (decl->definition->ast_type == AST_STRUCT_DEFINITION) {
             // we need this pointer for C generation ordering
             auto sdef = (StructDefinitionAST *)decl->definition;
-            sdef->struct_type.decl = decl;
+            sdef->struct_type->decl = decl;
         }
         lex->lookaheadToken(t);
     } else if (t.type != TK_SEMICOLON) {

@@ -100,6 +100,10 @@ bool isLValue(ExpressionAST *expr, bool allowStar)
     return false;
 }
 
+/*
+This function checks that an expression constant, in the sense that
+the expression represents a value that can be assigned to. Similar to lvalue.
+*/
 bool isConstExpression(ExpressionAST *expr)
 {
     switch (expr->ast_type) {
@@ -165,6 +169,115 @@ bool isConstExpression(ExpressionAST *expr)
         assert(!"We should never be here, we could not parse this type\n");
     }
     return false;
+}
+
+/*
+  This function checks that an expression is made only of literals and 
+  constant variables. This is used for array size computation. 
+*/
+bool isDefinedExpression(ExpressionAST *expr)
+{
+    switch (expr->ast_type) {
+    case AST_FUNCTION_CALL: {
+        // The #run directive should be used in this case
+        return false;
+    }
+    case AST_IDENTIFIER: {
+        IdentifierAST *a = (IdentifierAST *)expr;
+        VariableDeclarationAST *decl = a->decl;
+
+        assert(decl);
+
+        return !!(decl->flags & DECL_FLAG_IS_CONSTANT);
+    }
+    case AST_LITERAL: {
+        return true;
+    }
+    case AST_BINARY_OPERATION: {
+        // Only when both operands are
+        auto binop = (BinaryOperationAST *)expr;
+        return isDefinedExpression(binop->lhs) && isDefinedExpression(binop->rhs);
+    }
+    case AST_UNARY_OPERATION: {
+        auto unop = (UnaryOperationAST *)expr;
+        // Very conservative approach
+        return false;
+    }
+    case AST_VAR_REFERENCE: {
+        auto var_ref = (VarReferenceAST *)expr;
+        // Another conservative approach. 
+        // @TODO: When we have enums, this might have to change
+        return false;
+    }
+    default:
+        assert(!"We should never be here, we could not parse this type\n");
+    }
+    return false;
+}
+
+s64 computeValue(ExpressionAST *expr)
+{
+    switch (expr->ast_type)
+    {
+    case AST_IDENTIFIER: {
+        IdentifierAST *a = (IdentifierAST *)expr;
+        VariableDeclarationAST *decl = a->decl;
+
+        assert(decl);
+        return computeValue((ExpressionAST *)decl->definition);
+    }
+    case AST_LITERAL: {
+        auto lit = (LiteralAST *)expr;
+        assert(lit->typeAST.basic_type == BASIC_TYPE_INTEGER);
+        if (lit->typeAST.isSigned) {
+            return lit->_s64;
+        } else {
+            return (s64)lit->_u64;
+        }
+    }
+    case AST_BINARY_OPERATION: {
+        // Only when both operands are
+        auto binop = (BinaryOperationAST *)expr;
+        s64 op1, op2;
+        op1 = computeValue(binop->lhs);
+        op2 = computeValue(binop->rhs);
+        switch (binop->op)
+        {
+        case TK_STAR: {
+            return op1 * op2;
+            break;
+        }
+        case TK_DIV: {
+            return op1 / op2;
+            break;
+        }
+        case TK_MOD: {
+            return op1 % op2;
+            break;
+        }
+        case TK_PLUS: {
+            return op1 + op2;
+            break;
+        }
+        case TK_MINUS: {
+            return op1 - op2;
+            break;
+        }
+        default:
+            assert(false);
+            return 0;
+        }
+    }
+    case AST_VAR_REFERENCE: {
+        auto var_ref = (VarReferenceAST *)expr;
+        // Another conservative approach. 
+        // @TODO: When we have enums, this might have to change
+        return false;
+    }
+    default:
+        assert(!"We should never be here, we could not parse this type\n");
+    }
+    return 0;
 }
 
 StructTypeAST *findStructType(TypeAST *type)
@@ -736,6 +849,15 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         // No work triggered by the pointer type itself so far
         break;
     }
+    case AST_ARRAY_TYPE: {
+        auto at = (ArrayTypeAST *)ast;
+        if (at->num_expr != nullptr) traversePostfixAST(PPC(at->num_expr), deps);
+        traversePostfixAST(PPC(at->array_of_type), deps);
+
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
+        break;
+    }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
 
@@ -906,7 +1028,7 @@ bool Interpreter::doWorkAST(interp_work * work)
             }
             case AST_STRUCT_DEFINITION: {
                 auto struct_def = (StructDefinitionAST *)decl->definition;
-                decl->specified_type = &struct_def->struct_type;
+                decl->specified_type = struct_def->struct_type;
                 decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
                 decl->flags |= DECL_FLAG_IS_TYPE; // Use this so we do not reserve space for types
                 assert(decl->specified_type->size_in_bytes == 0);
@@ -930,11 +1052,11 @@ bool Interpreter::doWorkAST(interp_work * work)
         } else if (work->action == IA_COMPUTE_SIZE) {
             if (decl->definition && decl->definition->ast_type == AST_STRUCT_DEFINITION) {
                 auto struct_def = (StructDefinitionAST *)decl->definition;
-                assert((struct_def->struct_type.struct_scope.decls.size() == 0) ||
-                    (struct_def->struct_type.size_in_bytes > 0));
+                assert((struct_def->struct_type->struct_scope.decls.size() == 0) ||
+                    (struct_def->struct_type->size_in_bytes > 0));
                 // Go around all the members of the struct and assign relative bc_mem_offset (offset from struct parent)
                 u64 bc_offset = 0;
-                for (auto member : struct_def->struct_type.struct_scope.decls) {
+                for (auto member : struct_def->struct_type->struct_scope.decls) {
                     member->bc_mem_offset = bc_offset;
                     bc_offset += member->specified_type->size_in_bytes;
                 }
@@ -967,7 +1089,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 }
                 case AST_STRUCT_DEFINITION: {
                     auto struct_def = (StructDefinitionAST *)decl->definition;
-                    TypeAST *dtype = &struct_def->struct_type;
+                    TypeAST *dtype = struct_def->struct_type;
                     TypeAST *stype = decl->specified_type;
                     if (!compatibleTypes(stype, stype)) {
                         char ltype[64] = {}, rtype[64] = {};
@@ -1243,8 +1365,46 @@ bool Interpreter::doWorkAST(interp_work * work)
 
         // No actions for now... 
         return true;
+        break;
+    }
+    case AST_ARRAY_TYPE: {
+        auto at = (ArrayTypeAST *)ast;
+        //if (at->num_expr != nullptr) traversePostfixAST(PPC(at->num_expr), deps);
+        //traversePostfixAST(PPC(at->array_of_type), deps);
 
+        //addTypeWork(&pool, astp, deps);
+        //addSizeWork(&pool, astp, deps);
 
+        if (work->action == IA_RESOLVE_TYPE) {
+            
+        } else if (work->action == IA_COMPUTE_SIZE) {
+            if (at->num_expr) {
+                if (!isDefinedExpression(at->num_expr)) {
+                    Error(at, "Array needs to have a constant and defined size for number of elements\n");
+                    return false;
+                }
+                if (at->num_expr->expr_type->ast_type != AST_DIRECT_TYPE) {
+                    Error(at, "Array needs to have an integer type for their size\n");
+                    return false;
+                }
+                auto dt = (DirectTypeAST *)at->num_expr->expr_type;
+                if (dt->basic_type != BASIC_TYPE_INTEGER) {
+                    Error(at, "Array needs to have an integer type for their size\n");
+                    return false;
+                }
+                at->num_elems = computeValue(at->num_expr);
+                at->size_in_bytes = at->num_elems * at->array_of_type->size_in_bytes;
+            } else {
+                if (at->isDynamic) {
+                    // Data pointer, Total num elems, Used Elems
+                    at->size_in_bytes = 8 + 8 + 8; 
+                } else {
+                    // Data pointer, Total num elems
+                    at->size_in_bytes = 8 + 8;
+                }
+            }
+        }
+        return true;
         break;
     }
     case AST_IDENTIFIER: {
@@ -1704,7 +1864,9 @@ bool Interpreter::doWorkAST(interp_work * work)
                         if (!lhsDType->isSigned && rhsDType->isSigned) {
                             Error(assign, "The assignment is trying to assign a signed value to an unsigned one.\n");
                             return false;
-                        } else if (lhsDType->isSigned && !rhsDType->isSigned &&
+                        } else if (((lhsDType->isSigned == rhsDType->isSigned) ||
+                                    (lhsDType->isSigned))
+                                             &&
                             (rhsDType->size_in_bytes == lhsDType->size_in_bytes)) {
                             // there is a possible overflow here
                             if (!literal_value_fits_in_bytes(lit, lhsDType)) {

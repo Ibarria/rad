@@ -153,12 +153,16 @@ struct PointerTypeAST : TypeAST
     TypeAST * points_to_type = nullptr;
 };
 
+#define ARRAY_TYPE_FLAG_C_GENERATED 0x1
+
 struct ArrayTypeAST : TypeAST
 {
     ArrayTypeAST() { ast_type = AST_ARRAY_TYPE; }
     TypeAST *array_of_type = nullptr;
     u64 num_elems = 0; // zero means static of unknown size
+    ExpressionAST* num_expr = nullptr;
     bool isDynamic = false;
+    u32 flags = 0;
 };
 
 struct StructTypeAST : TypeAST
@@ -171,7 +175,7 @@ struct StructTypeAST : TypeAST
 struct StructDefinitionAST : DefinitionAST 
 {
     StructDefinitionAST() { ast_type = AST_STRUCT_DEFINITION; needsSemiColon = false; }
-    StructTypeAST struct_type;
+    StructTypeAST *struct_type;
 };
 
 #define DECL_FLAG_IS_CONSTANT          0x01
@@ -182,6 +186,7 @@ struct StructDefinitionAST : DefinitionAST
 #define DECL_FLAG_IS_GLOBAL_VARIABLE   0x20
 #define DECL_FLAG_IS_TYPE              0x40
 #define DECL_FLAG_IS_STRUCT_MEMBER     0x80
+#define DECL_FLAG_HAS_PROTOTYPE_GEN   0x100
 
 struct VariableDeclarationAST : StatementAST
 {
@@ -266,6 +271,7 @@ StructTypeAST *findStructType(TypeAST *type);
 bool isTypeStruct(TypeAST *type);
 bool isConstExpression(ExpressionAST *expr);
 bool isLValue(ExpressionAST *expr, bool allowStar = true);
+bool isDefinedExpression(ExpressionAST *expr);
 
 inline bool isDirectTypeVariation(TypeAST *type) {
     return (type->ast_type == AST_DIRECT_TYPE)

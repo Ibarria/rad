@@ -1,26 +1,37 @@
 
 #import "Basic"
 
-x1 : float = .000257;
-//s := "Hello there";
+var: [10] u32;
 
-a : bool;
+/*
+  Types of array to support:
+  The one with known size:
 
-firstPtr: *u32;
-secondPtr : *u32;
+  var: [10] u32;
+
+  CONST :: 10;
+  var: [CONST] u32;
+
+  Without known size
+
+  var: [] u32
+
+  And fully dynamic:
+
+  var: [..] u32;
+
+  Also support array of arrays, arrays in structs,
+  and array as part of varReference, array as argument
+
+*/
 
 main :: ()
 {
-    te : u32;
-    // x1 := 1;
-    // x1 = add(3, 0);
 
-    <<firstPtr = <<*te;
 
-    // a = x1 < 4;
+
     // printf("X is %llu\n", x1);
-
-//    x = #run (3 + 2);
+    // x = #run (3 + 2);
 }
 
 add := (x: u64, y: u64) -> u64 

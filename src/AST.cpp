@@ -207,7 +207,7 @@ void printAST(const BaseAST *ast, int ident)
     case AST_STRUCT_DEFINITION: {
         auto struct_def = (const StructDefinitionAST *)ast;
         printf("%*sStructDefinition: StructType: \n", ident, "");
-        for (auto decl : struct_def->struct_type.struct_scope.decls) {
+        for (auto decl : struct_def->struct_type->struct_scope.decls) {
             printAST(decl, ident + 3);
         }
         break;
