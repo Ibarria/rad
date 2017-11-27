@@ -41,6 +41,72 @@ static u64 straight_convert(void *p) {
     return x.u;
 }
 
+static u64 upconvertUIntReg(bc_register &r)
+{
+    switch (r.bytes) {
+    case 1: return r.data._u8;
+    case 2: return r.data._u16;
+    case 4: return r.data._u32;
+    case 8: return r.data._u64;
+    }
+    assert(false);
+    return 0;
+}
+
+static s64 upconvertSIntReg(bc_register &r)
+{
+    switch (r.bytes) {
+    case 1: return r.data._s8;
+    case 2: return r.data._s16;
+    case 4: return r.data._s32;
+    case 8: return r.data._s64;
+    }
+    assert(false);
+    return 0;
+}
+
+static f64 upconvertFloatReg(bc_register &r)
+{
+    switch (r.bytes) {
+    case 4: return r.data._f32;
+    case 8: return r.data._f64;
+    }
+    assert(false);
+    return 0;
+}
+
+static void downconvertUIntReg(bc_register &r, u64 v)
+{
+    switch (r.bytes) {
+    case 1: r.data._u8 =  (u8)v;  break;
+    case 2: r.data._u16 = (u16)v; break;
+    case 4: r.data._u32 = (u32)v; break;
+    case 8: r.data._u64 = (u64)v; break;
+    default: assert(false);
+    }
+}
+
+static void downconvertSIntReg(bc_register &r, s64 v)
+{
+    switch (r.bytes) {
+    case 1: r.data._s8 =  (s8)v;  break;
+    case 2: r.data._s16 = (s16)v; break;
+    case 4: r.data._s32 = (s32)v; break;
+    case 8: r.data._s64 = (s64)v; break;
+    default: assert(false);
+    }
+}
+
+static void downconvertFloatReg(bc_register &r, f64 v)
+{
+    switch (r.bytes) {
+    case 4: r.data._f32 = (f32)v; break;
+    case 8: r.data._f64 = (f64)v; break;
+    default: assert(false);
+    }
+}
+
+
 static inline u8 truncate_op_size(s64 bytes)
 {
     if (bytes < 8) return (u8)bytes;
@@ -187,21 +253,6 @@ static inline u64 roundToPage(u64 size, u64 page_size)
     return size;
 }
 
-static inline u64 computeOffset(VarReferenceAST *var_ref)
-{
-    u64 off;
-
-    // top start offset of the struct or group of structs
-    off = var_ref->decl->bc_mem_offset; 
-
-    auto vnext = var_ref->next;
-    do {
-        off += vnext->decl->bc_mem_offset;
-        vnext = vnext->next;
-    } while (vnext != nullptr);
-    return off;
-}
-
 static BytecodeInstructionOpcode getStoreOpcode(VariableDeclarationAST *decl)
 {
     BytecodeInstructionOpcode opcode;
@@ -256,6 +307,8 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_BINARY_OPERATION);
         CASE_BC_OPCODE(BC_UNARY_OPERATION);
         CASE_BC_OPCODE(BC_RESERVE_STACK_SIZE);
+        CASE_BC_OPCODE(BC_COPY_REG);
+        CASE_BC_OPCODE(BC_CAST);
         default:
             assert(!"Unknown bytecode Instruction opcode, please add");
             return "UNKNOWN OPCODE";
@@ -278,10 +331,16 @@ static const char *RegTypeToStr(RegisterType rt)
 
 void print_instruction(BCI *inst)
 {
-    printf("  op: %s src: %d src2: %d dst: %d type: %s size: %d big_const: %" U64FMT "u | 0x%" U64FMT "X\n",
-           bc_opcode_to_str(inst->opcode), (int)inst->src_reg, (int)inst->src2_reg,
-           (int)inst->dst_reg, RegTypeToStr(inst->dst_type), inst->dst_type_bytes, 
-           inst->big_const, inst->big_const);
+    printf("  op: %s src: %d src2: %d dst: %d type: %s size: %d ",
+        bc_opcode_to_str(inst->opcode), (int)inst->src_reg, (int)inst->src2_reg,
+        (int)inst->dst_reg, RegTypeToStr(inst->dst_type), inst->dst_type_bytes);
+
+    if ((inst->opcode == BC_BINARY_OPERATION) || (inst->opcode == BC_UNARY_OPERATION)) {
+        printf("operator: %s\n", TokenTypeToStr((TOKEN_TYPE)inst->big_const));
+    } else {
+        printf("big_const: %" U64FMT "u | 0x%" U64FMT "X\n",
+            inst->big_const, inst->big_const);
+    }
 }
 
 void print_bc_function(bytecode_function *func)
@@ -427,23 +486,71 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
 {
     switch (expr->ast_type)
     {
-    case AST_VAR_REFERENCE: {
-        auto vref = (VarReferenceAST *)expr;
-        s16 nreg = reserveRegistersForSize(&program->machine, 8*2);
-        // load the current offset
-        BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, nreg, vref->decl->bc_mem_offset);
-        bci->dst_type = REGTYPE_UINT;
-        bci->dst_type_bytes = 8;
-        issue_instruction(bci);
-        // load the inner offset
-        createLoadOffsetInstruction(vref->next, nreg + 1);
-        // add them up together
-        bci = create_instruction(BC_BINARY_OPERATION, nreg, reg, TK_PLUS);
-        bci->src2_reg = nreg + 1;
-        bci->dst_type = REGTYPE_UINT;
-        bci->dst_type_bytes = 8;
-        issue_instruction(bci);
+    case AST_STRUCT_ACCESS: {
+        auto sac = (StructAccessAST *)expr;
+
+        if (sac->next) {
+
+            s16 nreg = reserveRegistersForSize(&program->machine, 8);
+            // load the current offset
+            BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, nreg, sac->decl->bc_mem_offset);
+            bci->dst_type = REGTYPE_UINT;
+            bci->dst_type_bytes = 8;
+            issue_instruction(bci);
+
+            s16 innreg = reserveRegistersForSize(&program->machine, 8);
+            // load the inner offset
+            createLoadOffsetInstruction(sac->next, innreg );
+            // add them up together
+            bci = create_instruction(BC_BINARY_OPERATION, nreg, reg, TK_PLUS);
+            bci->src2_reg = innreg;
+            bci->dst_type = REGTYPE_UINT;
+            bci->dst_type_bytes = 8;
+            issue_instruction(bci);
+        } else {
+            BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, sac->decl->bc_mem_offset);
+            bci->dst_type = REGTYPE_UINT;
+            bci->dst_type_bytes = 8;
+            issue_instruction(bci);
+        }
+
         break;
+    }
+    case AST_ARRAY_ACCESS: {
+        auto ac = (ArrayAccessAST *)expr;
+
+        s16 index_reg = reserveRegistersForSize(&program->machine, 8);
+        computeExpressionIntoRegister(ac->array_exp, index_reg);
+        BCI *bci = create_instruction(BC_CAST, index_reg, index_reg, 0);
+        bci->dst_type = REGTYPE_UINT;
+        bci->dst_type_bytes = 8;
+        issue_instruction(bci);
+
+        // Multiply the index by the size of each array elemen
+        s16 size_reg = reserveRegistersForSize(&program->machine, 8);
+        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, size_reg, ac->access_type->size_in_bytes);
+        bci->dst_type = REGTYPE_UINT;
+        bci->dst_type_bytes = 8;
+        issue_instruction(bci);
+
+        s16 offset_reg = reserveRegistersForSize(&program->machine, 8);
+        bci = create_instruction(BC_BINARY_OPERATION, index_reg, offset_reg, TK_STAR);
+        bci->src2_reg = size_reg;
+        bci->dst_type = REGTYPE_UINT;
+        bci->dst_type_bytes = 8;
+
+        if (ac->next) {
+            s16 inner_reg = reserveRegistersForSize(&program->machine, 8);
+            createLoadOffsetInstruction(ac->next, inner_reg);
+            bci = create_instruction(BC_BINARY_OPERATION, offset_reg, reg, TK_STAR);
+            bci->src2_reg = inner_reg;
+            bci->dst_type = REGTYPE_UINT;
+            bci->dst_type_bytes = 8;
+        } else {
+            bci = create_instruction(BC_COPY_REG, offset_reg, reg, 0);
+            bci->dst_type = REGTYPE_UINT;
+            bci->dst_type_bytes = 8;
+        }
     }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)expr;
@@ -612,14 +719,9 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
 
                 if (assign->lhs->ast_type == AST_IDENTIFIER) {
                     auto iden = (IdentifierAST *)assign->lhs;
-                    createStoreInstruction(iden->decl, reg);
-                } else if (assign->lhs->ast_type == AST_VAR_REFERENCE) {
-                    auto var_ref = (VarReferenceAST *)assign->lhs;
-                    // @TODO: This will not work for arrays, or when the offset is not constant!
-                    u64 var_offset = computeOffset(var_ref);
-                    assert(var_ref->size_in_bytes > 0);
-                    createStoreInstruction(getStoreOpcode(var_ref->decl), var_offset,
-                        var_ref->size_in_bytes, reg, get_regtype_from_type(var_ref->expr_type));
+                    s16 address_reg = reserveRegistersForSize(&program->machine, 8);
+                    computeAddressIntoRegister(iden, address_reg);
+                    createStoreInstruction(BC_STORE_TO_MEM_PTR, address_reg, reg, iden->expr_type->size_in_bytes);
                 } else if (assign->lhs->ast_type == AST_UNARY_OPERATION) {
                     auto unop = (UnaryOperationAST *)assign->lhs;
                     assert(unop->op == TK_LSHIFT);
@@ -759,13 +861,6 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         }
         break;
     }
-    case AST_IDENTIFIER: {
-        auto id = (IdentifierAST *)expr;
-        assert(id->decl);
-        createLoadInstruction(id->decl, reg);
-        
-        break;
-    }
     case AST_UNARY_OPERATION: {
         auto unop = (UnaryOperationAST *)expr;
         s16 mark = program->machine.reg_mark();
@@ -846,29 +941,27 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         compute_function_call_into_register(funcall, reg);
         break;
     }
-    case AST_VAR_REFERENCE: {
-        auto vref = (VarReferenceAST *)expr;
-        // size for an address
-        s16 preg = reserveRegistersForSize(&program->machine, 8*3);
-        createAddressInstruction(vref->decl, preg);
-        createLoadOffsetInstruction(vref->next, preg + 1);
+    case AST_IDENTIFIER: {
+        auto id = (IdentifierAST *)expr;
+        assert(id->decl);
+        s16 pointer_reg = reserveRegistersForSize(&program->machine, 8);
 
-        // Add both preg and preg + 1
-        BCI *bci = create_instruction(BC_BINARY_OPERATION, preg, preg+2, TK_PLUS);
-        bci->src2_reg = preg + 1;
-        bci->dst_type_bytes = 8;
-        bci->dst_type = REGTYPE_POINTER;
-        issue_instruction(bci);
+        computeAddressIntoRegister(id, pointer_reg);
 
         // dereference the pointer to get the expression value
-        bci = create_instruction(BC_UNARY_OPERATION, preg+2, reg , TK_LSHIFT);
-        assert(vref->expr_type->size_in_bytes < 256);
-        bci->dst_type_bytes = (u8)vref->expr_type->size_in_bytes;
-        bci->dst_type = get_regtype_from_type(vref->expr_type);
+        BCI *bci = create_instruction(BC_UNARY_OPERATION, pointer_reg, reg, TK_LSHIFT);
+        assert(id->expr_type->size_in_bytes < 256);
+        bci->dst_type_bytes = (u8)id->expr_type->size_in_bytes;
+        bci->dst_type = get_regtype_from_type(id->expr_type);
         issue_instruction(bci);
 
         break;
     }
+    case AST_STRUCT_ACCESS: 
+    case AST_ARRAY_ACCESS:
+        assert(!"These two AST types should never be here, only as a subset of Identifier");
+        break;
+                           
     default:
         assert(!"Unknown expression AST for bytecode");
     }
@@ -884,7 +977,24 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)expr;
         assert(id->decl);
-        createAddressInstruction(id->decl, reg);
+
+
+        if (!id->next) {
+            createAddressInstruction(id->decl, reg);
+        } else {
+
+            s16 pointer_reg = reserveRegistersForSize(&program->machine, 8);
+            s16 offset_reg = reserveRegistersForSize(&program->machine, 8);
+            createAddressInstruction(id->decl, pointer_reg);
+
+            createLoadOffsetInstruction(id->next, offset_reg);
+
+            BCI *bci = create_instruction(BC_BINARY_OPERATION, pointer_reg, reg, TK_PLUS);
+            bci->src2_reg = offset_reg;
+            bci->dst_type_bytes = 8;
+            bci->dst_type = REGTYPE_POINTER;
+            issue_instruction(bci);
+        } 
         break;
     }
     case AST_UNARY_OPERATION: {
@@ -902,22 +1012,6 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
     }
     case AST_FUNCTION_CALL: {
         assert(!"A function call does not have an address!");
-        break;
-    }
-    case AST_VAR_REFERENCE: {
-        auto vref = (VarReferenceAST *)expr;
-        // size for an address
-        s16 preg = reserveRegistersForSize(&program->machine, 8 * 2);
-        createAddressInstruction(vref->decl, preg);
-        createLoadOffsetInstruction(vref->next, preg + 1);
-
-        // Add both preg and preg + 1
-        BCI *bci = create_instruction(BC_BINARY_OPERATION, preg, reg, TK_PLUS);
-        bci->src2_reg = preg + 1;
-        bci->dst_type_bytes = 8;
-        bci->dst_type = REGTYPE_POINTER;
-        issue_instruction(bci);
-
         break;
     }
     default:
@@ -1587,6 +1681,82 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             // end function execution right here. 
             // In the future, do postamble work such as defer
             return; 
+        }
+        case BC_CAST: {
+            assert(bci->src_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
+            assert(bci->dst_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
+            assert(bci->dst_type != REGTYPE_UNKNOWN);
+            assert(bci->dst_type_bytes > 0);
+
+            switch (dstreg.type) {
+            case REGTYPE_FLOAT: {
+                switch (srcreg.type) {
+                case REGTYPE_FLOAT: {
+                    f64 large = upconvertFloatReg(srcreg);
+                    downconvertFloatReg(dstreg, large);
+                    break;
+                }
+                case REGTYPE_SINT: {
+                    s64 large = upconvertSIntReg(srcreg);
+                    downconvertFloatReg(dstreg, (f64)large);
+                    break;
+                }
+                case REGTYPE_UINT: {
+                    u64 large = upconvertUIntReg(srcreg);
+                    downconvertFloatReg(dstreg, (f64)large);
+                    break;
+                }
+                }
+                break;
+            }
+            case REGTYPE_SINT: {
+                switch (srcreg.type) {
+                case REGTYPE_FLOAT: {
+                    f64 large = upconvertFloatReg(srcreg);
+                    downconvertSIntReg(dstreg, (s64)large);
+                    break;
+                }
+                case REGTYPE_SINT: {
+                    s64 large = upconvertSIntReg(srcreg);
+                    downconvertSIntReg(dstreg, (s64)large);
+                    break;
+                }
+                case REGTYPE_UINT: {
+                    u64 large = upconvertUIntReg(srcreg);
+                    downconvertSIntReg(dstreg, (s64)large);
+                    break;
+                }
+                }
+                break;
+            }
+            case REGTYPE_UINT: {
+                switch (srcreg.type) {
+                case REGTYPE_FLOAT: {
+                    f64 large = upconvertFloatReg(srcreg);
+                    downconvertUIntReg(dstreg, (u64)large);
+                    break;
+                }
+                case REGTYPE_SINT: {
+                    s64 large = upconvertSIntReg(srcreg);
+                    downconvertUIntReg(dstreg, (u64)large);
+                    break;
+                }
+                case REGTYPE_UINT: {
+                    u64 large = upconvertUIntReg(srcreg);
+                    downconvertUIntReg(dstreg, (u64)large);
+                    break;
+                }
+                }
+                break;
+            }
+            default:
+                assert(!"Unsupported");
+                break;
+            }
+
+            dstreg.bytes = bci->dst_type_bytes;
+            dstreg.type = bci->dst_type;
+            break;
         }
         default:
             assert(!"Unknown Instruction type");

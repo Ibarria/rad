@@ -38,7 +38,15 @@ static void printTypeToStr(char *s, TypeAST *type)
         break;
     }
     case AST_ARRAY_TYPE: {
-        assert(!"Unsupported array type");
+        auto at = (ArrayTypeAST *)type;
+        sprintf(s, "[");
+        if (at->isDynamic) {
+            sprintf(s + strlen(s), "..");
+        } else if (at->num_elems > 0) {
+            sprintf(s + strlen(s), "%d", (int)at->num_elems);
+        }
+        sprintf(s, "]");
+        printTypeToStr(s + strlen(s), at->array_of_type);
         break;
     }
     default:
@@ -69,9 +77,11 @@ bool isLValue(ExpressionAST *expr, bool allowStar)
     case AST_FUNCTION_CALL: {
         return false;
     }
-    case AST_IDENTIFIER: {
+    case AST_IDENTIFIER: 
+    case AST_ARRAY_ACCESS:
+    case AST_STRUCT_ACCESS:
         return true;
-    }
+    
     case AST_LITERAL: {
         return false;
     }
@@ -91,9 +101,6 @@ bool isLValue(ExpressionAST *expr, bool allowStar)
         // All other unary operators return an rvalue
         return false;
     }
-    case AST_VAR_REFERENCE: {
-        return true;
-    }
     default:
         assert(!"We should never be here, we could not parse this type\n");
     }
@@ -106,6 +113,8 @@ the expression represents a value that can be assigned to. Similar to lvalue.
 */
 bool isConstExpression(ExpressionAST *expr)
 {
+    if (expr == nullptr) return false;
+
     switch (expr->ast_type) {
     case AST_FUNCTION_CALL: {
         return true;
@@ -113,10 +122,10 @@ bool isConstExpression(ExpressionAST *expr)
     case AST_IDENTIFIER: {
         IdentifierAST *a = (IdentifierAST *)expr;
         VariableDeclarationAST *decl = a->decl;
-
         assert(decl);
 
-        return !!(decl->flags & DECL_FLAG_IS_CONSTANT);
+        return !!(decl->flags & DECL_FLAG_IS_CONSTANT) ||
+            isConstExpression(a->next);
     }
     case AST_LITERAL: {
         return true;
@@ -133,37 +142,17 @@ bool isConstExpression(ExpressionAST *expr)
         // All other operands return effectively a const
         return true;
     }
-    case AST_VAR_REFERENCE: {
-        auto var_ref = (VarReferenceAST *)expr;
-        VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
+    case AST_STRUCT_ACCESS: {
+        auto sac = (StructAccessAST *)expr;
+        VariableDeclarationAST *decl = findVariable(sac->name, sac->scope);
         assert(decl);
 
-        if (decl->flags & DECL_FLAG_IS_CONSTANT) {
-            return true;
-        }
-
-        var_ref = var_ref->next;
-
-        // if the topmost element of a reference is not constant, check the rest
-        while (var_ref != nullptr) {
-            // At the start of the loop, we have an unchecked var_ref and the scope it applies to
-            auto inner_decl = var_ref->decl;
-            assert(inner_decl);
-
-            if (inner_decl->flags & DECL_FLAG_IS_CONSTANT) {
-                return true;
-            }
-
-            if (var_ref->ast_type == AST_IDENTIFIER) {
-                var_ref = nullptr;
-            } else if (var_ref->ast_type == AST_VAR_REFERENCE) {
-                var_ref = var_ref->next;
-            } else {
-                assert(!"We should never be here!, wrong type on struct variable checking");
-            }
-        }
-        // If we get here, we have not found a constant
-        return false;
+        return !!(decl->flags & DECL_FLAG_IS_CONSTANT) ||
+            isConstExpression(sac->next);
+    }
+    case AST_ARRAY_ACCESS: {
+        auto ac = (ArrayAccessAST *)expr;
+        return isConstExpression(ac->next);
     }
     default:
         assert(!"We should never be here, we could not parse this type\n");
@@ -203,10 +192,13 @@ bool isDefinedExpression(ExpressionAST *expr)
         // Very conservative approach
         return false;
     }
-    case AST_VAR_REFERENCE: {
+    case AST_STRUCT_ACCESS: {
         auto var_ref = (VarReferenceAST *)expr;
         // Another conservative approach. 
         // @TODO: When we have enums, this might have to change
+        return false;
+    }
+    case AST_ARRAY_ACCESS: {
         return false;
     }
     default:
@@ -268,12 +260,14 @@ s64 computeValue(ExpressionAST *expr)
             return 0;
         }
     }
-    case AST_VAR_REFERENCE: {
+    case AST_STRUCT_ACCESS: {
         auto var_ref = (VarReferenceAST *)expr;
         // Another conservative approach. 
         // @TODO: When we have enums, this might have to change
         return false;
     }
+    case AST_ARRAY_ACCESS:
+        return false;
     default:
         assert(!"We should never be here, we could not parse this type\n");
     }
@@ -330,6 +324,31 @@ bool isTypeStruct(TypeAST *type)
         return isTypeStruct(pt->points_to_type);
     }
     return false;
+}
+
+TypeAST *getDefinedType(VarReferenceAST *ast)
+{
+    switch (ast->ast_type) {
+    case AST_ARRAY_ACCESS: {
+        auto ac = (ArrayAccessAST *)ast;
+        return ac->access_type;
+        break;
+    }
+    case AST_STRUCT_ACCESS: {
+        auto sac = (StructAccessAST *)ast;
+        assert(sac->decl);
+        return sac->decl->specified_type;
+        break;
+    }
+    case AST_IDENTIFIER: {
+        auto id = (IdentifierAST *)ast;
+        assert(id->decl);
+        return id->decl->specified_type;
+        break;
+    }
+    default: assert(!"Invalid AST type for a reference");
+        return nullptr;
+    }
 }
 
 static void addTypeWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
@@ -545,15 +564,7 @@ VariableDeclarationAST *Interpreter::validateVariable(IdentifierAST *a)
     VariableDeclarationAST *decl = findVariable(a->name, a->scope);
 
     if (decl == nullptr) {
-        if (a->prev) {
-            auto prev_decl = findVariable(a->prev->name, a->prev->scope);
-            assert(isTypeStruct(prev_decl->specified_type));
-            auto dt = (DirectTypeAST *)findStructType(prev_decl->specified_type);
-            Error(a, "Variable [%s] cannot be found on struct %s\n", a->name,
-                dt->name);
-        } else {
-            Error(a, "Variable [%s] could not be found on this scope\n", a->name);
-        }
+        Error(a, "Variable [%s] could not be found on this scope\n", a->name);
         return nullptr;
     }
 
@@ -782,12 +793,26 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         addSizeWork(&pool, astp, deps);
         break;
     }
-    case AST_VAR_REFERENCE: {
-        auto var_ref = (VarReferenceAST *)ast;
+    case AST_STRUCT_ACCESS: {
+        auto sac = (StructAccessAST *)ast;
         // Special case, where we need to process this node before
         // the next one
         addTypeWork(&pool, astp, deps);
-        traversePostfixAST(PPC(var_ref->next), deps);
+        traversePostfixAST(PPC(sac->next), deps);
+        // do post processing to grab the type
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
+        break;
+    }
+    case AST_ARRAY_ACCESS: {
+        auto acc = (ArrayAccessAST *)ast;
+        // Special case, where we need to process this node before
+        // the next one
+        traversePostfixAST(PPC(acc->array_exp), deps);
+        addTypeWork(&pool, astp, deps);
+        if (acc->next != nullptr) {
+            traversePostfixAST(PPC(acc->next), deps);
+        }
         // do post processing to grab the type
         addTypeWork(&pool, astp, deps);
         addSizeWork(&pool, astp, deps);
@@ -861,6 +886,8 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
 
+        addTypeWork(&pool, astp, deps);
+        traversePostfixAST(PPC(id->next), deps);
         addTypeWork(&pool, astp, deps);
         addSizeWork(&pool, astp, deps);
         break;
@@ -1153,44 +1180,138 @@ bool Interpreter::doWorkAST(interp_work * work)
 
         break;
     }
-    case AST_VAR_REFERENCE: {
-        auto var_ref = (VarReferenceAST *)ast;
+    case AST_STRUCT_ACCESS: {
+        auto sac = (StructAccessAST *)ast;
 
         if (work->action == IA_RESOLVE_TYPE) {
-            if (var_ref->decl == nullptr) {
-                VariableDeclarationAST *decl = findVariable(var_ref->name, var_ref->scope);
+            if (sac->decl == nullptr) {
+                assert(sac->prev);
+                TypeAST *enclosingType = getDefinedType(sac->prev);
+                if (!isTypeStruct(enclosingType)) {
+                    char ltype[64] = {};
+                    printTypeToStr(ltype, enclosingType);
+                    Error(sac, "Struct access with member %s cannot be done on this type: %s\n",
+                        sac->name, ltype);
+                    return false;
+                }
+
+                // Configure the scope from the prev once validated
+                StructTypeAST *stype = findStructType(enclosingType);
+                Scope *struct_scope = &stype->struct_scope;
+                sac->scope = struct_scope;
+
+
+                VariableDeclarationAST *decl = findVariable(sac->name, sac->scope);
                 if (decl == nullptr) {
-                    if (var_ref->prev) {
-                        auto prev_decl = findVariable(var_ref->prev->name, var_ref->prev->scope);
-                        Error(var_ref, "Variable [%s] cannot be found on struct %s\n", var_ref->name,
-                            prev_decl->varname);
-                    } else {
-                        Error(var_ref, "Variable [%s] could not be found on this scope\n", var_ref->name);
+                    if (stype->decl == nullptr) {
+                        // This is likely a declaration yet to come, stop here
+                        return false;
                     }
+                    auto prev_decl = stype->decl;
+                    Error(sac, "Variable [%s] cannot be found on struct %s\n", sac->name,
+                        prev_decl->varname);
                     return false;
                 }
 
-                if (!isTypeStruct(decl->specified_type)) {
-                    Error(var_ref, "The variable [%s] is not of struct type", var_ref->name);
-                    return false;
-                }
+                sac->decl = decl;
 
-                var_ref->decl = decl;
-
-                auto struct_type = findStructType(decl->specified_type);
-
-                Scope *struct_scope = &struct_type->struct_scope;
-                var_ref->next->scope = struct_scope;
             } else {
-                if (!var_ref->next->expr_type) {
-                    return false;
+                if (sac->next) {
+                    if (!sac->next->expr_type) {
+                        return false;
+                    }
+                    sac->expr_type = sac->next->expr_type;
+                } else {
+                    sac->expr_type = sac->decl->specified_type;
                 }
-                assert(var_ref->next->expr_type);
-                var_ref->expr_type = var_ref->next->expr_type;
             }
 
         } else if (work->action == IA_COMPUTE_SIZE) {
-            var_ref->size_in_bytes = var_ref->next->size_in_bytes;
+            if (sac->next) {
+                sac->size_in_bytes = sac->next->size_in_bytes;
+            } else {
+                sac->size_in_bytes = sac->decl->specified_type->size_in_bytes;
+            }
+        } else {
+            assert(!"Not implemented");
+        }
+
+        break;
+    }
+    case AST_ARRAY_ACCESS: {
+        auto acc = (ArrayAccessAST *)ast;
+
+        if (work->action == IA_RESOLVE_TYPE) {
+            assert(acc->prev);
+            if (!acc->access_type) {
+
+                TypeAST *enclosingType = getDefinedType(acc->prev);
+
+                if (enclosingType->ast_type != AST_ARRAY_TYPE) {
+                    char ltype[64] = {};
+                    printTypeToStr(ltype, enclosingType);
+                    Error(acc, "Only array types can use the [ ] operator, found: %s\n", ltype);
+                    return false;
+                }
+
+                assert(acc->array_exp);
+                TypeAST *atype = acc->array_exp->expr_type;
+                if (atype->ast_type != AST_DIRECT_TYPE) {
+                    char ltype[64] = {};
+                    printTypeToStr(ltype, atype);
+                    Error(acc, "Only integer values can be used to index an array, found: %s\n", ltype);
+                    return false;
+                }
+                auto dt = (DirectTypeAST *)acc->array_exp->expr_type;
+                if (dt->basic_type != BASIC_TYPE_INTEGER) {
+                    char ltype[64] = {};
+                    printTypeToStr(ltype, atype);
+                    Error(acc, "Only integer values can be used to index an array, found: %s\n", ltype);
+                    return false;
+                }
+                auto artype = (ArrayTypeAST *)enclosingType;
+
+                acc->access_type = artype->array_of_type;
+
+                //if (acc->next != nullptr) {
+
+                //    // An array access that has a next is the same as a var reference
+                //    if (!isTypeStruct(artype->array_of_type)) {
+                //        char ltype[64] = {};
+                //        printTypeToStr(ltype, artype);
+                //        Error(acc, "The variable [%s] is not of struct type, but rather %s", 
+                //            acc->name, ltype);
+                //        return false;
+                //    }
+
+                //    auto struct_type = findStructType(artype->array_of_type);
+
+                //    Scope *struct_scope = &struct_type->struct_scope;
+                //    acc->next->scope = struct_scope;
+                //} else {
+                //    // If there is no next, this might not be a struct
+                //    acc->expr_type = artype->array_of_type; 
+                //}
+
+            } else {
+                if (acc->next != nullptr) {
+                    if (!acc->next->expr_type) {
+                        assert(!"How could we ever get here???");
+                        return false;
+                    }
+                    assert(acc->next->expr_type);
+                    acc->expr_type = acc->next->expr_type;
+                } else {
+                    acc->expr_type = acc->access_type;
+                }
+            }
+
+        } else if (work->action == IA_COMPUTE_SIZE) {
+            if (acc->next) {
+                acc->size_in_bytes = acc->next->size_in_bytes;
+            } else {
+                acc->size_in_bytes = acc->access_type->size_in_bytes;
+            }
         } else {
             assert(!"Not implemented");
         }
@@ -1393,7 +1514,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     return false;
                 }
                 at->num_elems = computeValue(at->num_expr);
-                at->size_in_bytes = at->num_elems * at->array_of_type->size_in_bytes;
+                at->size_in_bytes = (u32)at->num_elems * at->array_of_type->size_in_bytes;
             } else {
                 if (at->isDynamic) {
                     // Data pointer, Total num elems, Used Elems
@@ -1410,23 +1531,29 @@ bool Interpreter::doWorkAST(interp_work * work)
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
 
-        //addTypeWork(&pool, ast, deps);
-        //addSizeWork(&pool, ast, deps);
         if (work->action == IA_RESOLVE_TYPE) {
-            VariableDeclarationAST *decl = validateVariable(id);
+            if (id->decl == nullptr) {
+                VariableDeclarationAST *decl = validateVariable(id);
 
-            // do not recurse on inferring types as this could cause infinite recursion
-            if (!decl) return false;
+                // do not recurse on inferring types as this could cause infinite recursion
+                if (!decl) return false;
 
-            id->decl = decl;
-            id->expr_type = decl->specified_type;
+                id->decl = decl;
+            }
+            else {
+                if (id->next) {
+                    id->expr_type = id->next->expr_type;
+                } else {
+                    id->expr_type = id->decl->specified_type;
+                }
+            }
 
             return true;
 
         } else if (work->action == IA_COMPUTE_SIZE) {
             assert(id->decl);
             assert(id->decl->specified_type);
-            id->size_in_bytes = id->decl->specified_type->size_in_bytes;
+            id->size_in_bytes = id->expr_type->size_in_bytes;
         } else if (work->action == IA_OPERATION_CHECK) {
             assert(!"No check for a single identifier");
         } else {

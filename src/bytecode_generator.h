@@ -150,3 +150,4 @@ struct bytecode_runner
 
 void print_bc_program(bytecode_program *program);
 
+// Unify all createStore, we can go the way of pointer, reg style

@@ -179,6 +179,7 @@ void printAST(const BaseAST *ast, int ident)
     case AST_IDENTIFIER: {
         const IdentifierAST *a = (const IdentifierAST *)ast;
         printf("%*sIdentifierAST name: [%s]\n", ident, "", a->name);
+        printAST(a->next, ident + 3);
         break;
     }
     case AST_FUNCTION_CALL: {
@@ -198,10 +199,17 @@ void printAST(const BaseAST *ast, int ident)
         printAST(un->expr, ident + 3);
         break;
     }
-    case AST_VAR_REFERENCE: {
-        auto var_ref = (const VarReferenceAST *)ast;
-        printf("%*sVariable Reference: name: %s\n", ident, "", var_ref->name);
-        printAST(var_ref->next, ident + 3);
+    case AST_STRUCT_ACCESS: {
+        auto sac = (const StructAccessAST *)ast;
+        printf("%*sStruct Access: name: %s\n", ident, "", sac->name);
+        printAST(sac->next, ident + 3);
+        break;
+    }
+    case AST_ARRAY_ACCESS: {
+        auto acc = (const ArrayAccessAST *)ast;
+        printf("%*sArrayAccess:\n", ident, "");
+        printAST(acc->array_exp, ident + 3);
+        printAST(acc->next, ident + 6);
         break;
     }
     case AST_STRUCT_DEFINITION: {

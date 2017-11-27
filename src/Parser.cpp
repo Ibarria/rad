@@ -667,55 +667,69 @@ VarReferenceAST * Parser::parseVarReference()
 {
     Token t;
     lex->getCurrentToken(t);
-    assert(t.type == TK_IDENTIFIER);
-    lex->consumeToken(); // this consumes the identifier
 
-    if (lex->checkAheadToken(TK_PERIOD, 0)) {
-        // compound statement
-        VarReferenceAST *comp = NEW_AST(VarReferenceAST);
-        comp->name = t.string;
+    if (t.type == TK_OPEN_SQBRACKET) {
         lex->consumeToken();
-        if (!lex->checkAheadToken(TK_IDENTIFIER, 0)) {
-            Error("An identifier must follow after a period access expression");
+        // This is an array access
+        ArrayAccessAST *acc = NEW_AST(ArrayAccessAST);
+
+        acc->array_exp = parseExpression();
+        if (!success) {
             return nullptr;
         }
-        comp->next = parseVarReference();
-        if (comp->next) {
-            comp->next->prev = comp;
-            // the scope for a variable reference is that of the enclosing struct
-            // since we do not yet know it, just null it to be safe
-            comp->next->scope = nullptr;
+        MustMatchToken(TK_CLOSE_SQBRACKET, "Cound not find matching close square bracket");
+        if (!success) {
+            return nullptr;
         }
-        return comp;
-    } else if (lex->checkAheadToken(TK_OPEN_SQBRACKET, 0)) {
-        // This is an array access
-        assert(!"Array access in expressions is not implemented yet");
-        return nullptr;
-    } else {
+        acc->next = parseVarReference();
+        if (acc->next) {
+            acc->next->prev = acc;
+        }
+        return acc;
+    }
 
+    if (t.type == TK_PERIOD) {
+        lex->consumeToken();
+        // compound statement
+        StructAccessAST *sac = NEW_AST(StructAccessAST);
+
+        lex->getNextToken(t);
         if (t.type != TK_IDENTIFIER) {
             Error("An identifier must follow after a period access expression");
             return nullptr;
         }
 
-        IdentifierAST *ex = NEW_AST(IdentifierAST);
-        ex->name = t.string;
-        return ex;
-    }
+        sac->name = t.string;
+        sac->next = parseVarReference();
+        if (sac->next) {
+            sac->next->prev = sac;
+            // the scope for a variable reference is that of the enclosing struct
+            // since we do not yet know it, just null it to be safe
+            sac->next->scope = nullptr;
+        }
+        return sac;
+    } 
+    // This is not an error, just that the VarReference has ended
+    return nullptr;
 }
 
 ExpressionAST * Parser::parseLiteral()
 {
     Token t;
-    lex->getCurrentToken(t);
+    lex->getNextToken(t);
 
     if (t.type == TK_IDENTIFIER) {
-        return parseVarReference();
+        IdentifierAST *ex = NEW_AST(IdentifierAST);
+        ex->name = t.string;
+        ex->next = parseVarReference();        
+        if (ex->next) {
+            ex->next->prev = ex;
+        }
+        return ex;
     } else if ((t.type == TK_NUMBER) || (t.type == TK_TRUE) ||
         (t.type == TK_FNUMBER) || (t.type == TK_STRING) || (t.type == TK_FALSE)) {
         auto ex = NEW_AST(LiteralAST);
         setASTinfo(this, &ex->typeAST);
-        lex->consumeToken();
 
         ex->typeAST.isLiteral = true;
 
@@ -744,7 +758,6 @@ ExpressionAST * Parser::parseLiteral()
     } else if (t.type == TK_OPEN_PAREN) {
         SrcLocation loc;
         loc = t.loc;
-        lex->consumeToken();
 
         ExpressionAST *expr = parseExpression();
         if (!success) return nullptr;
@@ -762,7 +775,6 @@ ExpressionAST * Parser::parseLiteral()
     } else if (t.type == TK_PERIOD) {
         // We support period for expressions like `.5`
         if (lex->checkAheadToken(TK_NUMBER, 1)) {
-            lex->consumeToken();
             lex->getNextToken(t);
 
             if (isHexNumber(t)) {

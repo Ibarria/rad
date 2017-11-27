@@ -163,6 +163,7 @@ void c_generator::generate_array_type_prototype(ArrayTypeAST *at)
     if (at->array_of_type->ast_type == AST_DIRECT_TYPE) {
         auto dt = (DirectTypeAST *)at->array_of_type;
         fprintf(output_file, BasicTypeToStr(dt));
+        fprintf(output_file, " *data;\n");
     } else if (at->array_of_type->ast_type == AST_ARRAY_TYPE) {
         auto innerat = (ArrayTypeAST *)at->array_of_type;
         fprintf(output_file, "    _generated_array_type_%d *data;\n", (int)innerat->s);
@@ -172,7 +173,9 @@ void c_generator::generate_array_type_prototype(ArrayTypeAST *at)
     } else {
         assert(!"Not implemented!");
     }
-
+    if (at->isDynamic) {
+        fprintf(output_file, "    u64 used;\n");
+    } 
     fprintf(output_file, "    u64 count;\n};\n");
     at->flags |= ARRAY_TYPE_FLAG_C_GENERATED;
 }
@@ -474,6 +477,7 @@ void c_generator::generate_assignment(AssignmentAST * assign)
 
 void c_generator::generate_expression(ExpressionAST * expr)
 {
+    if (!expr) return;
     switch (expr->ast_type) {
     case AST_LITERAL: {
         auto lit = (LiteralAST *)expr;
@@ -498,6 +502,7 @@ void c_generator::generate_expression(ExpressionAST * expr)
     case AST_IDENTIFIER: {
         auto iden = (IdentifierAST *)expr;
         fprintf(output_file, "%s", iden->name);
+        generate_expression(iden->next);
         break;
     }
     case AST_BINARY_OPERATION: {
@@ -532,16 +537,24 @@ void c_generator::generate_expression(ExpressionAST * expr)
         fprintf(output_file, "0");
         break;
     } 
-    case AST_VAR_REFERENCE: {
-        auto vref = (VarReferenceAST *)expr;
+    case AST_STRUCT_ACCESS: {
+        auto sac = (StructAccessAST *)expr;
 
-        fprintf(output_file, "%s", vref->name);
-        if (vref->decl->specified_type->ast_type == AST_POINTER_TYPE) {
+        if (sac->decl->specified_type->ast_type == AST_POINTER_TYPE) {
             fprintf(output_file, "->");
         } else {
             fprintf(output_file, ".");
         }
-        generate_expression(vref->next);
+        fprintf(output_file, "%s", sac->name);
+        generate_expression(sac->next);
+        break;
+    }
+    case AST_ARRAY_ACCESS: {
+        auto ac = (ArrayAccessAST *)expr;
+        fprintf(output_file, "[");
+        generate_expression(ac->array_exp);
+        fprintf(output_file, "]");
+        generate_expression(ac->next);
         break;
     }
     default:

@@ -47,8 +47,9 @@ enum AST_CLASS_TYPE {
     AST_VARIABLE_DECLARATION,
     AST_RUN_DIRECTIVE,
     AST_STRUCT_TYPE,
-    AST_STRUCT_DEFINITION,   // this is here only to satisfy class hierarchy... does not add value
-    AST_VAR_REFERENCE,
+    AST_STRUCT_DEFINITION,   // this is here only to satisfy class hierarchy... does not add value    
+    AST_ARRAY_ACCESS,
+    AST_STRUCT_ACCESS,
 };
 
 struct BaseAST
@@ -201,17 +202,30 @@ struct VariableDeclarationAST : StatementAST
 
 struct VarReferenceAST : ExpressionAST
 {
-    VarReferenceAST() { ast_type = AST_VAR_REFERENCE; }
-    TextType name = nullptr;
-    VariableDeclarationAST *decl = nullptr;
     VarReferenceAST *next = nullptr;
     VarReferenceAST *prev = nullptr; // for errors
     u32 size_in_bytes = 0; // this is to refer to the size in bits of the whole reference 
 };
 
+struct ArrayAccessAST : VarReferenceAST
+{
+    ArrayAccessAST() { ast_type = AST_ARRAY_ACCESS; }
+    ExpressionAST *array_exp = nullptr;
+    TypeAST *access_type = nullptr;
+};
+
+struct StructAccessAST : VarReferenceAST
+{
+    StructAccessAST() {ast_type = AST_STRUCT_ACCESS;  }
+    VariableDeclarationAST *decl = nullptr;
+    TextType name = nullptr;
+};
+
 struct IdentifierAST : VarReferenceAST
 {
     IdentifierAST() { ast_type = AST_IDENTIFIER; }
+    VariableDeclarationAST *decl = nullptr;
+    TextType name = nullptr;
 };
 
 struct LiteralAST : ExpressionAST
@@ -278,3 +292,7 @@ inline bool isDirectTypeVariation(TypeAST *type) {
         || (type->ast_type == AST_ARRAY_TYPE)
         || (type->ast_type == AST_POINTER_TYPE);
 }
+
+TypeAST *getDefinedType(VarReferenceAST *ast);
+
+// Update all AST_IDENTIFIER to be possible to have a next

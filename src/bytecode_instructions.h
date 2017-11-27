@@ -3,7 +3,7 @@
 enum BytecodeInstructionOpcode : u16 {
     BC_UNINITIALIZED,
     BC_ZERO_REG,
-    BC_LOAD_BIG_CONSTANT_TO_REG,
+    BC_LOAD_BIG_CONSTANT_TO_REG,  // big const is an arbitrary val
     BC_STORE_TO_STACK_PLUS_CONSTANT,
     BC_STORE_TO_BSS_PLUS_CONSTANT,
     BC_STORE_TO_MEM_PTR,
@@ -17,11 +17,12 @@ enum BytecodeInstructionOpcode : u16 {
     BC_CREATE_CALL_REGISTER,
     BC_CALL_PROCEDURE,
     BC_RETURN,
-    BC_BINARY_OPERATION,
-    BC_UNARY_OPERATION,
+    BC_BINARY_OPERATION,       // big_const is the op
+    BC_UNARY_OPERATION,        // big_const is the op
     BC_RESERVE_STACK_SIZE,
+    BC_COPY_REG,
+    BC_CAST, 
 
-    BC_COPY_REG_B_TO_A,
     BC_STACK_PLUS_CONSTANT, // access stack memory
     BC_BSS_BIG_PLUS_CONSTANT, // access global memory
     BC_DEREFERENCE_REGISTER_PLUS_CONSTANT,
