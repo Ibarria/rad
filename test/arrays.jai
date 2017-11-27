@@ -36,14 +36,17 @@ var: [10] u32;
   Also support array of arrays, arrays in structs,
   and array as part of varReference, array as argument
 
-  Known to be broken: how to parse var[4][5].y[6];
+  Next step: for static unknown size arrays and dynamic arrays, 
+  bytecode needs to get the data pointer instead of just assuming a pointer itself
 
+  
 */
 
 main :: ()
 {
     x:= var[5];
 
+    var[2] = x;
 
     // printf("X is %llu\n", x1);
     // x = #run (3 + 2);

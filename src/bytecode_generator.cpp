@@ -331,7 +331,7 @@ static const char *RegTypeToStr(RegisterType rt)
 
 void print_instruction(BCI *inst)
 {
-    printf("  op: %s src: %d src2: %d dst: %d type: %s size: %d ",
+    printf("  op: %-35s src: %3d src2: %3d dst: %3d type: %s size: %d ",
         bc_opcode_to_str(inst->opcode), (int)inst->src_reg, (int)inst->src2_reg,
         (int)inst->dst_reg, RegTypeToStr(inst->dst_type), inst->dst_type_bytes);
 
