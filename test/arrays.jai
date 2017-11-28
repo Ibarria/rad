@@ -39,6 +39,8 @@ var: [10] u32;
   Next step: for static unknown size arrays and dynamic arrays, 
   bytecode needs to get the data pointer instead of just assuming a pointer itself
 
+  After that : Arrays as function parameters. For sized arrays, check the size matters. 
+  Allow some implicit conversions? Likely not... dangerous. 
   
 */
 

@@ -9,16 +9,12 @@
         var.a = 3;
 * Pointers and Arrays to be able to do varargs, and an easy way to do printf
 * bytecode can call foreign functions (for printf)
-* plan on making the C backend much more similar to bytecode
-* ensure local functions and local structs do not clash with other locals in other scopes
-* Support pointers
-** Have a dereference operator for pointers
-* Maybe support array initializers (a : [] arr = {1, 2, 3, 4};)
 * write cast function (built in)
-* implement local functions on the C generator
+* convert literal numbers to the right type (like v: float = 0;)
 * do conditionals
 * do for loop (with it)
 * enum support
+* support return without type
 * support default initializers (implicit to 0)
 * support for explicit defaults
 * support to skip default initialization
@@ -27,6 +23,10 @@
 * support for dynamic arrays
 * support for parameters of type array, string
 * support for return type of array, string
+* implement local functions on the C generator
+* plan on making the C backend much more similar to bytecode
+* ensure local functions and local structs do not clash with other locals in other scopes
+* Maybe support array initializers (a : [] arr = {1, 2, 3, 4};)
 * support 'import' directive, where structs, enums, vars and functions are declared tied to a dll/lib
 ** ensure imports are separate libraries, do not use extension for imports, define what libs to 
 ** link against (or make it implicit, with a custom dll)
@@ -37,6 +37,8 @@
 * Future stuff: polymorphism, baking, inline, LLVM
 
 ---- DONE -----
+- Support pointers
+-- Have a dereference operator for pointers
 - ASSIGN is not an expression! 
 - Always have a type (even void)
 - create `true` and `false` basic types for bool
