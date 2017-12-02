@@ -31,5 +31,7 @@ s32 AtomicAdd(s32 volatile* value, s32 add);
 void AtomicSub(s32 volatile* value, s32 sub);
 void WriteFence();
 
+u64 osGetCurrentProcessId();
+u64 osGetCurrentThreadId();
 
 int compile_c_into_binary(const char *filename);

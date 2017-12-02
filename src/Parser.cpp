@@ -1144,6 +1144,8 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
     this->pool = pool;
     FileAST *file_inst = nullptr;
 
+    CpuSample smt("Parser Main");
+
     lex.setPoolAllocator(pool);
 
     if (!lex.openFile(filename)) {

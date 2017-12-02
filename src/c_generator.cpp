@@ -618,6 +618,8 @@ void c_generator::generate_type(BaseAST * ast)
 
 void c_generator::generate_c_file(const char * filename, FileAST * root)
 {
+    CpuSample smt("generate C");
+
 #ifdef WIN32
     fopen_s(&output_file, filename, "w");
 #else
@@ -630,6 +632,7 @@ void c_generator::generate_c_file(const char * filename, FileAST * root)
     insert_dangling_funcs = false;
     // dangling functions have an issue with possible local functions
     // also named main... but it is remote
+
 
     generate_preamble();
 

@@ -668,6 +668,7 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
 
 void Interpreter::perform_bytecode(FileAST * root)
 {
+
     bytecode_generator bcgen;
     // @TODO : should the bytecode have its own pool? 
     // makes sense since it is emphymeral, but we need to be able to
@@ -680,15 +681,18 @@ void Interpreter::perform_bytecode(FileAST * root)
     
     if (option_printBytecode) print_bc_program(bp);
 
-    // Find and run the #run directives now that we have a program compiled
-    bytecode_runner runner;
-    runner.program = bp;
+    {
+        CpuSample smt("run bytecode");
 
-    // @TODO: remove, this is only for testing
-    // Just code to test the bytecode runner
-    runner.run_preamble();
-    runner.run_bc_function(bp->start_function);
+        // Find and run the #run directives now that we have a program compiled
+        bytecode_runner runner;
+        runner.program = bp;
 
+        // @TODO: remove, this is only for testing
+        // Just code to test the bytecode runner
+        runner.run_preamble();
+        runner.run_bc_function(bp->start_function);
+    }
 }
 
 void Interpreter::printErrors()
@@ -713,6 +717,8 @@ void Interpreter::semanticProcess(FileAST *root)
 
 void Interpreter::traversePostfixTopLevel(FileAST * root)
 {
+    CpuSample smt("traversePostfix");
+
     for (u32 i = 0; i < root->items.size(); i++) {
         auto &ast = root->items[i];
         switch (ast->ast_type) {
@@ -936,6 +942,8 @@ void Interpreter::processAllDependencies()
     u64 old_remain = overallDepsItems();
     u64 current_remain = old_remain;
 
+    CpuSample smt("processAllDependencies");
+
     do {
         for (auto dep : overall_deps) {
             processDependencies(dep);
@@ -954,8 +962,11 @@ void Interpreter::processAllDependencies()
 
 void Interpreter::processDependencies(interp_deps * deps)
 {
+    CpuSample smt("processDependencies");
+
     bool stageComplete = true;
     if (!deps->resolve_type.empty()) {
+        CpuSample smt("TypeDependencies");
 
         u32 index = deps->resolve_type.active_item;
         bool firstFailure = false;
@@ -978,6 +989,7 @@ void Interpreter::processDependencies(interp_deps * deps)
     if (!stageComplete) return;
 
     if (!deps->compute_size.empty()) {
+        CpuSample smt("SizeDependencies");
 
         u32 index = deps->compute_size.active_item;
         bool firstFailure = false;
@@ -1000,6 +1012,7 @@ void Interpreter::processDependencies(interp_deps * deps)
     if (!stageComplete) return;
 
     if (!deps->operation_check.empty()) {
+        CpuSample smt("CheckDependencies");
 
         u32 index = deps->operation_check.active_item;
         for (; index < deps->operation_check.work.size(); index++) {

@@ -262,6 +262,24 @@ void WriteFence()
 #endif
 }
 
+u64 osGetCurrentProcessId()
+{
+#if defined(PLATFORM_WINDOWS)
+    return GetCurrentProcessId();
+#elif defined(PLATFORM_POSIX)
+    return getpid();
+#endif
+}
+
+u64 osGetCurrentThreadId()
+{
+#if defined(PLATFORM_WINDOWS)
+    return GetCurrentThreadId();
+#elif defined(PLATFORM_POSIX)
+    return gettid();
+#endif
+}
+
 int compile_c_into_binary(const char *filename)
 {
 #if defined(PLATFORM_WINDOWS)

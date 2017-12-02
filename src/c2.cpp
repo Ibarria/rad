@@ -12,6 +12,7 @@
 #include "Timer.h"
 #include "c_generator.h"
 #include "os.h"
+#include "Profiler.h"
 
 static const char *root_file = nullptr;
 bool option_printTokens = false;
@@ -95,11 +96,17 @@ int main(int argc, char **argv)
 {
 	parseOptions(argc, argv);
     double astBuildTime, codegenTime, binaryGenTime = 0.0;
+
+    initProfiler();
+
+    CpuSample smp("Main Compilation");
+
     Timer timer;
     timer.startTimer();
 
     Interpreter interp;
     Parser p;
+    int res;
 
 	FileAST *parsedFile = p.Parse(root_file, &interp.pool);
 
@@ -132,7 +139,10 @@ int main(int argc, char **argv)
     
     timer.startTimer();
     
-    int res = compile_c_into_binary(c_filename);
+    {
+        CpuSample s("External Compile");
+        res = compile_c_into_binary(c_filename);
+    }
 
     binaryGenTime = timer.stopTimer();
 
@@ -140,10 +150,15 @@ int main(int argc, char **argv)
         printf("The C compilation failed with error code: %d\n", res);
     }
 
+    smp.report();
+
+    g_prof->exportJson("trace.json");
+
     printTime("     AST building stage", astBuildTime);
     printTime("C Code generation stage", codegenTime);
     printTime("Binary generation stage", binaryGenTime);
 
+    deleteProfiler();
     return 0;
 }
 
