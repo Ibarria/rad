@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdarg.h>
 #include "Lexer.h"
+#include "Remotery.h"
 
 inline bool isWhiteSpace(char c)
 {
@@ -325,6 +326,7 @@ bool Lexer::openFile(const char * filename)
 void Lexer::parseFile()
 {
     Token tok;
+
     filename = CreateTextType(pool, file.getFilename());
 
     while (tok.type != TK_LAST_TOKEN) {

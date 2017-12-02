@@ -48,7 +48,7 @@
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\</IntDir>
     <GenerateManifest>false</GenerateManifest>
-    <IncludePath>$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(MSBuildProjectDirectory)\..\Remotery\lib;$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
     <LibraryPath>$(MSBuildProjectDirectory)\dyncall\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -56,7 +56,7 @@
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\</IntDir>
     <GenerateManifest>false</GenerateManifest>
-    <IncludePath>$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(MSBuildProjectDirectory)\..\Remotery\lib;$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
     <LibraryPath>$(MSBuildProjectDirectory)\dyncall\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -127,7 +127,8 @@
     <ClCompile Include="src/TextType.cpp" />
     <ClCompile Include="src/Timer.cpp" />
     <ClCompile Include="src/Token.cpp" />
-    <ClCompile Include="src/windows.cpp" />
+    <ClCompile Include="src\os.cpp" />
+    <ClCompile Include="src\Profiler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/Array.h" />
@@ -147,6 +148,7 @@
     <ClInclude Include="src/Timer.h" />
     <ClInclude Include="src/Token.h" />
     <ClInclude Include="src/TokenType.h" />
+    <ClInclude Include="src\Profiler.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Grammar.txt" />

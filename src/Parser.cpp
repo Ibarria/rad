@@ -1201,7 +1201,6 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
         }
     }
 
-
     this->lex = nullptr;
 	return file_inst;
 }

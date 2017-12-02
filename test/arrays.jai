@@ -1,7 +1,7 @@
 
 #import "Basic"
 
-var: [10] u32;
+var: [] u32;
 
 /*
   Types of array to support:

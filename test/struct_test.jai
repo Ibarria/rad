@@ -1,5 +1,5 @@
 
-#import "modules/basic.jai"
+#import "Basic"
 
 //x1 : u8 = 3;
 //s := "Hello there";

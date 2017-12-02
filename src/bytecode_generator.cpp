@@ -218,6 +218,10 @@ static inline s16 reserveRegistersForSize(bytecode_machine *machine, u64 size_in
     return machine->reserve_register(roundToQWord(size_in_bytes));
 }
 
+/*
+    This function computes how many bytes we need in the BSS for all the
+    global variables we have. 
+*/
 static u64 getScopeVariablesSize(Scope *scope)
 {
     u64 total_size = 0;
@@ -518,6 +522,9 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
     }
     case AST_ARRAY_ACCESS: {
         auto ac = (ArrayAccessAST *)expr;
+
+        // @TODO: Fix this to support either static known arrays, static arrays or dynamic ones
+        // Right now only handles static known arrays
 
         s16 index_reg = reserveRegistersForSize(&program->machine, 8);
         computeExpressionIntoRegister(ac->array_exp, index_reg);
@@ -1206,7 +1213,9 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             assert(current_call_register);
             assert(current_call_register->num_regs > bci->big_const);
 
-            assert(!"Taking an address from a function parameter is not allowed");
+            // Since we are moving to doing address + mem access for all vars, we need to allow this
+            // assert(!"Taking an address from a function parameter is not allowed");
+            dstreg.data._ptr = (u8 *)&current_call_register->regs[bci->big_const].data._u64;
 
             dstreg.bytes = bci->dst_type_bytes;
             dstreg.type = bci->dst_type;
