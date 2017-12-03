@@ -2,6 +2,9 @@
 #include "mytypes.h"
 #include "Array.h"
 #include "Timer.h"
+
+#define ENABLE_PROFILING 0
+
 /*
     Very simple profiler class for now, we store the time samples
     and at the end of the program we provide the summary. 
@@ -49,3 +52,21 @@ public:
 
     void report();
 };
+
+#if ENABLE_PROFILING
+
+#define INIT_PROFILER()   initProfiler()
+#define DELETE_PROFILER() deleteProfiler()
+#define EXPORT_JSON(file) g_prof->exportJson(file)
+#define CPU_SAMPLE(name)  CpuSample smp(name)
+#define CPU_REPORT()      smp.report()
+
+#else
+
+#define INIT_PROFILER() 
+#define DELETE_PROFILER() 
+#define EXPORT_JSON(file) 
+#define CPU_SAMPLE(name)  
+#define CPU_REPORT()      
+
+#endif

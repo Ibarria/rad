@@ -97,9 +97,9 @@ int main(int argc, char **argv)
 	parseOptions(argc, argv);
     double astBuildTime, codegenTime, binaryGenTime = 0.0;
 
-    initProfiler();
+    INIT_PROFILER();
 
-    CpuSample smp("Main Compilation");
+    CPU_SAMPLE("Main Compilation");
 
     Timer timer;
     timer.startTimer();
@@ -140,7 +140,7 @@ int main(int argc, char **argv)
     timer.startTimer();
     
     {
-        CpuSample s("External Compile");
+        CPU_SAMPLE("External Compile");
         res = compile_c_into_binary(c_filename);
     }
 
@@ -150,15 +150,15 @@ int main(int argc, char **argv)
         printf("The C compilation failed with error code: %d\n", res);
     }
 
-    smp.report();
+    CPU_REPORT();
 
-    g_prof->exportJson("trace.json");
+    EXPORT_JSON("trace.json");
 
     printTime("     AST building stage", astBuildTime);
     printTime("C Code generation stage", codegenTime);
     printTime("Binary generation stage", binaryGenTime);
 
-    deleteProfiler();
+    DELETE_PROFILER();
     return 0;
 }
 

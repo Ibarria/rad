@@ -320,7 +320,7 @@ Lexer::~Lexer()
 
 bool Lexer::openFile(const char * filename)
 {
-    CpuSample smp("openFile");
+    CPU_SAMPLE("openFile");
 
 	return file.open(filename);
 }
@@ -329,7 +329,7 @@ void Lexer::parseFile()
 {
     Token tok;
 
-    CpuSample smp("Lexer - ParseFile");
+    CPU_SAMPLE("Lexer - ParseFile");
 
     filename = CreateTextType(pool, file.getFilename());
 

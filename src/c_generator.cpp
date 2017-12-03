@@ -618,7 +618,7 @@ void c_generator::generate_type(BaseAST * ast)
 
 void c_generator::generate_c_file(const char * filename, FileAST * root)
 {
-    CpuSample smt("generate C");
+    CPU_SAMPLE("generate C");
 
 #ifdef WIN32
     fopen_s(&output_file, filename, "w");

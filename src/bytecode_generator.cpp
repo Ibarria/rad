@@ -634,7 +634,7 @@ bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
 {
     bytecode_program *bp = new (pool) bytecode_program;
     this->program = bp;
-    CpuSample smt("compile bytecode");
+    CPU_SAMPLE("compile bytecode");
 
     // First step, have space in the bss for the global variables (non functions)
     u64 bss_size = getScopeVariablesSize(&root->global_scope);

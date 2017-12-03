@@ -682,7 +682,7 @@ void Interpreter::perform_bytecode(FileAST * root)
     if (option_printBytecode) print_bc_program(bp);
 
     {
-        CpuSample smt("run bytecode");
+        CPU_SAMPLE("run bytecode");
 
         // Find and run the #run directives now that we have a program compiled
         bytecode_runner runner;
@@ -717,7 +717,7 @@ void Interpreter::semanticProcess(FileAST *root)
 
 void Interpreter::traversePostfixTopLevel(FileAST * root)
 {
-    CpuSample smt("traversePostfix");
+    CPU_SAMPLE("traversePostfix");
 
     for (u32 i = 0; i < root->items.size(); i++) {
         auto &ast = root->items[i];
@@ -942,7 +942,7 @@ void Interpreter::processAllDependencies()
     u64 old_remain = overallDepsItems();
     u64 current_remain = old_remain;
 
-    CpuSample smt("processAllDependencies");
+    CPU_SAMPLE("processAllDependencies");
 
     do {
         for (auto dep : overall_deps) {
@@ -962,11 +962,11 @@ void Interpreter::processAllDependencies()
 
 void Interpreter::processDependencies(interp_deps * deps)
 {
-    CpuSample smt("processDependencies");
+    CPU_SAMPLE("processDependencies");
 
     bool stageComplete = true;
     if (!deps->resolve_type.empty()) {
-        CpuSample smt("TypeDependencies");
+        CPU_SAMPLE("TypeDependencies");
 
         u32 index = deps->resolve_type.active_item;
         bool firstFailure = false;
@@ -989,7 +989,7 @@ void Interpreter::processDependencies(interp_deps * deps)
     if (!stageComplete) return;
 
     if (!deps->compute_size.empty()) {
-        CpuSample smt("SizeDependencies");
+        CPU_SAMPLE("SizeDependencies");
 
         u32 index = deps->compute_size.active_item;
         bool firstFailure = false;
@@ -1012,7 +1012,7 @@ void Interpreter::processDependencies(interp_deps * deps)
     if (!stageComplete) return;
 
     if (!deps->operation_check.empty()) {
-        CpuSample smt("CheckDependencies");
+        CPU_SAMPLE("CheckDependencies");
 
         u32 index = deps->operation_check.active_item;
         for (; index < deps->operation_check.work.size(); index++) {
