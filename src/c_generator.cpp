@@ -31,6 +31,33 @@ static const char *boolToStr(bool b)
     return "false";
 }
 
+static void write_c_string(FILE *f, const char *s)
+{
+    const char *i = s;
+    for (; *i; i++) {
+        switch (*i) {
+        case '\n':
+            fprintf(f, "\\n");
+            break;
+        case '\\':
+            fprintf(f, "\\\\");
+            break;
+        case '\'':
+            fprintf(f, "\\'");
+            break;
+        case '\"':
+            fprintf(f, "\\\"");
+            break;
+        case '\t':
+            fprintf(f, "\\t");
+            break;
+        default:
+            fprintf(f, "%c", *i);
+        }
+    }
+}
+
+
 void c_generator::generate_preamble()
 {
     fprintf(output_file, "#include <stdio.h>\n");
@@ -489,7 +516,9 @@ void c_generator::generate_expression(ExpressionAST * expr)
             fprintf(output_file, "%s", boolToStr(lit->_bool));
             break;
         case BASIC_TYPE_STRING:
-            fprintf(output_file, "\"%s\"", lit->str);
+            fprintf(output_file, "\"");
+            write_c_string(output_file, lit->str);
+            fprintf(output_file, "\"");
             break;
         case BASIC_TYPE_INTEGER:
             if (lit->typeAST.isSigned) fprintf(output_file, "%" U64FMT "d", lit->_s64);

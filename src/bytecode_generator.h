@@ -151,3 +151,18 @@ struct bytecode_runner
 void print_bc_program(bytecode_program *program);
 
 // Unify all createStore, we can go the way of pointer, reg style
+
+/*
+
+// This instruction will tell the runner what registers to use when calling the function
+BCI *bci = create_instruction(BC_CREATE_CALL_REGISTER, reg, return_regs, argument_qwords);
+issue_instruction(bci);
+
+// And now we actually call the function
+bci = create_instruction(BC_CALL_PROCEDURE, -1, reg_return, straight_convert(funcall->fundef));
+bci->src2_reg = return_regs;
+issue_instruction(bci);
+
++		reg.data._ptr	0x0000017a25d5007d "X is %llu\\n"	unsigned char *
+
+*/

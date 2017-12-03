@@ -1032,6 +1032,8 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
 {
     auto fundecl = funcall->fundef->declaration;
     u64 argument_qwords = 0;
+    // How many registers do we need for the return value?
+    s16 return_regs = -1;
 
     // @TODO: expand this when we support implicit arguments
     
@@ -1039,19 +1041,27 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     // Relax this part... 
     // assert(funcall->args.size() == fundecl->arguments.size());
 
+    if (reg_return == -1) {
+        assert(isVoidType(fundecl->return_type));
+    }
+    else {
+        assert(!isVoidType(fundecl->return_type));
+    }
+
     if (!isVoidType(fundecl->return_type)) {
-        argument_qwords += roundToQWord(fundecl->return_type->size_in_bytes);
+        return_regs = roundToQWord(fundecl->return_type->size_in_bytes);
+        argument_qwords += return_regs;
     }
 
     s16 mark = program->machine.reg_mark();
     for (u32 index = 0; index < funcall->args.size(); index++) {
         auto arg_expr = funcall->args[index];
         // Here we assume that the type is the same on arg_expr and arg_decl
-        argument_qwords += arg_expr->expr_type->size_in_bytes;
+        argument_qwords += roundToQWord(arg_expr->expr_type->size_in_bytes);
     }
 
     // Now we reserve enough registers for all the args
-    s16 reg = reserveRegistersForSize(&program->machine, argument_qwords);
+    s16 reg = reserveRegistersForSize(&program->machine, argument_qwords*8);
     s16 offset = 0;
     if (!isVoidType(fundecl->return_type)) {
         offset += roundToQWord(fundecl->return_type->size_in_bytes);
@@ -1078,11 +1088,12 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     // At this point, the registers from reg until the argument_bytes have 
 
     // This instruction will tell the runner what registers to use when calling the function
-    BCI *bci = create_instruction(BC_CREATE_CALL_REGISTER, reg, -1, argument_qwords);
+    BCI *bci = create_instruction(BC_CREATE_CALL_REGISTER, reg, return_regs, argument_qwords);
     issue_instruction(bci);
 
     // And now we actually call the function
     bci = create_instruction(BC_CALL_PROCEDURE, -1, reg_return, straight_convert(funcall->fundef));
+    bci->src2_reg = return_regs;
     issue_instruction(bci);
     assert(fundecl->return_type->size_in_bytes < 256);
     bci->dst_type_bytes = (u8)fundecl->return_type->size_in_bytes;
@@ -1641,17 +1652,25 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             // (or a number of them)
             assert(bci->big_const < 256); // Sane value... 
             bc_call_register *call = new bc_call_register;
-            call->regs = new bc_register[bci->big_const];
+            if (bci->big_const > 0) {
+                call->regs = new bc_register[bci->big_const];
+            }
             call->num_regs = bci->big_const;
             assert(new_call_register == nullptr);
-            for (s16 ind = 0; ind < bci->big_const; ind++) {
+            s16 return_regs = bci->dst_reg;
+            assert(return_regs < (s64)bci->big_const);
+            s16 ind = 0;
+            if (return_regs != -1) {
+                ind = return_regs;
+            }
+            for ( ; ind < bci->big_const; ind++) {
                 s16 src_reg = bci->src_reg + ind;
                 
                 copy_bytes(&program->machine.regs[src_reg].data._u64,
                     &call->regs[ind].data._u64,
                     program->machine.regs[src_reg].bytes);
-                call->regs[ind].bytes = dstreg.bytes;
-                call->regs[ind].type = dstreg.type;
+                call->regs[ind].bytes = program->machine.regs[src_reg].bytes;
+                call->regs[ind].type = program->machine.regs[src_reg].type;
             }
             new_call_register = call;
             break;
@@ -1681,6 +1700,14 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
                     dstreg.type = get_regtype_from_type(fundef->declaration);
                 }
             }
+
+            // We have to free up the current call register here
+            // assume the return reg has already been copied
+
+            if (current_call_register->regs) {
+                delete current_call_register->regs;
+            }
+            delete current_call_register;
 
             current_call_register = old_current;
             program->bss.stack_base = old_stack_base;
@@ -1794,9 +1821,50 @@ void bytecode_runner::callExternalFunction(FunctionDefinitionAST * fundef, BCI *
     vm = (DCCallVM *)CallVM;
     dcReset(vm);
 
-    for (auto arg : fundef->declaration->arguments) {
+    for (u32 i = 0; i < current_call_register->num_regs; i++) {
+        auto &reg = current_call_register->regs[i];
 
+        // This code is so we do not push as arguments the return value regs
+        if (bci->src2_reg != -1) {
+            if (i < bci->src2_reg) {
+                continue;
+            }
+        }
+
+        if (reg.type == REGTYPE_POINTER) {
+            dcArgPointer(vm, reg.data._ptr);
+        }
+        else if (reg.type == REGTYPE_FLOAT) {
+            switch (reg.bytes) {
+            case 4:
+                dcArgFloat(vm, reg.data._f32);
+                break;
+            case 8: 
+                dcArgDouble(vm, reg.data._f64);
+                break;
+            default:
+                assert(false);
+            }
+        }
+        else {
+            assert((reg.type == REGTYPE_SINT) || (reg.type == REGTYPE_UINT));
+            switch (reg.bytes) {
+            case 1:
+                dcArgChar(vm, reg.data._s8);
+                break;
+            case 2:
+                dcArgShort(vm, reg.data._s16);
+                break;
+            case 4:
+                dcArgInt(vm, reg.data._s32);
+                break;
+            case 8:
+                dcArgLongLong(vm, reg.data._s64);
+                break;
+            }
+        }
     }
-    
+
+    dcCallVoid(vm, fundef->declaration->func_ptr);
 }
 

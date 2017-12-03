@@ -400,13 +400,38 @@ void Lexer::getNextTokenInternal(Token &tok)
         } else if (c == '"') {
 			// this marks the start of a string
             char *s = new char[1024];
+            bool backslash = false;
             u32 i = 0;
 			while (file.getc(c) && (c != '"') && (!isNewLine(c))) {
-				s[i++] = c;
+                if (backslash) {
+                    switch (c) {
+                    case 'n':
+                        s[i-1] = '\n';
+                        break;
+                    case 't':
+                        s[i-1] = '\t';
+                        break;
+                    case '\\':
+                        s[i-1] = '\\';
+                        break;
+                    case '\'':
+                        s[i-1] = '\'';
+                        break;
+                    case '\"':
+                        s[i-1] = '\"';
+                        break;
+                    default:
+                        s[i++] = c;
+                    }
+                }
+                else {
+                    s[i++] = c;
+                }
 				if (i >= 1024 - 1) {
 					Error("Found string too long to parse\n");
 					exit(1);
 				}
+                backslash = (c == '\\');
 			}
 			if (isNewLine(c)) {
 				Error("Newlines are not allowed inside a quoted string\n");
