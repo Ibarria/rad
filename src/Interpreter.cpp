@@ -359,6 +359,14 @@ static void addTypeWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
     deps.resolve_type.work.push_back(res_work);
 }
 
+static void addTypePostWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
+{
+    interp_work *res_work = new (pool) interp_work;
+    res_work->action = IA_RESOLVE_TYPE_POST;
+    res_work->ast = ast;
+    deps.resolve_type.work.push_back(res_work);
+}
+
 static void addSizeWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
 {
     interp_work *res_work = new (pool) interp_work;
@@ -806,7 +814,7 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         addTypeWork(&pool, astp, deps);
         traversePostfixAST(PPC(sac->next), deps);
         // do post processing to grab the type
-        addTypeWork(&pool, astp, deps);
+        addTypePostWork(&pool, astp, deps);
         addSizeWork(&pool, astp, deps);
         break;
     }
@@ -820,7 +828,7 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
             traversePostfixAST(PPC(acc->next), deps);
         }
         // do post processing to grab the type
-        addTypeWork(&pool, astp, deps);
+        addTypePostWork(&pool, astp, deps);
         addSizeWork(&pool, astp, deps);
         break;
     }
@@ -894,7 +902,7 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
 
         addTypeWork(&pool, astp, deps);
         traversePostfixAST(PPC(id->next), deps);
-        addTypeWork(&pool, astp, deps);
+        addTypePostWork(&pool, astp, deps);
         addSizeWork(&pool, astp, deps);
         break;
     }
@@ -1228,15 +1236,18 @@ bool Interpreter::doWorkAST(interp_work * work)
 
                 sac->decl = decl;
 
-            } else {
-                if (sac->next) {
-                    if (!sac->next->expr_type) {
-                        return false;
-                    }
-                    sac->expr_type = sac->next->expr_type;
-                } else {
-                    sac->expr_type = sac->decl->specified_type;
+            }
+        } else if (work->action == IA_RESOLVE_TYPE_POST) {
+            // This can indicate an earlier failure, no more work to do here
+            if (sac->decl == nullptr) return false;
+
+            if (sac->next) {
+                if (!sac->next->expr_type) {
+                    return false;
                 }
+                sac->expr_type = sac->next->expr_type;
+            } else {
+                sac->expr_type = sac->decl->specified_type;
             }
 
         } else if (work->action == IA_COMPUTE_SIZE) {
@@ -1286,37 +1297,20 @@ bool Interpreter::doWorkAST(interp_work * work)
 
                 acc->access_type = artype->array_of_type;
 
-                //if (acc->next != nullptr) {
+            }
+        } else if (work->action == IA_RESOLVE_TYPE_POST) {
+            // This can indicate an earlier failure, no more work to do here
+            if (acc->access_type == nullptr) return false;
 
-                //    // An array access that has a next is the same as a var reference
-                //    if (!isTypeStruct(artype->array_of_type)) {
-                //        char ltype[64] = {};
-                //        printTypeToStr(ltype, artype);
-                //        Error(acc, "The variable [%s] is not of struct type, but rather %s", 
-                //            acc->name, ltype);
-                //        return false;
-                //    }
-
-                //    auto struct_type = findStructType(artype->array_of_type);
-
-                //    Scope *struct_scope = &struct_type->struct_scope;
-                //    acc->next->scope = struct_scope;
-                //} else {
-                //    // If there is no next, this might not be a struct
-                //    acc->expr_type = artype->array_of_type; 
-                //}
-
-            } else {
-                if (acc->next != nullptr) {
-                    if (!acc->next->expr_type) {
-                        assert(!"How could we ever get here???");
-                        return false;
-                    }
-                    assert(acc->next->expr_type);
-                    acc->expr_type = acc->next->expr_type;
-                } else {
-                    acc->expr_type = acc->access_type;
+            if (acc->next != nullptr) {
+                if (!acc->next->expr_type) {
+                    assert(!"How could we ever get here???");
+                    return false;
                 }
+                assert(acc->next->expr_type);
+                acc->expr_type = acc->next->expr_type;
+            } else {
+                acc->expr_type = acc->access_type;
             }
 
         } else if (work->action == IA_COMPUTE_SIZE) {
@@ -1553,12 +1547,14 @@ bool Interpreter::doWorkAST(interp_work * work)
 
                 id->decl = decl;
             }
-            else {
-                if (id->next) {
-                    id->expr_type = id->next->expr_type;
-                } else {
-                    id->expr_type = id->decl->specified_type;
-                }
+        } else if (work->action == IA_RESOLVE_TYPE_POST) {
+            // This can indicate an earlier failure, no more work to do here
+            if (id->decl == nullptr) return false;
+
+            if (id->next) {
+                id->expr_type = id->next->expr_type;
+            } else {
+                id->expr_type = id->decl->specified_type;
             }
 
             return true;

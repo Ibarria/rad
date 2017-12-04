@@ -4,6 +4,7 @@
 enum InterpAction {
     IA_NOP,
     IA_RESOLVE_TYPE,
+    IA_RESOLVE_TYPE_POST,
     IA_COMPUTE_SIZE,
     IA_OPERATION_CHECK,
 };
