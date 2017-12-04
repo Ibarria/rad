@@ -1821,7 +1821,7 @@ void bytecode_runner::callExternalFunction(FunctionDefinitionAST * fundef, BCI *
     vm = (DCCallVM *)CallVM;
     dcReset(vm);
 
-    for (u32 i = 0; i < current_call_register->num_regs; i++) {
+    for (s32 i = 0; i < current_call_register->num_regs; i++) {
         auto &reg = current_call_register->regs[i];
 
         // This code is so we do not push as arguments the return value regs

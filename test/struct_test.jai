@@ -24,7 +24,7 @@ Out2 :: struct {
 
 Out3 :: struct {
   a1: u8;
-  a2: u8;
+  a2: u32;
   a3: u8;
 }
 
@@ -38,9 +38,7 @@ main :: ()
 
     x1 := 1;
     x1 = add(3, 0);
-//    printf("X is %llu\n", x);
-
-//    x = #run (3 + 2);
+    printf("a.b.e.a2 is %u, add 3+2 = %llu\n", a.b.e.a2, add(3, 2));
 }
 
 add := (x: u64, y: u64) -> u64 

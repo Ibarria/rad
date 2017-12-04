@@ -57,6 +57,9 @@
     <ClCompile Include="src\os.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\llvm_builder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/FileData.h">
@@ -111,6 +114,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\Profiler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\llvm_builder.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
