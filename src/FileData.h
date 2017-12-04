@@ -3,6 +3,11 @@
 #include "mytypes.h"
 #include "SrcLocation.h"
 
+#if defined(getc)
+#undef getc
+#endif
+
+
 class FileData
 {
 	char *data;

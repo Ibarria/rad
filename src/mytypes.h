@@ -13,7 +13,11 @@
 typedef signed char        s8;
 typedef signed short       s16;
 typedef int                s32;
+#if defined(PLATFORM_WINDOWS)
 typedef long long          s64;
+#else
+typedef long               s64;
+#endif
 
 typedef unsigned char      u8;
 typedef unsigned short     u16;

@@ -8,6 +8,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#if defined(getc)
+#undef getc
+#endif
+
 FileData::FileData()
 {
 	data = nullptr;

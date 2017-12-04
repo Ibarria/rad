@@ -84,7 +84,7 @@ void printAST(const BaseAST *ast, int ident)
         case BASIC_TYPE_INTEGER:
             // for ease of operation, everything else is assumed to be an integer
             if (c->typeAST.isSigned) {
-                printf(" %lld", c->_s64);
+                printf(" %" U64FMT "d", c->_s64);
             } else {
                 printf(" %" U64FMT "u", c->_u64);
             }

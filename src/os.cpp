@@ -12,13 +12,13 @@
 #endif
 
 #if defined(PLATFORM_POSIX)
+#include <sys/types.h>
+#include <sys/syscall.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/mman.h>
-#include <netinet/in.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <dlfcn.h>
@@ -276,7 +276,7 @@ u64 osGetCurrentThreadId()
 #if defined(PLATFORM_WINDOWS)
     return GetCurrentThreadId();
 #elif defined(PLATFORM_POSIX)
-    return gettid();
+    return syscall(__NR_gettid);
 #endif
 }
 
