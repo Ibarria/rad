@@ -275,8 +275,12 @@ u64 osGetCurrentThreadId()
 {
 #if defined(PLATFORM_WINDOWS)
     return GetCurrentThreadId();
-#elif defined(PLATFORM_POSIX)
+#elif defined(PLATFORM_LINUX)
     return syscall(__NR_gettid);
+#elif defined(PLATFORM_MACOS)
+	uint64_t tid;
+	pthread_threadid_np(NULL, &tid);
+	return tid;
 #endif
 }
 

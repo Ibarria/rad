@@ -1,11 +1,15 @@
 #include "mytypes.h"
 #include "Timer.h"
 
-#ifdef PLATFORM_WINDOWS
+#if defined(PLATFORM_WINDOWS)
 # include <windows.h>
 #else 
 # include <sys/time.h>
 # include <unistd.h>
+# if defined(PLATFORM_MACOS)
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+# endif
 #endif
 #include <stdio.h>
 
@@ -23,7 +27,7 @@ Timer::Timer()
     mach_timebase_info_data_t nsScale;
     mach_timebase_info(&nsScale);
     const double ns_per_us = 1.0e3;
-    timer->counter_scale = (double)(nsScale.numer) / ((double)nsScale.denom * ns_per_us);
+    scale = (double)(nsScale.numer) / ((double)nsScale.denom * ns_per_us);
 
 #elif defined(PLATFORM_LINUX)
 
