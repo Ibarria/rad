@@ -68,7 +68,6 @@ u64 Timer::stopTimerUs()
     u64 ellapsed_time = 0;
 #if defined(PLATFORM_WINDOWS)
     LARGE_INTEGER perfCount;
-    LARGE_INTEGER li;
     QueryPerformanceCounter(&perfCount);
 
     u64 end_time = perfCount.QuadPart;

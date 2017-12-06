@@ -49,7 +49,7 @@
     <IntDir>$(Configuration)\</IntDir>
     <GenerateManifest>false</GenerateManifest>
     <IncludePath>C:\code\llvm\build\include;C:\code\llvm\llvm\include;$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\code\llvm\build\Debug\lib;$(MSBuildProjectDirectory)\dyncall\lib;$(LibraryPath)</LibraryPath>
+    <LibraryPath>C:\code\llvm\build\Debug\lib;$(MSBuildProjectDirectory)\dyncall\lib\win;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -57,7 +57,7 @@
     <IntDir>$(Configuration)\</IntDir>
     <GenerateManifest>false</GenerateManifest>
     <IncludePath>C:\code\llvm\build\include;C:\code\llvm\llvm\include;$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\code\llvm\build\Release\lib;$(MSBuildProjectDirectory)\dyncall\lib;$(LibraryPath)</LibraryPath>
+    <LibraryPath>C:\code\llvm\build\Release\lib;$(MSBuildProjectDirectory)\dyncall\lib\win;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
