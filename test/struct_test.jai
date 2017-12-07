@@ -38,7 +38,7 @@ main :: ()
 
     x1 := 1;
     x1 = add(3, 0);
-    printf("a.b.e.a2 is %u, add 3+2 = %llu\n", a.b.e.a2, add(3, 2));
+    print("a.b.e.a2 is %u, add 3+2 = %llu\n", a.b.e.a2, add(3, 2));
 }
 
 add := (x: u64, y: u64) -> u64 

@@ -284,6 +284,8 @@ u64 osGetCurrentThreadId()
 #endif
 }
 
+// @TODO: We need to pass a list of the libraries (externs) that 
+// the program has to link against
 int compile_c_into_binary(const char *filename)
 {
 #if defined(PLATFORM_WINDOWS)
@@ -295,7 +297,7 @@ int compile_c_into_binary(const char *filename)
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
-    sprintf_s(cmd_line, "cl.exe /nologo %s", filename);
+    sprintf_s(cmd_line, "cl.exe /nologo %s modules\\Basic.lib", filename);
 
     if (!CreateProcessA(NULL, cmd_line, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
         printf("Process creation failed (%d)\n", GetLastError());

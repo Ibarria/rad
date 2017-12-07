@@ -111,6 +111,10 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl, boo
 
     bool isMain = !strcmp(decl->varname, "main");
     
+    if (ft->isForeign) {
+        fprintf(output_file, "extern \"C\" ");
+    }
+
     // first print the return type
     if (isMain && isVoidType(ft->return_type)) {
         // main is a special case, to make the C compiler happy, allow void to be int
@@ -148,6 +152,12 @@ void c_generator::generate_function_prototype(VariableDeclarationAST * decl, boo
         if (!first) fprintf(output_file, ", ");
         generate_argument_declaration(arg);
         first = false;
+    }
+    if (ft->hasVariableArguments) {
+        if (!first) {
+            fprintf(output_file, ", ");
+        }
+        fprintf(output_file, "...");
     }
     fprintf(output_file, ");\n");
 
@@ -518,7 +528,7 @@ void c_generator::generate_expression(ExpressionAST * expr)
         case BASIC_TYPE_STRING:
             fprintf(output_file, "\"");
             write_c_string(output_file, lit->str);
-            fprintf(output_file, "\"");
+            fprintf(output_file, "\", %" U64FMT "u", strlen(lit->str));
             break;
         case BASIC_TYPE_INTEGER:
             if (lit->typeAST.isSigned) fprintf(output_file, "%" U64FMT "d", lit->_s64);
@@ -608,7 +618,12 @@ void c_generator::generate_type(BaseAST * ast)
     switch (ast->ast_type) {
     case AST_DIRECT_TYPE: {
         auto dt = (DirectTypeAST *)ast;
-        fprintf(output_file, BasicTypeToStr(dt));
+        if (dt->basic_type == BASIC_TYPE_STRING) {            
+            fprintf(output_file, "char * rand_%d, unsigned long", (int)ast->s);
+        }
+        else {
+            fprintf(output_file, BasicTypeToStr(dt));
+        }
         break;
     }
     case AST_POINTER_TYPE: {
