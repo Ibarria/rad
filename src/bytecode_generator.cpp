@@ -591,7 +591,11 @@ external_library * bytecode_generator::findOrLoadLibrary(TextType filename)
     strcpy(lib_name, filename);
     assert(l >= 5);
     assert(lib_name[l - 3] == 'j');  assert(lib_name[l - 2] == 'a'); assert(lib_name[l - 1] == 'i');
+    #if defined(PLATFORM_WINDOWS)
     lib_name[l - 3] = 'd'; lib_name[l - 2] = 'l'; lib_name[l - 1] = 'l';
+    #else
+    lib_name[l - 3] = 's'; lib_name[l - 2] = 'o'; lib_name[l - 1] = '\0';
+    #endif
 
     for (auto lib : program->external_libs) {
         if (!strcmp(lib->name, lib_name)) {
