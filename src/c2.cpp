@@ -141,7 +141,7 @@ int main(int argc, char **argv)
     
     {
         CPU_SAMPLE("External Compile");
-        res = compile_c_into_binary(c_filename);
+        res = compile_c_into_binary(c_filename, parsedFile->imports);
     }
 
     binaryGenTime = timer.stopTimer();

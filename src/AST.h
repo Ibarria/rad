@@ -70,7 +70,7 @@ struct FileAST : BaseAST
     FileAST() { ast_type = AST_FILE; }
     Array<BaseAST *>items;
     Scope global_scope;
-    Hash<TextType, bool, 21, TextTypeHashFunc<21>, TextTypeComp> imports;
+    ImportsHash imports;
 };
 
 struct StatementAST : BaseAST

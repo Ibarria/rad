@@ -33,6 +33,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "Hash.h"
+
 void* osLoadLibrary(const char* path)
 {
 #if defined(PLATFORM_WINDOWS)
@@ -286,7 +288,7 @@ u64 osGetCurrentThreadId()
 
 // @TODO: We need to pass a list of the libraries (externs) that 
 // the program has to link against
-int compile_c_into_binary(const char *filename)
+int compile_c_into_binary(const char *filename, ImportsHash &imports)
 {
 #if defined(PLATFORM_WINDOWS)
     STARTUPINFOA si;
@@ -297,7 +299,17 @@ int compile_c_into_binary(const char *filename)
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
-    sprintf_s(cmd_line, "cl.exe /nologo %s modules\\Basic.lib", filename);
+    u32 chars_written = sprintf_s(cmd_line, "cl.exe /nologo %s", filename);
+
+    auto it = imports.begin();
+    char *line_ptr = cmd_line + chars_written;
+    while (!imports.isEnd(it)) {
+        if (it.entry) {
+            chars_written = sprintf(line_ptr, " modules\\%s.lib", it.entry->key());
+            line_ptr = line_ptr + chars_written;
+        }
+        it = imports.next(it);
+    }
 
     if (!CreateProcessA(NULL, cmd_line, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
         printf("Process creation failed (%d)\n", GetLastError());

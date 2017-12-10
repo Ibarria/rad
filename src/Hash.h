@@ -89,6 +89,16 @@ class Hash
     Comp kComp;
 
 public:
+    struct HashIter {
+        HashNode<Key, Value> *entry;
+        u32 index;
+
+        HashIter(HashNode<Key, Value> *_entry, u32 _index) {
+            entry = _entry;
+            index = _index;
+        }
+    };
+
     Hash(): nodes(), hFunc(), kComp() {
 
     }
@@ -107,6 +117,26 @@ public:
         }
     }
 
+    HashIter begin() {
+        return HashIter(nodes[0], 0);
+    }
+
+    bool isEnd(HashIter iter) {
+        return (iter.index >= size);
+    }
+
+    HashIter next(HashIter iter) {
+        if (isEnd(iter)) return iter;
+        if (iter.entry) {
+            if (iter.entry->next()) return HashIter(iter.entry->next(), iter.index);
+        }
+        // If we get here, we need to look for a new index
+        while (iter.index < size) {
+            iter.index++;
+            if (nodes[iter.index]) return HashIter(nodes[iter.index], iter.index);
+        }
+        return HashIter(nullptr, size);
+    }
 
     bool get(const Key &key, Value &val)
     {
@@ -179,3 +209,4 @@ public:
     }
 };
 
+typedef Hash<TextType, bool, 21, TextTypeHashFunc<21>, TextTypeComp> ImportsHash;
