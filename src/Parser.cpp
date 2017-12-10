@@ -980,11 +980,17 @@ void Parser::parseImportDirective()
     // One day this will be a search path
     char fname[64];
     sprintf_s(fname, "modules/%s.jai", t.string);
-    import_parser.Parse(fname, pool, top_level_ast);
+    bool val;
+    // This does the equivalent of pragma once, and also
+    // records the libraries we opened (#import)
+    if (!top_level_ast->imports.get(t.string, val)) {
+        top_level_ast->imports.put(t.string, true);
+        import_parser.Parse(fname, pool, top_level_ast);
 
-    if (!import_parser.success) {
-        strncpy_s(errorString, import_parser.errorString, sizeof(errorString));
-        success = false;
+        if (!import_parser.success) {
+            strncpy_s(errorString, import_parser.errorString, sizeof(errorString));
+            success = false;
+        }
     }
 }
 

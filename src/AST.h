@@ -5,6 +5,7 @@
 #include "TokenType.h"
 #include "TextType.h"
 #include "Profiler.h"
+#include "Hash.h"
 
 struct BaseAST;
 struct TypeAST;
@@ -69,6 +70,7 @@ struct FileAST : BaseAST
     FileAST() { ast_type = AST_FILE; }
     Array<BaseAST *>items;
     Scope global_scope;
+    Hash<TextType, bool, 21, TextTypeHashFunc<21>, TextTypeComp> imports;
 };
 
 struct StatementAST : BaseAST
