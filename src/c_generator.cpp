@@ -7,24 +7,6 @@
 # define sprintf_s sprintf
 #endif
 
-static inline bool isStringDeclaration(VariableDeclarationAST *decl)
-{
-    if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
-        auto dt = (DirectTypeAST *)decl->specified_type;
-        return dt->basic_type == BASIC_TYPE_STRING;
-    }
-    return false;
-}
-
-static bool isStringDefinition(DefinitionAST *def)
-{
-    if (def->ast_type == AST_LITERAL) {
-        auto lit = (LiteralAST *)def;
-        return lit->typeAST.basic_type == BASIC_TYPE_STRING;
-    }
-    return false;
-}
-
 static const char *boolToStr(bool b)
 {
     if (b) return "true";
@@ -518,7 +500,7 @@ void c_generator::generate_expression(ExpressionAST * expr)
     switch (expr->ast_type) {
     case AST_LITERAL: {
         auto lit = (LiteralAST *)expr;
-        switch (lit->typeAST.basic_type) {
+        switch (lit->typeAST->basic_type) {
         case BASIC_TYPE_FLOATING:
             fprintf(output_file, "%f", lit->_f64);
             break;
@@ -531,7 +513,7 @@ void c_generator::generate_expression(ExpressionAST * expr)
             fprintf(output_file, "\", %" U64FMT "u", strlen(lit->str));
             break;
         case BASIC_TYPE_INTEGER:
-            if (lit->typeAST.isSigned) fprintf(output_file, "%" U64FMT "d", lit->_s64);
+            if (lit->typeAST->isSigned) fprintf(output_file, "%" U64FMT "d", lit->_s64);
             else fprintf(output_file, "%" U64FMT "u", lit->_u64);
             break;
         }

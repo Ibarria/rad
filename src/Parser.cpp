@@ -241,9 +241,65 @@ static f64 computeDecimal(Token &t)
     return total;
 }
 
+static struct TypeHelperRec {
+    TOKEN_TYPE tk;
+    const char *name;
+    u64 bytes;
+    BasicType bt;
+    bool sign;
+    DirectTypeAST *ast;
+} TypeHelper[] = {
+    { TK_VOID, "void", 0, BASIC_TYPE_VOID, false, nullptr },
+    { TK_BOOL, "bool", 1, BASIC_TYPE_BOOL, false, nullptr },
+    { TK_STRING_KEYWORD, "string", 16, BASIC_TYPE_STRING, false, nullptr },
+    { TK_U8,  "u8",  1, BASIC_TYPE_INTEGER, false, nullptr },
+    { TK_U16, "u16", 2, BASIC_TYPE_INTEGER, false, nullptr },
+    { TK_U32, "u32", 4, BASIC_TYPE_INTEGER, false, nullptr },
+    { TK_U64, "u64", 8, BASIC_TYPE_INTEGER, false, nullptr },
+    { TK_S8,  "s8",  1, BASIC_TYPE_INTEGER, true, nullptr },
+    { TK_S16, "s16", 2, BASIC_TYPE_INTEGER, true, nullptr },
+    { TK_S32, "s32", 4, BASIC_TYPE_INTEGER, true, nullptr },
+    { TK_S64, "s64", 8, BASIC_TYPE_INTEGER, true, nullptr },
+    { TK_INT, "int", 8, BASIC_TYPE_INTEGER, true, nullptr },
+    { TK_F32, "f32", 4, BASIC_TYPE_FLOATING, true, nullptr },
+    { TK_F64, "f64", 8, BASIC_TYPE_FLOATING, true, nullptr },
+    { TK_FLOAT, "float", 8, BASIC_TYPE_FLOATING, true, nullptr },
+{ TK_INVALID, nullptr, 0, BASIC_TYPE_VOID, false, nullptr }
+};
+
+DirectTypeAST *getTypeEx(DirectTypeAST *oldtype, u32 newbytes)
+{
+    TypeHelperRec *th;
+    for (th = TypeHelper; th->name != nullptr; th++) {
+        if ((th->bt == oldtype->basic_type) && (th->sign == oldtype->isSigned)
+            && (th->bytes == newbytes)) {
+            return th->ast;
+        }
+    }
+    assert(false);
+    return nullptr;
+}
+
+void Parser::defineBuiltInTypes()
+{
+    if (TypeHelper[0].ast != nullptr) return;
+
+    TypeHelperRec *th;
+    for (th = TypeHelper; th->name != nullptr; th++) {
+        DirectTypeAST *tp;
+
+        tp = createType(th->tk, CreateTextType(pool, th->name));
+        th->ast = tp;
+    }
+
+    assert(TypeHelper[TK_FLOAT - TK_VOID].tk == TK_FLOAT);
+}
+
 DirectTypeAST *Parser::createType(TOKEN_TYPE tktype, TextType name)
 {
-    DirectTypeAST *type = NEW_AST(DirectTypeAST);
+    DirectTypeAST *type = (DirectTypeAST *) new(this->pool) DirectTypeAST;
+    type->s = sequence_id++;
+
     type->name = name;
     switch (tktype) {
     case TK_VOID:
@@ -314,13 +370,32 @@ DirectTypeAST *Parser::createType(TOKEN_TYPE tktype, TextType name)
     return type;
 }
 
+DirectTypeAST *Parser::getType(TOKEN_TYPE tktype, TextType name)
+{
+    if ((tktype >= TK_VOID) && (tktype <= TK_FLOAT)) {
+        return TypeHelper[tktype - TK_VOID].ast;
+    }
+
+    DirectTypeAST *type = NEW_AST(DirectTypeAST);
+    type->name = name;
+    switch (tktype) {
+    case TK_IDENTIFIER:
+        type->basic_type = BASIC_TYPE_CUSTOM;
+        break;
+    default:
+        assert(!"Identifier types, custom types are not implemented");
+    }
+
+    return type;
+}
+
 TypeAST *Parser::parseDirectType()
 {
     // @TODO: support pointer, arrays, etc
     Token t;
     lex->getNextToken(t);
     if ((t.type == TK_IDENTIFIER) || isBuiltInType(t.type)) {
-        return createType(t.type, t.string);
+        return getType(t.type, t.string);
     } else if (t.type == TK_STAR) {
         // This is a pointer to something
         PointerTypeAST *pt = NEW_AST(PointerTypeAST);
@@ -457,7 +532,7 @@ FunctionTypeAST *Parser::parseFunctionDeclaration()
         lex->consumeToken();
         fundec->return_type = parseType();
     } else {
-        fundec->return_type = createType(TK_VOID, "void");
+        fundec->return_type = getType(TK_VOID, "void");
     }
     if (!success) {
         return nullptr;
@@ -729,29 +804,32 @@ ExpressionAST * Parser::parseLiteral()
     } else if ((t.type == TK_NUMBER) || (t.type == TK_TRUE) ||
         (t.type == TK_FNUMBER) || (t.type == TK_STRING) || (t.type == TK_FALSE)) {
         auto ex = NEW_AST(LiteralAST);
-        setASTinfo(this, &ex->typeAST);
-
-        ex->typeAST.isLiteral = true;
+        // setASTinfo(this, ex->typeAST);
 
         if (t.type == TK_NUMBER) {
-            ex->typeAST.basic_type = BASIC_TYPE_INTEGER;
-            ex->typeAST.size_in_bytes = 8;
+            ex->typeAST = getType(TK_INT, nullptr);
+            //ex->typeAST.basic_type = BASIC_TYPE_INTEGER;
+            //ex->typeAST.size_in_bytes = 8;
             ex->_u64 = t._u64;
         } else if (t.type == TK_FNUMBER) {
-            ex->typeAST.basic_type = BASIC_TYPE_FLOATING;
-            ex->typeAST.size_in_bytes = 8;
+            ex->typeAST = getType(TK_FLOAT, nullptr);
+            //ex->typeAST.basic_type = BASIC_TYPE_FLOATING;
+            //ex->typeAST.size_in_bytes = 8;
             ex->_f64 = t._f64;
         } else if (t.type == TK_STRING) {
-            ex->typeAST.basic_type = BASIC_TYPE_STRING;
-            ex->typeAST.size_in_bytes = 8+8;
+            ex->typeAST = getType(TK_STRING_KEYWORD, nullptr);
+            //ex->typeAST.basic_type = BASIC_TYPE_STRING;
+            //ex->typeAST.size_in_bytes = 8+8;
             ex->str = t.string;
         } else if (t.type == TK_TRUE) {
-            ex->typeAST.basic_type = BASIC_TYPE_BOOL;
-            ex->typeAST.size_in_bytes = 1;
+            ex->typeAST = getType(TK_BOOL, nullptr);
+            //ex->typeAST.basic_type = BASIC_TYPE_BOOL;
+            //ex->typeAST.size_in_bytes = 1;
             ex->_bool = true;
         } else if (t.type == TK_FALSE) {
-            ex->typeAST.basic_type = BASIC_TYPE_BOOL;
-            ex->typeAST.size_in_bytes = 1;
+            ex->typeAST = getType(TK_BOOL, nullptr);
+            //ex->typeAST.basic_type = BASIC_TYPE_BOOL;
+            //ex->typeAST.size_in_bytes = 1;
             ex->_bool = false;
         }
         return ex;
@@ -783,12 +861,8 @@ ExpressionAST * Parser::parseLiteral()
             }
 
             auto ex = NEW_AST(LiteralAST);
-            setASTinfo(this, &ex->typeAST);
 
-            ex->typeAST.isLiteral = true;
-            ex->typeAST.basic_type = BASIC_TYPE_FLOATING;
-            ex->typeAST.size_in_bytes = 8;
-
+            ex->typeAST = getType(TK_FLOAT, nullptr);
             ex->_f64 = computeDecimal(t);
             return ex;
         } else {
@@ -817,14 +891,13 @@ ExpressionAST * Parser::parseUnaryExpression()
         // optimization, if expr is a real literal, merge the actual value
         if (expr->ast_type == AST_LITERAL) {
             auto lit = (LiteralAST *)expr;
-            switch (lit->typeAST.basic_type) {
+            switch (lit->typeAST->basic_type) {
             case BASIC_TYPE_FLOATING:
                 if (t.type == TK_BANG) {
                     Error("The bang operator cannot be used with floating point numbers");
                     return nullptr;
                 } else if (t.type == TK_MINUS) {
                     lit->_f64 = -lit->_f64;
-                    lit->typeAST.isSigned = true;
                     return expr;
                 } else {
                     assert(t.type == TK_PLUS);
@@ -855,11 +928,11 @@ ExpressionAST * Parser::parseUnaryExpression()
                     //un->expr = expr;                    
                     //return un;
                 } else if (t.type == TK_MINUS) {
-                    if (lit->typeAST.isSigned) {
+                    if (lit->typeAST->isSigned) {
                         lit->_s64 = -lit->_s64;
                     } else {
                         lit->_s64 = -(s64)lit->_u64;
-                        lit->typeAST.isSigned = true;
+                        lit->typeAST = getType(TK_S64, nullptr);
                     }
                     return expr;
                 } else {
@@ -1168,6 +1241,8 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
      
     top_level_ast = file_inst;
     success = true;
+
+    defineBuiltInTypes();
 
     lex.parseFile();
 

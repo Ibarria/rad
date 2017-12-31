@@ -68,8 +68,8 @@ void printAST(const BaseAST *ast, int ident)
     case AST_LITERAL: {
         const LiteralAST *c = (const LiteralAST *)ast;
         printf("%*sLiteralAST type: %s", ident, "", 
-            BasicTypeToStr(&c->typeAST));
-        switch (c->typeAST.basic_type)
+            BasicTypeToStr(c->typeAST));
+        switch (c->typeAST->basic_type)
         {
         case BASIC_TYPE_FLOATING:
             printf(" %f", c->_f64);
@@ -83,7 +83,7 @@ void printAST(const BaseAST *ast, int ident)
             break;
         case BASIC_TYPE_INTEGER:
             // for ease of operation, everything else is assumed to be an integer
-            if (c->typeAST.isSigned) {
+            if (c->typeAST->isSigned) {
                 printf(" %" U64FMT "d", c->_s64);
             } else {
                 printf(" %" U64FMT "u", c->_u64);
@@ -241,11 +241,30 @@ void printAST(const BaseAST *ast, int ident)
 
 bool isFunctionDeclaration(VariableDeclarationAST *decl)
 {
+    if (decl && (decl->specified_type) &&
+        decl->specified_type->ast_type == AST_FUNCTION_TYPE) {
+        return true;
+    }
+    return false;
+}
+
+bool isFunctionDefinition(VariableDeclarationAST *decl)
+{
     if (decl && (decl->definition) &&
         (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
             return true;
     }
         
+    return false;
+}
+
+bool isFunctionForeign(VariableDeclarationAST *decl)
+{
+    if (isFunctionDeclaration(decl)) {
+        auto ft = (FunctionTypeAST *)decl->specified_type;
+        return ft->isForeign;
+    }
+
     return false;
 }
 

@@ -168,7 +168,7 @@ static RegisterType get_regtype_from_type(TypeAST *type)
 static inline u64 getVariableSize(VariableDeclarationAST *decl)
 {
     if ((decl->flags & DECL_FLAG_IS_CONSTANT) &&
-        (isFunctionDeclaration(decl) || isStructDeclaration(decl))) {
+        (isFunctionDefinition(decl) || isStructDeclaration(decl))) {
         // constant functions do not need space
         return 0;
     }
@@ -818,15 +818,15 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     case AST_LITERAL: {
         auto lit = (LiteralAST *)expr;
 
-        switch (lit->typeAST.basic_type) {
+        switch (lit->typeAST->basic_type) {
         case BASIC_TYPE_INTEGER: {
             u64 val;
-            if (lit->typeAST.isSigned) val = straight_convert(lit->_s64);
+            if (lit->typeAST->isSigned) val = straight_convert(lit->_s64);
             else val = lit->_u64;
             BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
-            assert(lit->typeAST.size_in_bytes < 256);
-            bci->dst_type_bytes = (u8)lit->typeAST.size_in_bytes;
-            bci->dst_type = (lit->typeAST.isSigned ? REGTYPE_SINT : REGTYPE_UINT);
+            assert(lit->typeAST->size_in_bytes < 256);
+            bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
+            bci->dst_type = (lit->typeAST->isSigned ? REGTYPE_SINT : REGTYPE_UINT);
             issue_instruction(bci);
             break;
         }
@@ -853,17 +853,17 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         }
         case BASIC_TYPE_BOOL: {
             BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, lit->_bool);
-            assert(lit->typeAST.size_in_bytes < 256);
-            bci->dst_type_bytes = (u8)lit->typeAST.size_in_bytes;
+            assert(lit->typeAST->size_in_bytes < 256);
+            bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
             bci->dst_type = REGTYPE_UINT;
             issue_instruction(bci);
             break;
         }
         case BASIC_TYPE_FLOATING: {
             u64 val = straight_convert(lit->_f64);
-            assert(lit->typeAST.size_in_bytes < 256);
+            assert(lit->typeAST->size_in_bytes < 256);
             BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
-            bci->dst_type_bytes = (u8)lit->typeAST.size_in_bytes;
+            bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
             bci->dst_type = REGTYPE_FLOAT;
             issue_instruction(bci);
             break;

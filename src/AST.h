@@ -15,9 +15,12 @@ struct FunctionDefinitionAST;
 struct bytecode_function;
 struct interp_deps;
 
+namespace llvm { class Value; class Type; }
+
 struct Scope {
     Scope *parent = nullptr;
     Array<VariableDeclarationAST *>decls;
+    Array<TypeAST *>def_types;
     FunctionDefinitionAST *current_function = nullptr;
 };
 
@@ -75,6 +78,7 @@ struct FileAST : BaseAST
 
 struct StatementAST : BaseAST
 {
+    llvm::Value *codegen = nullptr;
 };
 
 struct DefinitionAST : StatementAST
@@ -85,6 +89,7 @@ struct DefinitionAST : StatementAST
 struct TypeAST : BaseAST
 {
     u32 size_in_bytes = 0;
+    llvm::Type *llvm_type = nullptr;
 };
 
 struct FunctionTypeAST : TypeAST
@@ -102,12 +107,14 @@ struct StatementBlockAST : StatementAST
     StatementBlockAST() { ast_type = AST_STATEMENT_BLOCK; }
     Array<StatementAST *> statements;
     Scope block_scope;
+    llvm::Value *codegen = nullptr;
 };
 
 struct ReturnStatementAST: StatementAST
 {
     ReturnStatementAST() { ast_type = AST_RETURN_STATEMENT; }
     ExpressionAST *ret = nullptr;
+    llvm::Value *codegen = nullptr;
 };
 
 struct FunctionDefinitionAST : DefinitionAST
@@ -146,7 +153,6 @@ struct DirectTypeAST : TypeAST
 
 	BasicType basic_type;
     bool isSigned = false;
-    bool isLiteral = false;
 	TextType name = nullptr;
     TypeAST * custom_type = nullptr;
 };
@@ -239,7 +245,7 @@ struct LiteralAST : ExpressionAST
     f64 _f64 = 0.0;
     bool _bool = false;
     TextType str = nullptr;
-    DirectTypeAST typeAST;
+    DirectTypeAST *typeAST;
 };
 
 struct BinaryOperationAST : ExpressionAST
@@ -268,7 +274,39 @@ struct AssignmentAST : ExpressionAST
 void printAST(const BaseAST*ast, int ident);
 const char *BasicTypeToStr(const DirectTypeAST* t);
 bool isFunctionDeclaration(VariableDeclarationAST *decl);
+bool isFunctionDefinition(VariableDeclarationAST *decl);
+bool isFunctionForeign(VariableDeclarationAST *decl);
 bool isStructDeclaration(VariableDeclarationAST *decl);
+
+inline bool isStringDeclaration(VariableDeclarationAST *decl)
+{
+    if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)decl->specified_type;
+        return dt->basic_type == BASIC_TYPE_STRING;
+    }
+    return false;
+}
+
+inline bool isStringDefinition(DefinitionAST *def)
+{
+    if (def->ast_type == AST_LITERAL) {
+        auto lit = (LiteralAST *)def;
+        return lit->typeAST->basic_type == BASIC_TYPE_STRING;
+    }
+    return false;
+}
+
+inline bool isStringDefinition(VariableDeclarationAST *decl)
+{
+    if (decl && isStringDefinition(decl->definition)) return true;
+    return false;
+}
+
+
+inline bool isLiteral(ExpressionAST *expr) 
+{
+    return expr->ast_type == AST_LITERAL;
+}
 
 inline bool isVoidType(TypeAST *type)
 {

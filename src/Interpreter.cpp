@@ -220,8 +220,8 @@ s64 computeValue(ExpressionAST *expr)
     }
     case AST_LITERAL: {
         auto lit = (LiteralAST *)expr;
-        assert(lit->typeAST.basic_type == BASIC_TYPE_INTEGER);
-        if (lit->typeAST.isSigned) {
+        assert(lit->typeAST->basic_type == BASIC_TYPE_INTEGER);
+        if (lit->typeAST->isSigned) {
             return lit->_s64;
         } else {
             return (s64)lit->_u64;
@@ -383,22 +383,25 @@ static void addCheckWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
     deps.operation_check.work.push_back(res_work);
 }
 
+// From Parser.cpp
+DirectTypeAST *getTypeEx(DirectTypeAST *oldtype, u32 newbytes);
+
 static void change_type_bytes(LiteralAST *lit, DirectTypeAST *dt)
 {
-    lit->typeAST.size_in_bytes = dt->size_in_bytes;
+    lit->typeAST = getTypeEx(lit->typeAST, dt->size_in_bytes);
 }
 
 static bool literal_value_fits_in_bytes(LiteralAST *lit, DirectTypeAST *dt)
 {
-    assert(!(lit->typeAST.isSigned && !dt->isSigned));
+    assert(!(lit->typeAST->isSigned && !dt->isSigned));
 
-    if (lit->typeAST.basic_type == BASIC_TYPE_INTEGER) {
+    if (lit->typeAST->basic_type == BASIC_TYPE_INTEGER) {
         u64 mask;
         u64 val;
         switch (dt->size_in_bytes) {
         case 1: {
             mask = 0x0FF;
-            if (lit->typeAST.isSigned) {
+            if (lit->typeAST->isSigned) {
                 mask = 0x7FF;
                 if (lit->_s64 < 0) val = -lit->_s64;
                 else val = lit->_s64;
@@ -409,7 +412,7 @@ static bool literal_value_fits_in_bytes(LiteralAST *lit, DirectTypeAST *dt)
         }
         case 2: {
             mask = 0x0FFFF;
-            if (lit->typeAST.isSigned) {
+            if (lit->typeAST->isSigned) {
                 mask = 0x7FFF;
                 if (lit->_s64 < 0) val = -lit->_s64;
                 else val = lit->_s64;
@@ -420,7 +423,7 @@ static bool literal_value_fits_in_bytes(LiteralAST *lit, DirectTypeAST *dt)
         }
         case 4: {
             mask = 0x0FFFFFFFF;
-            if (lit->typeAST.isSigned) {
+            if (lit->typeAST->isSigned) {
                 mask = 0x7FFFFFFF;
                 if (lit->_s64 < 0) val = -lit->_s64;
                 else val = lit->_s64;
@@ -439,7 +442,7 @@ static bool literal_value_fits_in_bytes(LiteralAST *lit, DirectTypeAST *dt)
         }
         return false;
 
-    } else if (lit->typeAST.basic_type == BASIC_TYPE_FLOATING) {
+    } else if (lit->typeAST->basic_type == BASIC_TYPE_FLOATING) {
         // Assume floating point numbers can be cast to f32 easily
 
         return true; 
@@ -510,7 +513,7 @@ bool Interpreter::checkTypesInDeclaration(VariableDeclarationAST * decl, Express
     }
 
     if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
-        if (rhsDType->isLiteral) {
+        if (isLiteral(expr)) {
             auto lit = (LiteralAST *)expr;
 
             if (!lhsDType->isSigned && rhsDType->isSigned) {
@@ -532,7 +535,7 @@ bool Interpreter::checkTypesInDeclaration(VariableDeclarationAST * decl, Express
             return false;
         }
     } else {
-        if (rhsDType->isLiteral) {
+        if (isLiteral(expr)) {
             auto lit = (LiteralAST *)expr;
 
             if (!lhsDType->isSigned && rhsDType->isSigned) {
@@ -1402,7 +1405,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 return false;
             }
 
-            assert(isFunctionDeclaration(decl));
+            assert(isFunctionDefinition(decl));
             assert(decl->definition->ast_type == AST_FUNCTION_DEFINITION);
             funcall->fundef = (FunctionDefinitionAST *)decl->definition;
             FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
@@ -1574,7 +1577,7 @@ bool Interpreter::doWorkAST(interp_work * work)
     case AST_LITERAL: {
         auto lit = (LiteralAST *)ast;
         // Something to do here?
-        lit->expr_type = &lit->typeAST;
+        lit->expr_type = lit->typeAST;
         break;
     }
     case AST_BINARY_OPERATION: {
@@ -1624,7 +1627,6 @@ bool Interpreter::doWorkAST(interp_work * work)
                     dt->basic_type = lhsDtType->basic_type;
                     dt->size_in_bytes = lhsDtType->size_in_bytes;
                     // The optimization for Literal will require replacement
-                    dt->isLiteral = false;
                 } else if (lhsType->ast_type == AST_POINTER_TYPE) {
                     PointerTypeAST *pt = new (&pool) PointerTypeAST;
                     auto lhsPtType = (PointerTypeAST *)lhsType;
@@ -1948,7 +1950,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     return false;
                 }
 
-                if (!rhsDType->isLiteral) {
+                if (!isLiteral(assign->rhs)) {
                     // If it is not a literal, we can only do very harsh decisions
                     if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
                         char ltype[64] = {}, rtype[64] = {};

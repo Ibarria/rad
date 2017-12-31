@@ -19,7 +19,10 @@ struct Parser {
     bool AddDeclarationToScope(VariableDeclarationAST *decl);
     bool AddDeclarationToStruct(StructDefinitionAST *struct_def, VariableDeclarationAST *decl);
 
+    void defineBuiltInTypes();
+
     DirectTypeAST *createType(TOKEN_TYPE tktype, TextType name);
+    DirectTypeAST *getType(TOKEN_TYPE tktype, TextType name);
     TypeAST *parseDirectType();
     TypeAST *parseType();
     VariableDeclarationAST *parseArgumentDeclaration();

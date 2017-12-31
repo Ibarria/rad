@@ -312,6 +312,7 @@ Lexer::Lexer()
 {
     num_nested = 0;
     pool = nullptr;
+    token_index = 0;
 }
 
 Lexer::~Lexer()

@@ -13,6 +13,7 @@
 #include "c_generator.h"
 #include "os.h"
 #include "Profiler.h"
+#include "llvm_builder.h"
 
 static const char *root_file = nullptr;
 bool option_printTokens = false;
@@ -136,7 +137,11 @@ int main(int argc, char **argv)
     gen.generate_c_file(c_filename, parsedFile);
 
     codegenTime = timer.stopTimer();
-    
+
+    // TODO: make the backends disjoint, one or the other
+    llvm_compile(parsedFile);    
+
+
     timer.startTimer();
     
     {

@@ -53,16 +53,18 @@ enum TOKEN_TYPE {
     TK_COMMA,
     TK_BANG,
     TK_STRING,
-    TK_STRING_KEYWORD,
     TK_CHAR,
     TK_IF,
     TK_FOR,
     TK_RETURN,
-    TK_BOOL,
     TK_TRUE,
     TK_FALSE,
+
+    // Types, the order here matters, see Parser.cpp::TypeHelper
+
     TK_VOID,
-    TK_INT,
+    TK_BOOL,
+    TK_STRING_KEYWORD,
     TK_U8,
     TK_U16,
     TK_U32,
@@ -71,10 +73,12 @@ enum TOKEN_TYPE {
     TK_S16,
     TK_S32,
     TK_S64,
-    TK_FLOAT,
+    TK_INT,
     TK_F32,
     TK_F64,
-    TK_STRUCT, 
+    TK_FLOAT,
+
+    TK_STRUCT,
 
     // compiler directive tokens
 
