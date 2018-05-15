@@ -19,6 +19,9 @@ static const char *root_file = nullptr;
 bool option_printTokens = false;
 bool option_printAST = false;
 bool option_printBytecode = false;
+bool option_llvm = true;
+bool option_llvm_print = false;
+bool option_c = false;
 
 #ifndef WIN32
 # define sprintf_s  sprintf
@@ -33,9 +36,12 @@ void usage()
 	printf("\nUsage:\n");
 	printf("c2 [options] <source file>\n");
     printf("\tOptions:\n");
+    printf("\t-llvm: use the llvm backend [DEFAULT]\n");
+    printf("\t-c: use the C backend\n");
     printf("\t-tokens: Print lexeical tokens\n");
     printf("\t-ast: Print ast tree\n");
     printf("\t-bytecode: Print bytecode\n");
+    printf("\t-printIR: Print llvm IR\n");
 }
 
 void parseOptions(int argc, char **argv)
@@ -48,6 +54,16 @@ void parseOptions(int argc, char **argv)
             option_printAST = true;
         } else if (!strcmp(argv[i], "-bytecode")) {
             option_printBytecode = true;
+        } else if (!strcmp(argv[i], "-llvm")) {
+            option_llvm = true;
+            option_c = false;
+        } else if (!strcmp(argv[i], "-c")) {
+            option_c = true;
+            option_llvm = false;
+        } else if (!stricmp(argv[i], "-printIR")) {
+            option_c = false;
+            option_llvm = true;
+            option_llvm_print = true;
         } else {
             root_file = argv[i];
         }
@@ -96,7 +112,7 @@ char *getCfilename(const char *jai_name)
 int main(int argc, char **argv)
 {
 	parseOptions(argc, argv);
-    double astBuildTime, codegenTime, binaryGenTime = 0.0;
+    double astBuildTime, codegenTime, linkTime, binaryGenTime = 0.0;
 
     INIT_PROFILER();
 
@@ -130,38 +146,44 @@ int main(int argc, char **argv)
 
     astBuildTime = timer.stopTimer();
 
-    timer.startTimer();
+    if (option_llvm) {
 
-    c_generator gen;
-    char *c_filename = getCfilename(root_file);
-    gen.generate_c_file(c_filename, parsedFile);
+        llvm_compile(parsedFile, codegenTime, binaryGenTime, linkTime);
+        
+    } else if (option_c) {
 
-    codegenTime = timer.stopTimer();
+        timer.startTimer();
 
-    // TODO: make the backends disjoint, one or the other
-    llvm_compile(parsedFile);    
+        c_generator gen;
+        char *c_filename = getCfilename(root_file);
+        gen.generate_c_file(c_filename, parsedFile);
 
+        codegenTime = timer.stopTimer();
 
-    timer.startTimer();
-    
-    {
-        CPU_SAMPLE("External Compile");
-        res = compile_c_into_binary(c_filename, parsedFile->imports);
+        timer.startTimer();
+
+        {
+            CPU_SAMPLE("External Compile");
+            res = compile_c_into_binary(c_filename, parsedFile->imports);
+        }
+
+        binaryGenTime = timer.stopTimer();
+
+        if (res != 0) {
+            printf("The C compilation failed with error code: %d\n", res);
+        }
     }
 
-    binaryGenTime = timer.stopTimer();
 
-    if (res != 0) {
-        printf("The C compilation failed with error code: %d\n", res);
-    }
+
 
     CPU_REPORT();
 
     EXPORT_JSON("trace.json");
 
-    printTime("     AST building stage", astBuildTime);
-    printTime("C Code generation stage", codegenTime);
-    printTime("Binary generation stage", binaryGenTime);
+    printTime("      AST building stage", astBuildTime);    
+    printTime("Backend generation stage", codegenTime);
+    printTime(" Binary generation stage", binaryGenTime);
 
     DELETE_PROFILER();
     return 0;

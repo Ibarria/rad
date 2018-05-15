@@ -21,8 +21,12 @@
 #include "llvm_builder.h"
 #include "assert.h"
 #include "AST.h"
+#include "Timer.h"
+#include "Profiler.h"
 
 using namespace llvm;
+
+extern bool option_llvm_print;
 
 // These should be wrapped in some kinda class... some day
 static LLVMContext TheContext;
@@ -612,8 +616,11 @@ xsaveopt                      - Support xsaveopt instructions.
 xsaves                        - Support xsaves instructions.
 */
 
-void llvm_compile(FileAST *root)
-{    
+void llvm_compile(FileAST *root, double &codegenTime, double &bingenTime, double &linkTime)
+{   
+    Timer timer;
+
+    timer.startTimer();
     TheModule = new Module("jai", TheContext);
     
     // Initialize the target registry etc.
@@ -643,6 +650,10 @@ void llvm_compile(FileAST *root)
     // Do the actual compile
     generateCode(root);
 
+    codegenTime = timer.stopTimer();
+
+    timer.startTimer();
+
     auto Filename = "output.o";
     std::error_code EC;
     raw_fd_ostream dest(Filename, EC, sys::fs::F_None);
@@ -663,7 +674,14 @@ void llvm_compile(FileAST *root)
     }
 
     pass.run(*TheModule);
+
     dest.flush();
+
+    bingenTime = timer.stopTimer();
+
+    if (option_llvm_print) {
+        outs() << *TheModule;
+    }
 
     outs() << "Wrote " << Filename << "\n";    
 }

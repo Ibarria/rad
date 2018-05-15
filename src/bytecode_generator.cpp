@@ -204,7 +204,8 @@ static inline bool isArgument(VariableDeclarationAST *decl)
 
 static inline s16 roundToQWord(u64 bytes)
 {
-    assert(bytes > 0);
+    // This assert might not make sense on a func :: () 
+    // assert(bytes > 0);
     u64 qwcount = bytes / 8;
     if (bytes % 8 != 0) qwcount++;
     assert(qwcount == (s16)qwcount);

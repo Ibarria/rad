@@ -48,7 +48,7 @@
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\</IntDir>
     <GenerateManifest>false</GenerateManifest>
-    <IncludePath>C:\code\llvm\build\include;C:\code\llvm\llvm\include;$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
+    <IncludePath>C:\code\llvm\build_6.0\include;C:\code\llvm\llvm\include;$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
     <LibraryPath>C:\code\llvm\build\Debug\lib;$(MSBuildProjectDirectory)\dyncall\lib\win;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

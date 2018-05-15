@@ -692,6 +692,7 @@ void Interpreter::perform_bytecode(FileAST * root)
     
     if (option_printBytecode) print_bc_program(bp);
 
+    if (0)
     {
         CPU_SAMPLE("run bytecode");
 

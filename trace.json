@@ -1,0 +1,33 @@
+{
+"traceEvents": [
+{ "pid":6484, "tid":12440, "ts":177, "dur":755, "ph":"X", "name":"openFile", "args": {"ms":0.755000 } },
+{ "pid":6484, "tid":12440, "ts":1051, "dur":309, "ph":"X", "name":"Lexer - ParseFile", "args": {"ms":0.309000 } },
+{ "pid":6484, "tid":12440, "ts":2084, "dur":523, "ph":"X", "name":"openFile", "args": {"ms":0.523000 } },
+{ "pid":6484, "tid":12440, "ts":2609, "dur":65, "ph":"X", "name":"Lexer - ParseFile", "args": {"ms":0.065000 } },
+{ "pid":6484, "tid":12440, "ts":2084, "dur":680, "ph":"X", "name":"Parser Main", "args": {"ms":0.680000 } },
+{ "pid":6484, "tid":12440, "ts":176, "dur":2678, "ph":"X", "name":"Parser Main", "args": {"ms":2.678000 } },
+{ "pid":6484, "tid":12440, "ts":2911, "dur":111, "ph":"X", "name":"traversePostfix", "args": {"ms":0.111000 } },
+{ "pid":6484, "tid":12440, "ts":3067, "dur":63, "ph":"X", "name":"TypeDependencies", "args": {"ms":0.063000 } },
+{ "pid":6484, "tid":12440, "ts":3132, "dur":8, "ph":"X", "name":"SizeDependencies", "args": {"ms":0.008000 } },
+{ "pid":6484, "tid":12440, "ts":3142, "dur":6, "ph":"X", "name":"CheckDependencies", "args": {"ms":0.006000 } },
+{ "pid":6484, "tid":12440, "ts":3066, "dur":83, "ph":"X", "name":"processDependencies", "args": {"ms":0.083000 } },
+{ "pid":6484, "tid":12440, "ts":3151, "dur":8, "ph":"X", "name":"TypeDependencies", "args": {"ms":0.008000 } },
+{ "pid":6484, "tid":12440, "ts":3160, "dur":8, "ph":"X", "name":"SizeDependencies", "args": {"ms":0.008000 } },
+{ "pid":6484, "tid":12440, "ts":3169, "dur":2, "ph":"X", "name":"CheckDependencies", "args": {"ms":0.002000 } },
+{ "pid":6484, "tid":12440, "ts":3150, "dur":22, "ph":"X", "name":"processDependencies", "args": {"ms":0.022000 } },
+{ "pid":6484, "tid":12440, "ts":3173, "dur":4, "ph":"X", "name":"TypeDependencies", "args": {"ms":0.004000 } },
+{ "pid":6484, "tid":12440, "ts":3178, "dur":4, "ph":"X", "name":"SizeDependencies", "args": {"ms":0.004000 } },
+{ "pid":6484, "tid":12440, "ts":3183, "dur":3, "ph":"X", "name":"CheckDependencies", "args": {"ms":0.003000 } },
+{ "pid":6484, "tid":12440, "ts":3173, "dur":14, "ph":"X", "name":"processDependencies", "args": {"ms":0.014000 } },
+{ "pid":6484, "tid":12440, "ts":3189, "dur":51, "ph":"X", "name":"TypeDependencies", "args": {"ms":0.051000 } },
+{ "pid":6484, "tid":12440, "ts":3241, "dur":17, "ph":"X", "name":"SizeDependencies", "args": {"ms":0.017000 } },
+{ "pid":6484, "tid":12440, "ts":3259, "dur":12, "ph":"X", "name":"CheckDependencies", "args": {"ms":0.012000 } },
+{ "pid":6484, "tid":12440, "ts":3188, "dur":84, "ph":"X", "name":"processDependencies", "args": {"ms":0.084000 } },
+{ "pid":6484, "tid":12440, "ts":3065, "dur":210, "ph":"X", "name":"processAllDependencies", "args": {"ms":0.210000 } },
+{ "pid":6484, "tid":12440, "ts":3366, "dur":3510, "ph":"X", "name":"compile bytecode", "args": {"ms":3.510000 } },
+{ "pid":6484, "tid":12440, "ts":6881, "dur":30, "ph":"X", "name":"run bytecode", "args": {"ms":0.030000 } },
+{ "pid":6484, "tid":12440, "ts":6985, "dur":17374, "ph":"X", "name":"generate C", "args": {"ms":17.374000 } },
+{ "pid":6484, "tid":12440, "ts":24365, "dur":818345, "ph":"X", "name":"External Compile", "args": {"ms":818.345000 } },
+{ "pid":6484, "tid":12440, "ts":27, "dur":842686, "ph":"X", "name":"Main Compilation", "args": {"ms":842.686000 } }
+]
+}

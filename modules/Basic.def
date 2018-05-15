@@ -1,3 +1,5 @@
 LIBRARY Basic
 EXPORTS
   print
+  func
+  end
