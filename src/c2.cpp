@@ -201,6 +201,7 @@ int main(int argc, char **argv)
     printTime("      AST building stage", astBuildTime);    
     printTime("Backend generation stage", codegenTime);
     printTime(" Binary generation stage", binaryGenTime);
+    if (option_llvm) printTime("     External Link stage", linkTime);
 
     DELETE_PROFILER();
     return 0;
