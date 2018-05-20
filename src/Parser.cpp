@@ -13,11 +13,6 @@
 # define strncpy_s  strncpy
 #endif
 
-void traverseAST(FileAST *root);
-u32 process_scope_variables(Scope *scope);
-bool infer_types(VariableDeclarationAST *decl);
-TypeAST *deduceType(ExpressionAST *expr);
-
 extern bool option_printTokens;
 
 #define NEW_AST(ast_type) (ast_type *) setASTinfo(this, (BaseAST *) new(this->pool) ast_type )
@@ -264,7 +259,7 @@ static struct TypeHelperRec {
     { TK_F32, "f32", 4, BASIC_TYPE_FLOATING, true, nullptr },
     { TK_F64, "f64", 8, BASIC_TYPE_FLOATING, true, nullptr },
     { TK_FLOAT, "float", 8, BASIC_TYPE_FLOATING, true, nullptr },
-{ TK_INVALID, nullptr, 0, BASIC_TYPE_VOID, false, nullptr }
+    { TK_INVALID, nullptr, 0, BASIC_TYPE_VOID, false, nullptr }
 };
 
 DirectTypeAST *getTypeEx(DirectTypeAST *oldtype, u32 newbytes)

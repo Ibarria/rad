@@ -29,6 +29,11 @@ bool option_c = false;
 # define strncpy_s  strncpy
 #endif
 
+#ifdef WIN32
+# define stricmp _stricmp
+#endif
+
+
 void usage()
 {
 	// show usage and version
@@ -36,12 +41,14 @@ void usage()
 	printf("\nUsage:\n");
 	printf("c2 [options] <source file>\n");
     printf("\tOptions:\n");
-    printf("\t-llvm: use the llvm backend [DEFAULT]\n");
-    printf("\t-c: use the C backend\n");
+    printf("\t-backend:[LLVM|C|NULL]\n");
+    printf("\t\tLLVM: use the llvm backend[DEFAULT]\n");
+    printf("\t\tC: use the C backend\n");
+    printf("\t\tNULL: do not output code\n");
     printf("\t-tokens: Print lexeical tokens\n");
     printf("\t-ast: Print ast tree\n");
     printf("\t-bytecode: Print bytecode\n");
-    printf("\t-printIR: Print llvm IR\n");
+    printf("\t-printIR: Print llvm IR, this requires the llvm backend\n");
 }
 
 void parseOptions(int argc, char **argv)
@@ -53,13 +60,23 @@ void parseOptions(int argc, char **argv)
         } else if (!strcmp(argv[i], "-ast")) {
             option_printAST = true;
         } else if (!strcmp(argv[i], "-bytecode")) {
-            option_printBytecode = true;
         } else if (!strcmp(argv[i], "-llvm")) {
-            option_llvm = true;
-            option_c = false;
-        } else if (!strcmp(argv[i], "-c")) {
-            option_c = true;
-            option_llvm = false;
+            option_printBytecode = true;
+        } else if (!strncmp(argv[i], "-backend:", strlen("-backend:"))) {
+            char *backend = argv[i] + strlen("-backend:");
+            if (!stricmp(backend, "LLVM")) {
+                option_llvm = true;
+                option_c = false;
+            } else if (!stricmp(backend, "C")) {
+                option_c = true;
+                option_llvm = false;
+            } else if (!stricmp(backend, "NULL")) {
+                option_c = false;
+                option_llvm = false;
+            } else {
+                printf("Backend option: [%s] is not recognized\n", backend);
+                exit(1);
+            }
         } else if (!stricmp(argv[i], "-printIR")) {
             option_c = false;
             option_llvm = true;
@@ -112,7 +129,7 @@ char *getCfilename(const char *jai_name)
 int main(int argc, char **argv)
 {
 	parseOptions(argc, argv);
-    double astBuildTime, codegenTime, linkTime, binaryGenTime = 0.0;
+    double astBuildTime = 0.0, codegenTime = 0.0, linkTime = 0.0, binaryGenTime = 0.0;
 
     INIT_PROFILER();
 

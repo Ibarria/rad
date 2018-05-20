@@ -1,5 +1,5 @@
 
-zeta:= ( (5 + 2) );
+zeta:: ( (5 + 2) );
 
 // Single line comment
 alpha := "a";

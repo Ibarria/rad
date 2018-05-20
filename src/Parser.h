@@ -49,5 +49,3 @@ struct Parser {
     FileAST * Parse(const char *filename, PoolAllocator *pool, FileAST *fast = nullptr);
 };
 
-void traverseAST(FileAST *root);
-

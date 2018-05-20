@@ -462,8 +462,14 @@ static bool literal_value_fits_in_bytes(LiteralAST *lit, DirectTypeAST *dt)
 void Interpreter::Error(BaseAST *ast, const char *msg, ...)
 {
     va_list args;
-    u32 off = sprintf_s(errorString, "%s:%d:%d: error : ", ast->filename, 
-        ast->line_num, ast->char_num);
+    u32 off = 0;
+    if (ast != nullptr) {
+        off = sprintf_s(errorString, "%s:%d:%d: error : ", ast->filename,
+            ast->line_num, ast->char_num);
+    }
+    else {
+        off = sprintf_s(errorString, "Compilation error : ");
+    }
 
     va_start(args, msg);
     vsprintf_s(errorString + off, sizeof(errorString) - off, msg, args);
@@ -970,6 +976,10 @@ void Interpreter::processAllDependencies()
         }
     } while (current_remain < old_remain);
 
+    if (current_remain > 0) {
+        Error(nullptr, "Could not process all dependencies");
+        success = false;
+    }
 }
 
 void Interpreter::processDependencies(interp_deps * deps)
@@ -1096,6 +1106,9 @@ bool Interpreter::doWorkAST(interp_work * work)
                     decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
                     //assert(t->size_in_bits);
                     return true;
+                }
+                else {
+                    return false;
                 }
                 break;
             }
@@ -1558,6 +1571,9 @@ bool Interpreter::doWorkAST(interp_work * work)
             if (id->next) {
                 id->expr_type = id->next->expr_type;
             } else {
+                // if we do not have a type for the declaration yet, do not consider this done
+                if (id->decl->specified_type == nullptr) return false;
+
                 id->expr_type = id->decl->specified_type;
             }
 
@@ -1565,8 +1581,13 @@ bool Interpreter::doWorkAST(interp_work * work)
 
         } else if (work->action == IA_COMPUTE_SIZE) {
             assert(id->decl);
-            assert(id->decl->specified_type);
-            id->size_in_bytes = id->expr_type->size_in_bytes;
+            if (isFunctionDefinition(id->decl)) {
+                // Function definitions do not have a size, as they do not get reserved space
+                // just pass
+            } else {
+                assert(id->decl->specified_type);
+                id->size_in_bytes = id->expr_type->size_in_bytes;
+            }
         } else if (work->action == IA_OPERATION_CHECK) {
             assert(!"No check for a single identifier");
         } else {

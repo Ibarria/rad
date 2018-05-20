@@ -10,6 +10,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/raw_ostream.h"
@@ -75,11 +76,23 @@ static void allocateVariable(VariableDeclarationAST *decl)
     // we need the type of the variable to be part of llvm
     generateCode(decl->specified_type);
 
-    IRBuilder<> TmpB(&llvm_function->getEntryBlock(),
-        llvm_function->getEntryBlock().begin());
-    auto AllocA = TmpB.CreateAlloca(decl->specified_type->llvm_type, nullptr, decl->varname);
+    if (isGlobalDeclaration(decl)) {
+        bool isConstant = isConstantDeclaration(decl);
+        llvm::Constant *initializer = nullptr;
+        if (isConstant || decl->definition) {
+            generateCode(decl->definition);
+            initializer = (llvm::Constant *) decl->definition->codegen;
+        }
+        auto gv = new GlobalVariable(*TheModule, decl->specified_type->llvm_type, isConstant, 
+            GlobalValue::ExternalLinkage, initializer, decl->varname);
+        decl->codegen = gv;
+    } else {
+        IRBuilder<> TmpB(&llvm_function->getEntryBlock(),
+            llvm_function->getEntryBlock().begin());
+        auto AllocA = TmpB.CreateAlloca(decl->specified_type->llvm_type, nullptr, decl->varname);
 
-    decl->codegen = AllocA;
+        decl->codegen = AllocA;
+    }
 }
 
 static void generateCode(BaseAST *ast)
@@ -297,6 +310,9 @@ static void generateCode(BaseAST *ast)
             break;
         }
         case AST_DIRECT_TYPE: {
+            // Global variables do not require the initialization, it is done in another section.
+            if (isGlobalDeclaration(decl)) return;
+
             generateCode(decl->specified_type);
             // The variable has already been allocated, now we might have to initialize it
             if (!decl->definition) return;
@@ -680,7 +696,7 @@ void llvm_compile(FileAST *root, double &codegenTime, double &bingenTime, double
     bingenTime = timer.stopTimer();
 
     if (option_llvm_print) {
-        outs() << *TheModule;
+        TheModule->print(outs(), nullptr);
     }
 
     outs() << "Wrote " << Filename << "\n";    

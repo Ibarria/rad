@@ -278,6 +278,18 @@ bool isFunctionDefinition(VariableDeclarationAST *decl);
 bool isFunctionForeign(VariableDeclarationAST *decl);
 bool isStructDeclaration(VariableDeclarationAST *decl);
 
+inline bool isGlobalDeclaration(VariableDeclarationAST *decl)
+{
+    if (decl->flags & DECL_FLAG_IS_GLOBAL_VARIABLE) return true;
+    return false;
+}
+
+inline bool isConstantDeclaration(VariableDeclarationAST *decl)
+{
+    if (decl->flags & DECL_FLAG_IS_CONSTANT) return true;
+    return false;
+}
+
 inline bool isStringDeclaration(VariableDeclarationAST *decl)
 {
     if (decl->specified_type->ast_type == AST_DIRECT_TYPE) {
