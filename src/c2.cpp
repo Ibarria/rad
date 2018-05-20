@@ -198,11 +198,18 @@ int main(int argc, char **argv)
 
     EXPORT_JSON("trace.json");
 
-    printTime("      AST building stage", astBuildTime);    
-    printTime("Backend generation stage", codegenTime);
-    printTime(" Binary generation stage", binaryGenTime);
-    if (option_llvm) printTime("     External Link stage", linkTime);
-
+    printf("\n ******** Compile time statistics ******** \n");
+    printTime("     AST and inference stage", astBuildTime);    
+    if (option_llvm) {
+        printTime("LLVM ojbect generation stage", binaryGenTime);
+        printTime("         External Link stage", linkTime);
+    }
+    else if (option_c) {
+        printTime("     C code generation stage", codegenTime);
+        printTime("      External compile stage", binaryGenTime);
+    }
+    printf("---------------------------------------------\n");
+    printTime("          Total compile time", astBuildTime + codegenTime + binaryGenTime + linkTime);
     DELETE_PROFILER();
     return 0;
 }
