@@ -24,6 +24,7 @@
 #include "AST.h"
 #include "Timer.h"
 #include "Profiler.h"
+#include "os.h"
 
 using namespace llvm;
 
@@ -636,6 +637,8 @@ void llvm_compile(FileAST *root, double &codegenTime, double &bingenTime, double
 {   
     Timer timer;
 
+    CPU_SAMPLE("LLVM compile");
+
     timer.startTimer();
     TheModule = new Module("jai", TheContext);
     
@@ -669,36 +672,47 @@ void llvm_compile(FileAST *root, double &codegenTime, double &bingenTime, double
     codegenTime = timer.stopTimer();
 
     timer.startTimer();
-
     auto Filename = "output.o";
-    std::error_code EC;
-    raw_fd_ostream dest(Filename, EC, sys::fs::F_None);
 
-    if (EC) {
-        errs() << "Could not open file: " << EC.message();
-        assert(false);
-        return;
+    {
+        std::error_code EC;
+        raw_fd_ostream dest(Filename, EC, sys::fs::F_None);
+
+        if (EC) {
+            errs() << "Could not open file: " << EC.message();
+            assert(false);
+            return;
+        }
+
+        legacy::PassManager pass;
+        auto FileType = TargetMachine::CGFT_ObjectFile;
+
+        if (TheTargetMachine->addPassesToEmitFile(pass, dest, FileType)) {
+            errs() << "TheTargetMachine can't emit a file of this type";
+            assert(false);
+            return;
+        }
+
+        pass.run(*TheModule);
+
+        dest.flush();
+
+        bingenTime = timer.stopTimer();
     }
 
-    legacy::PassManager pass;
-    auto FileType = TargetMachine::CGFT_ObjectFile;
+    outs() << "Object generation [" << Filename << "] completed, now linking...\n";
+    outs().flush();
 
-    if (TheTargetMachine->addPassesToEmitFile(pass, dest, FileType)) {
-        errs() << "TheTargetMachine can't emit a file of this type";
-        assert(false);
-        return;
+    {
+        CPU_SAMPLE("LLVM external link");
+        timer.startTimer();
+        link_object(Filename, root->imports);
+        linkTime = timer.stopTimer();
     }
-
-    pass.run(*TheModule);
-
-    dest.flush();
-
-    bingenTime = timer.stopTimer();
 
     if (option_llvm_print) {
         TheModule->print(outs(), nullptr);
+        outs().flush();
     }
-
-    outs() << "Wrote " << Filename << "\n";    
 }
 

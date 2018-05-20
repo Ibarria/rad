@@ -55,6 +55,29 @@ extern "C" BOOL WINAPI DllMain(
     _In_ LPVOID    lpvReserved
 ) 
 {
+    switch( fdwReason ) 
+    { 
+        case DLL_PROCESS_ATTACH:
+         // Initialize once for each new process.
+         // Return FALSE to fail DLL load.
+         // print("Process Attach\n", 0);
+            break;
+
+        case DLL_THREAD_ATTACH:
+         // Do thread-specific initialization.
+         // print("Thread Attach\n", 0);
+            break;
+
+        case DLL_THREAD_DETACH:
+         // Do thread-specific cleanup.
+         // print("Thread Dettach\n", 0);
+            break;
+
+        case DLL_PROCESS_DETACH:
+         // Perform any necessary cleanup.
+         // print("Process Dettach\n", 0);
+            break;
+    }
     return TRUE;
 }
 
@@ -62,7 +85,7 @@ extern "C" BOOL WINAPI DllMain(
 
 extern "C" DLLEXPORT void end()
 {
-    print("Calling exit process now\n", 10);
+    // print("Calling exit process now\n", 10);
     ExitProcess(0);
 }
 #endif 
