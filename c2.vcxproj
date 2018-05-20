@@ -71,6 +71,7 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <EnableModules>true</EnableModules>
       <BufferSecurityCheck>false</BufferSecurityCheck>
+      <DiagnosticsFormat>Caret</DiagnosticsFormat>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

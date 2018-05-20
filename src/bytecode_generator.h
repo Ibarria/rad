@@ -41,6 +41,7 @@ struct BCI {
     s16 src2_reg = -1;
     s16 dst_reg = -1;
     u8 dst_type_bytes = 0;
+    s32 inst_index = -1; // This holds the relative position of the instruction on the function
     RegisterType dst_type = REGTYPE_UNKNOWN;
 };
 
@@ -120,6 +121,7 @@ struct bytecode_generator
     void initializeVariablesInScope(Scope *scope);
     void initializeVariable(VariableDeclarationAST *decl);
     void generate_function(TextType name, FunctionDefinitionAST *fundef);
+    void generate_statement(StatementAST *stmt);
     void generate_statement_block(StatementBlockAST *block);
 
     void computeAddressIntoRegister(ExpressionAST *expr, s16 reg);

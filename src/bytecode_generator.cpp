@@ -294,6 +294,7 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
     switch(opcode)
     {
         CASE_BC_OPCODE(BC_UNINITIALIZED);
+        CASE_BC_OPCODE(BC_NOP);
         CASE_BC_OPCODE(BC_ZERO_REG);
         CASE_BC_OPCODE(BC_LOAD_BIG_CONSTANT_TO_REG);
         CASE_BC_OPCODE(BC_STORE_TO_STACK_PLUS_CONSTANT);
@@ -314,7 +315,10 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_RESERVE_STACK_SIZE);
         CASE_BC_OPCODE(BC_COPY_REG);
         CASE_BC_OPCODE(BC_CAST);
-        default:
+        CASE_BC_OPCODE(BC_GOTO_CONSTANT_IF_FALSE);
+        CASE_BC_OPCODE(BC_GOTO_CONSTANT_IF_TRUE);
+        CASE_BC_OPCODE(BC_GOTO_CONSTANT);
+    default:
             assert(!"Unknown bytecode Instruction opcode, please add");
             return "UNKNOWN OPCODE";
     }
@@ -336,8 +340,8 @@ static const char *RegTypeToStr(RegisterType rt)
 
 void print_instruction(BCI *inst)
 {
-    printf("  op: %-35s src: %3d src2: %3d dst: %3d type: %s size: %d ",
-        bc_opcode_to_str(inst->opcode), (int)inst->src_reg, (int)inst->src2_reg,
+    printf("  [%3d] op: %-35s src: %3d src2: %3d dst: %3d type: %s size: %d ",
+        inst->inst_index, bc_opcode_to_str(inst->opcode), (int)inst->src_reg, (int)inst->src2_reg,
         (int)inst->dst_reg, RegTypeToStr(inst->dst_type), inst->dst_type_bytes);
 
     if ((inst->opcode == BC_BINARY_OPERATION) || (inst->opcode == BC_UNARY_OPERATION)) {
@@ -625,6 +629,7 @@ BCI * bytecode_generator::create_instruction(BytecodeInstructionOpcode opcode, s
 
 void bytecode_generator::issue_instruction(BCI * bci)
 {
+    bci->inst_index = current_function->instructions.size();
     current_function->instructions.push_back(bci);
 }
 
@@ -704,77 +709,110 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
     program->functions.push_back(func);
 }
 
+void bytecode_generator::generate_statement(StatementAST *stmt)
+{
+    switch (stmt->ast_type) {
+    case AST_VARIABLE_DECLARATION: {
+        auto decl = (VariableDeclarationAST *)stmt;
+        u64 var_size = getVariableSize(decl);
+        if (var_size > 0) {
+            // Possible optimization: have stack space in a per block basis
+            // We might need this for defers too. 
+            // reserve space and figure out where it is
+            decl->bc_mem_offset = current_function->bc_params_size;
+            current_function->bc_params_size += var_size;
+            issueReserveStackSpace(var_size);
+        }
+        initializeVariable(decl);
+        break;
+    }
+    case AST_ASSIGNMENT: {
+        auto assign = (AssignmentAST *)stmt;
+        s16 mark = program->machine.reg_mark();
+        s16 reg = reserveRegistersForSize(&program->machine, assign->lhs->expr_type->size_in_bytes);
+        computeExpressionIntoRegister(assign->rhs, reg);
+
+        if (assign->lhs->ast_type == AST_IDENTIFIER) {
+            auto iden = (IdentifierAST *)assign->lhs;
+            s16 address_reg = reserveRegistersForSize(&program->machine, 8);
+            computeAddressIntoRegister(iden, address_reg);
+            createStoreInstruction(BC_STORE_TO_MEM_PTR, address_reg, reg, iden->expr_type->size_in_bytes);
+        }
+        else if (assign->lhs->ast_type == AST_UNARY_OPERATION) {
+            auto unop = (UnaryOperationAST *)assign->lhs;
+            assert(unop->op == TK_LSHIFT);
+            s16 nreg = reserveRegistersForSize(&program->machine, 8);
+            computeAddressIntoRegister(unop->expr, nreg);
+            createStoreInstruction(BC_STORE_TO_MEM_PTR, nreg, reg, unop->expr_type->size_in_bytes);
+        }
+        else {
+            assert(!"We do not support anything else for an lvalue");
+        }
+
+        program->machine.pop_mark(mark);
+        break;
+    }
+    case AST_FUNCTION_CALL: {
+        auto funcall = (FunctionCallAST *)stmt;
+        // on statements we do not care about return values
+        compute_function_call_into_register(funcall, -1);
+        break;
+    }
+    case AST_RETURN_STATEMENT: {
+        auto ret_stmt = (ReturnStatementAST *)stmt;
+        s16 mark = program->machine.reg_mark();
+        s16 reg = reserveRegistersForSize(&program->machine, ret_stmt->ret->expr_type->size_in_bytes);
+        computeExpressionIntoRegister(ret_stmt->ret, reg);
+        createStoreInstruction(BC_STORE_TO_STACK_PLUS_CONSTANT, 0, ret_stmt->ret->expr_type->size_in_bytes,
+            reg, get_regtype_from_type(ret_stmt->ret->expr_type));
+        BCI *bci = create_instruction(BC_RETURN, -1, -1, 0);
+        issue_instruction(bci);
+        program->machine.pop_mark(mark);
+        break;
+    }
+    case AST_STATEMENT_BLOCK: {
+        auto inner_block = (StatementBlockAST *)stmt;
+        generate_statement_block(inner_block);
+        break;
+    }
+    case AST_IF_STATEMENT: {
+        auto ifst = (IfStatementAST *)stmt;
+        s16 mark = program->machine.reg_mark();
+        s16 reg = reserveRegistersForSize(&program->machine, ifst->condition->expr_type->size_in_bytes);
+        computeExpressionIntoRegister(ifst->condition, reg);
+        BCI *if_cond_bci = create_instruction(BC_GOTO_CONSTANT_IF_FALSE, reg, -1, -1);
+        issue_instruction(if_cond_bci);
+        generate_statement(ifst->then_branch);
+
+        BCI *else_cond_bci = nullptr;
+        if (ifst->else_branch != nullptr) {
+            else_cond_bci = create_instruction(BC_GOTO_CONSTANT, -1, -1, -1);
+            issue_instruction(else_cond_bci);
+            // We have to choose the index+1 otherwise we never end in the else clause
+            if_cond_bci->big_const = else_cond_bci->inst_index+1;
+            generate_statement(ifst->else_branch);
+        }
+        BCI *end_nop = create_instruction(BC_NOP, -1, -1, -1);
+        issue_instruction(end_nop);
+        // record the jump offset for the case when we do not go into the if
+        if (ifst->else_branch != nullptr) {
+            else_cond_bci->big_const = end_nop->inst_index;
+        } else {
+            if_cond_bci->big_const = end_nop->inst_index;
+        }
+        break;
+    }
+    default:
+        assert(!"Generate Statement Block in Bytecode, unknown AST");
+    }
+}
+
 void bytecode_generator::generate_statement_block(StatementBlockAST *block)
 {
     // first thing, allocate space for the variables, and process implicit
     // initialization
     for (auto stmt: block->statements) {
-        switch (stmt->ast_type) {
-            case AST_VARIABLE_DECLARATION: {
-                auto decl = (VariableDeclarationAST *)stmt;
-                u64 var_size = getVariableSize(decl);
-                if (var_size > 0) {
-                    // Possible optimization: have stack space in a per block basis
-                    // We might need this for defers too. 
-                    // reserve space and figure out where it is
-                    decl->bc_mem_offset = current_function->bc_params_size;
-                    current_function->bc_params_size += var_size;
-                    issueReserveStackSpace(var_size);
-                }
-                initializeVariable(decl);
-                break;
-            }
-            case AST_ASSIGNMENT: {
-                auto assign = (AssignmentAST *)stmt;
-                s16 mark = program->machine.reg_mark();
-                s16 reg = reserveRegistersForSize(&program->machine, assign->lhs->expr_type->size_in_bytes);
-                computeExpressionIntoRegister(assign->rhs, reg);
-
-                if (assign->lhs->ast_type == AST_IDENTIFIER) {
-                    auto iden = (IdentifierAST *)assign->lhs;
-                    s16 address_reg = reserveRegistersForSize(&program->machine, 8);
-                    computeAddressIntoRegister(iden, address_reg);
-                    createStoreInstruction(BC_STORE_TO_MEM_PTR, address_reg, reg, iden->expr_type->size_in_bytes);
-                } else if (assign->lhs->ast_type == AST_UNARY_OPERATION) {
-                    auto unop = (UnaryOperationAST *)assign->lhs;
-                    assert(unop->op == TK_LSHIFT);
-                    s16 nreg = reserveRegistersForSize(&program->machine, 8);
-                    computeAddressIntoRegister(unop->expr, nreg);
-                    createStoreInstruction(BC_STORE_TO_MEM_PTR, nreg, reg, unop->expr_type->size_in_bytes);
-                }
-                else {
-                    assert (! "We do not support anything else for an lvalue");
-                }
-                
-                program->machine.pop_mark(mark);
-                break;
-            }
-            case AST_FUNCTION_CALL: {
-                auto funcall = (FunctionCallAST *)stmt;
-                // on statements we do not care about return values
-                compute_function_call_into_register(funcall, -1);
-                break;
-            }
-            case AST_RETURN_STATEMENT: {
-                auto ret_stmt = (ReturnStatementAST *)stmt;
-                s16 mark = program->machine.reg_mark();
-                s16 reg = reserveRegistersForSize(&program->machine, ret_stmt->ret->expr_type->size_in_bytes);
-                computeExpressionIntoRegister(ret_stmt->ret, reg);
-                createStoreInstruction(BC_STORE_TO_STACK_PLUS_CONSTANT, 0, ret_stmt->ret->expr_type->size_in_bytes, 
-                    reg, get_regtype_from_type(ret_stmt->ret->expr_type));
-                BCI *bci = create_instruction(BC_RETURN, -1, -1, 0);
-                issue_instruction(bci);
-                program->machine.pop_mark(mark);
-                break;
-            }
-            case AST_STATEMENT_BLOCK: {
-                auto inner_block = (StatementBlockAST *)stmt;
-                generate_statement_block(inner_block);
-                break;
-            }
-            default:
-                assert(!"Generate Statement Block in Bytecode, unknown AST");
-        }
+        generate_statement(stmt);
     }
 }
 
@@ -1118,7 +1156,9 @@ void bc_base_memory::initMem(u8 * basemem, u64 bss_size, u64 stack_sz)
 
 void bytecode_runner::run_bc_function(bytecode_function * func)
 {
-    for (auto bci : func->instructions) {
+    u32 inst_index = 0;
+    while (inst_index < func->instructions.size()) {
+        auto bci = func->instructions[inst_index];
         auto &dstreg = program->machine.regs[bci->dst_reg];
         auto &srcreg = program->machine.regs[bci->src_reg];
         auto &src2reg = program->machine.regs[bci->src2_reg];
@@ -1803,6 +1843,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         default:
             assert(!"Unknown Instruction type");
         }
+        inst_index++;
     }
 }
 

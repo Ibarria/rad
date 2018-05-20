@@ -2,6 +2,7 @@
 
 enum BytecodeInstructionOpcode : u16 {
     BC_UNINITIALIZED,
+    BC_NOP, 
     BC_ZERO_REG,
     BC_LOAD_BIG_CONSTANT_TO_REG,  // big const is an arbitrary val
     BC_STORE_TO_STACK_PLUS_CONSTANT,

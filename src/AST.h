@@ -39,6 +39,7 @@ enum AST_CLASS_TYPE {
     AST_FUNCTION_TYPE,
     AST_STATEMENT_BLOCK,
     AST_RETURN_STATEMENT,
+    AST_IF_STATEMENT,
     AST_FUNCTION_DEFINITION,
     AST_FUNCTION_CALL,
     AST_DIRECT_TYPE,
@@ -114,6 +115,15 @@ struct ReturnStatementAST: StatementAST
 {
     ReturnStatementAST() { ast_type = AST_RETURN_STATEMENT; }
     ExpressionAST *ret = nullptr;
+    llvm::Value *codegen = nullptr;
+};
+
+struct IfStatementAST : StatementAST
+{
+    IfStatementAST() { ast_type = AST_IF_STATEMENT; }
+    ExpressionAST *condition = nullptr;
+    StatementAST *then_branch = nullptr;
+    StatementAST *else_branch = nullptr;
     llvm::Value *codegen = nullptr;
 };
 
@@ -344,6 +354,29 @@ inline bool isDirectTypeVariation(TypeAST *type) {
     return (type->ast_type == AST_DIRECT_TYPE)
         || (type->ast_type == AST_ARRAY_TYPE)
         || (type->ast_type == AST_POINTER_TYPE);
+}
+
+inline bool isTypeBoolean(TypeAST *t) 
+{
+    if (t->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)t;
+        return dt->basic_type == BASIC_TYPE_BOOL;
+    }
+    return false;
+}
+
+inline bool isTypeInteger(TypeAST *t)
+{
+    if (t->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)t;
+        return dt->basic_type == BASIC_TYPE_INTEGER;
+    }
+    return false;
+}
+
+inline bool isTypePointer(TypeAST *t)
+{
+    return t->ast_type == AST_POINTER_TYPE;
 }
 
 TypeAST *getDefinedType(VarReferenceAST *ast);

@@ -859,6 +859,17 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
 
         break;
     }
+    case AST_IF_STATEMENT: {
+        auto ifst = (IfStatementAST *)ast;
+        traversePostfixAST(PPC(ifst->condition), deps);
+        traversePostfixAST(PPC(ifst->then_branch), deps);
+        traversePostfixAST(PPC(ifst->else_branch), deps);
+
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
+        break;
+    }
     case AST_FUNCTION_DEFINITION: {
         auto fundef = (FunctionDefinitionAST *)ast;
         traversePostfixAST(PPC(fundef->declaration), deps);
@@ -1382,6 +1393,32 @@ bool Interpreter::doWorkAST(interp_work * work)
         //addTypeWork(&pool, ast, deps);
         //addSizeWork(&pool, ast, deps);
         //addCheckWork(&pool, ast, deps);
+
+        break;
+    }
+    case AST_IF_STATEMENT: {
+        auto ifst = (IfStatementAST *)ast;
+
+        if (work->action == IA_RESOLVE_TYPE) {
+
+        }
+        else if (work->action == IA_COMPUTE_SIZE) {
+
+        }
+        else if (work->action == IA_OPERATION_CHECK) {
+            // next we need to type check the if statement
+            TypeAST *cond_type = ifst->condition->expr_type;
+
+            if (cond_type == nullptr) return false;
+
+            if (!isTypeBoolean(cond_type) && !isTypePointer(cond_type) && 
+                                             !isTypeInteger(cond_type)) {
+                Error(ifst, "The condition expression has to evaluate to an Integer, Boolean or pointer\n");
+                return false;
+            }
+        } else {
+            assert(!"Unknown dependency work type");
+        }
 
         break;
     }

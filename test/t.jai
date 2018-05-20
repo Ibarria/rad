@@ -1,7 +1,5 @@
-a := 10;
-
-/*
-second := first;
-
-first :: 10;
-*/
+main::()
+{
+	if (true) a := 1;
+	else b:= 2;
+}

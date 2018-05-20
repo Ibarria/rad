@@ -554,6 +554,47 @@ ReturnStatementAST *Parser::parseReturnStatement()
     return ret;
 }
 
+IfStatementAST * Parser::parseIfStatement()
+{
+    IfStatementAST *ifst = NEW_AST(IfStatementAST);
+    MustMatchToken(TK_IF);
+    if (!success) {
+        return nullptr;
+    }
+
+    MustMatchToken(TK_OPEN_PAREN);
+    if (!success) {
+        return nullptr;
+    }
+
+    ifst->condition = parseExpression();
+    if (!success) {
+        return nullptr;
+    }
+
+    MustMatchToken(TK_CLOSE_PAREN);
+    if (!success) {
+        return nullptr;
+    }
+
+    ifst->then_branch = parseStatement();
+    if (!success) {
+        return nullptr;
+    }
+
+    TOKEN_TYPE cur_type;
+    cur_type = lex->getTokenType();
+    if (cur_type == TK_ELSE) {
+        lex->consumeToken();
+        ifst->else_branch = parseStatement();
+        if (!success) {
+            return nullptr;
+        }
+    }
+
+    return ifst;
+}
+
 StatementAST *Parser::parseStatement()
 {
     TOKEN_TYPE cur_type;
@@ -585,6 +626,14 @@ StatementAST *Parser::parseStatement()
         return parseStatementBlock();
     } else if (cur_type == TK_RETURN) {
         return parseReturnStatement();
+    } else if (cur_type == TK_IF) {
+        return parseIfStatement();
+    } else if (cur_type == TK_WHILE) {
+        Error("The `while` statement is not yet supported.\n");
+        return nullptr;
+    } else if (cur_type == TK_ELSE) {
+        Error("Found a mismatched `else`.\n");
+        return nullptr;
     } else {
         statement = parseAssignmentOrExpression();
         MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");

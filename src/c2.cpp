@@ -60,7 +60,6 @@ void parseOptions(int argc, char **argv)
         } else if (!strcmp(argv[i], "-ast")) {
             option_printAST = true;
         } else if (!strcmp(argv[i], "-bytecode")) {
-        } else if (!strcmp(argv[i], "-llvm")) {
             option_printBytecode = true;
         } else if (!strncmp(argv[i], "-backend:", strlen("-backend:"))) {
             char *backend = argv[i] + strlen("-backend:");

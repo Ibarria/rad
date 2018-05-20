@@ -169,6 +169,14 @@ void printAST(const BaseAST *ast, int ident)
         printAST(a->ret, ident + 3);
         break;
     }
+    case AST_IF_STATEMENT: {
+        const IfStatementAST *a = (const IfStatementAST *)ast;
+        printf("%*sIfStatementAST\n", ident, "");
+        printAST(a->condition, ident + 3);
+        printAST(a->then_branch, ident + 3);
+        if (a->else_branch) printAST(a->else_branch, ident + 3);
+        break;
+    }
     case AST_FUNCTION_DEFINITION: {
         const FunctionDefinitionAST *a = (const FunctionDefinitionAST *)ast;
         printf("%*sFunctionDefinitionAST\n", ident, "");
@@ -233,9 +241,10 @@ void printAST(const BaseAST *ast, int ident)
         printf("%*sRun Directive:\n", ident, "");
         printAST(run->expr, ident + 3);
         break;
-    }
+    }                            
     default : 
         printf("%*sUnknown AST type\n", ident, "");
+        assert(false);
     }
 }
 
