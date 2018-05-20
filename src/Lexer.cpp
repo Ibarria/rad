@@ -49,6 +49,8 @@ struct ReservedKeyword {
     { "else",     TK_ELSE },
     { "while",    TK_WHILE },
     { "for",      TK_FOR },
+    { "break",    TK_BREAK },
+    { "continue", TK_CONTINUE },
     { "bool",     TK_BOOL },
     { "true",     TK_TRUE },
     { "false",    TK_FALSE },

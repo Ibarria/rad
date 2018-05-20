@@ -1164,6 +1164,8 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         auto &src2reg = program->machine.regs[bci->src2_reg];
 
         switch (bci->opcode) {
+        case BC_NOP: 
+            break;
         case BC_ZERO_REG: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             dstreg.data._u64 = 0;
@@ -1839,6 +1841,37 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             dstreg.bytes = bci->dst_type_bytes;
             dstreg.type = bci->dst_type;
             break;
+        }
+        case BC_GOTO_CONSTANT_IF_FALSE: {
+            assert(bci->src_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
+            assert(srcreg.type != REGTYPE_UNKNOWN);
+            assert(srcreg.bytes > 0);
+
+            u64 cond_bytes = upconvertUIntReg(srcreg);
+            if (cond_bytes == 0) {
+                inst_index = (u32)bci->big_const;
+                assert(inst_index < func->instructions.size());
+                continue;
+            }
+            break;
+        }
+        case BC_GOTO_CONSTANT_IF_TRUE: {
+            assert(bci->src_reg < sizeof(program->machine.regs) / sizeof(program->machine.regs[0]));
+            assert(srcreg.type != REGTYPE_UNKNOWN);
+            assert(srcreg.bytes > 0);
+
+            u64 cond_bytes = upconvertUIntReg(srcreg);
+            if (cond_bytes != 0) {
+                inst_index = (u32)bci->big_const;
+                assert(inst_index < func->instructions.size());
+                continue;
+            }
+            break;
+        }
+        case BC_GOTO_CONSTANT: {
+            inst_index = (u32)bci->big_const;
+            assert(inst_index < func->instructions.size());
+            continue;
         }
         default:
             assert(!"Unknown Instruction type");

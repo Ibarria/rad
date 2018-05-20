@@ -137,6 +137,11 @@ static void generateCode(BaseAST *ast)
         }
         break;
     }
+    case AST_IF_STATEMENT: {
+        auto ifst = (IfStatementAST *)ast;
+        assert(false);
+        break;
+    }
     case AST_RETURN_STATEMENT: {
         auto ret_stmt = (ReturnStatementAST *)ast;
         if (ret_stmt->ret != nullptr) {

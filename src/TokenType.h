@@ -58,6 +58,8 @@ enum TOKEN_TYPE {
     TK_ELSE,
     TK_FOR,
     TK_WHILE,
+    TK_BREAK,
+    TK_CONTINUE,
     TK_RETURN,
     TK_TRUE,
     TK_FALSE,
