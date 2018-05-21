@@ -23,6 +23,7 @@ class c_generator
     void generate_argument_declaration(VariableDeclarationAST *arg);
     void generate_statement_block(StatementBlockAST *block);
     void generate_statement(StatementAST *stmt);
+    void generate_if_statement(IfStatementAST *ifst);
     void generate_return_statement(ReturnStatementAST *ret);
     void generate_assignment(AssignmentAST *assign);
     void generate_expression(ExpressionAST *expr);

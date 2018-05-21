@@ -471,8 +471,28 @@ void c_generator::generate_statement(StatementAST * stmt)
         fprintf(output_file, ";\n");
         break;
     }
+    case AST_IF_STATEMENT: {
+        generate_if_statement((IfStatementAST *)stmt);
+        break;
+    }
     default:
         assert(!"Not implemented yet");
+    }
+}
+
+void c_generator::generate_if_statement(IfStatementAST * ifst)
+{
+    generate_line_info(ifst);
+    do_ident();
+    fprintf(output_file, "if (");
+    generate_expression(ifst->condition);
+    fprintf(output_file, ") ");
+    generate_statement(ifst->then_branch);
+    if (ifst->else_branch) {
+        generate_line_info(ifst->else_branch);
+        do_ident();
+        fprintf(output_file, "else ");
+        generate_statement(ifst->else_branch);
     }
 }
 
