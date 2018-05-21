@@ -39,6 +39,20 @@ static Function *llvm_function = nullptr;
 
 static void generateCode(BaseAST *ast);
 
+static void printBasicBlock(BasicBlock *bb)
+{    
+    printf("  Block %s has %d instructions\n", bb->getName().str().c_str(), (int)bb->size());
+}
+
+static void printFunction(Function *f)
+{
+    for (auto it = f->getBasicBlockList().begin(); it != f->getBasicBlockList().end(); it++) {
+        printBasicBlock(&(*it));
+    }
+    f->print(outs());
+    outs().flush();
+}
+
 static void generateFunctionPrototype(VariableDeclarationAST *decl)
 {
     if (decl->codegen) return;
@@ -139,7 +153,38 @@ static void generateCode(BaseAST *ast)
     }
     case AST_IF_STATEMENT: {
         auto ifst = (IfStatementAST *)ast;
-        assert(false);
+        // This code is taken from http://llvm.org/docs/tutorial/LangImpl05.html
+        generateCode(ifst->condition);
+
+        Value *cond = ifst->condition->codegen;
+        cond = Builder.CreateICmpNE(cond, ConstantInt::getFalse(TheContext), "if_cond");
+
+        Function *lfunc = Builder.GetInsertBlock()->getParent();
+
+        BasicBlock *then_block = BasicBlock::Create(TheContext, "then", lfunc);
+        BasicBlock *else_block = BasicBlock::Create(TheContext, "else");
+        BasicBlock *merge_block = BasicBlock::Create(TheContext, "ifcont");        
+
+        Builder.CreateCondBr(cond, then_block, else_block);
+
+        Builder.SetInsertPoint(then_block);
+
+        generateCode(ifst->then_branch);
+        Value *then_val = ifst->then_branch->codegen;
+
+        Builder.CreateBr(merge_block);
+        then_block = Builder.GetInsertBlock();
+
+        llvm_function->getBasicBlockList().push_back(else_block);
+        Builder.SetInsertPoint(else_block);
+        if (ifst->else_branch) generateCode(ifst->else_branch);
+
+        Builder.CreateBr(merge_block);
+        else_block = Builder.GetInsertBlock();
+
+        llvm_function->getBasicBlockList().push_back(merge_block);
+        Builder.SetInsertPoint(merge_block);
+
         break;
     }
     case AST_RETURN_STATEMENT: {
@@ -310,7 +355,6 @@ static void generateCode(BaseAST *ast)
             }
 
             verifyFunction(*llvm_func);
-
             llvm_function = old_func;
 
             break;

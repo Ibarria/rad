@@ -1,5 +1,15 @@
+#import "Basic"
+
+sum :: (a: int, b: float) -> int{
+	return a;
+}
+
 main::()
 {
-	if (true) a := 1;
-	else b:= 2;
+// 	A := 42;
+	bb : bool = false;
+//	B := 3.14;
+//	C := sum(A, B);
+	if (bb) print("Hi");
+	else print("There  ");
 }
