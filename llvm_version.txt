@@ -1,0 +1,16 @@
+LLVM source information
+--------------------------
+
+Path: .
+Working Copy Root Path: /Users/libarria/code/llvm
+URL: http://llvm.org/svn/llvm-project/llvm/trunk
+Relative URL: ^/llvm/trunk
+Repository Root: http://llvm.org/svn/llvm-project
+Repository UUID: 91177308-0d34-0410-b5e6-96231b3b80d8
+Revision: 332843
+Node Kind: directory
+Schedule: normal
+Last Changed Author: tnorthover
+Last Changed Rev: 332840
+Last Changed Date: 2018-05-21 05:43:54 -0700 (Mon, 21 May 2018)
+
