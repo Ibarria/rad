@@ -389,7 +389,31 @@ int link_object(const char *obj_file, ImportsHash &imports)
     CloseHandle(pi.hThread);
 
     return exit_code;
-#elif defined(PLATFORM_POSIX)
-    return -1;
+#elif defined(PLATFORM_LINUX)
+	printf("Unimplemented on Linux\n");
+    return -1;	
+#elif defined(PLATFORM_MACOS)
+    char cmd_line[512] = {};
+    char outfile[64];
+    strncpy(outfile, obj_file, sizeof(outfile));
+
+    char *ext = strrchr(outfile, '.');
+    *ext = 0;
+
+    u32 chars_written = sprintf(cmd_line, "clang %s -g -o %s -lstdc++", obj_file, outfile);
+
+    auto it = imports.begin();
+    char *line_ptr = cmd_line + chars_written;
+    while (!imports.isEnd(it)) {
+        if (it.entry) {
+            chars_written = sprintf(line_ptr, " modules/%s.dylib", it.entry->key());
+            line_ptr = line_ptr + chars_written;
+        }
+        it = imports.next(it);
+    }
+
+    int exit_code = system(cmd_line);
+
+    return exit_code;
 #endif
 }

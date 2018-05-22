@@ -9,6 +9,7 @@
 #define DLLEXPORT __declspec(dllexport)
 #else 
 #include <stdarg.h>
+#include <unistd.h>
 #define DLLEXPORT 
 #define vprintf_s vprintf
 #endif
@@ -32,6 +33,7 @@ int _strlen(const char *s)
 
 extern "C" DLLEXPORT int print(char *data, unsigned long size, ...)
 {
+#if defined(_WIN32)
     DWORD dwRet;
     char buffer[256];
 
@@ -45,6 +47,20 @@ extern "C" DLLEXPORT int print(char *data, unsigned long size, ...)
     va_end(args);
 
     return dwRet;
+#else
+	int ret = 0;
+    char buffer[256];
+
+    va_list args;
+    va_start(args, size);
+
+    vsprintf(buffer, data, args);
+	ret = write(1, buffer, strlen(buffer));
+
+    // int ret = vprintf_s(data, args);
+    va_end(args);
+	return ret;
+#endif
 }
 
 #if defined(_WIN32)
@@ -82,10 +98,13 @@ extern "C" BOOL WINAPI DllMain(
 }
 
 #include "ProcessThreadsAPI.h"
-
+#endif 
 extern "C" DLLEXPORT void end()
 {
+#if defined(_WIN32)
     // print("Calling exit process now\n", 10);
     ExitProcess(0);
+#else
+	_exit(0);
+#endif	
 }
-#endif 

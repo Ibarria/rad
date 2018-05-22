@@ -671,6 +671,7 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
 
         external_library *exlib = findOrLoadLibrary(fundef->declaration->filename);
         fundef->declaration->func_ptr = dlFindSymbol((DLLib *)exlib->dll, fundef->var_decl->varname);
+				
         assert(fundef->declaration->func_ptr);
         // During bytecode processing is the best time to go and ensure the function is setup
         return; // foreign functions just get called

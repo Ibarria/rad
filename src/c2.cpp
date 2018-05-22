@@ -27,6 +27,7 @@ bool option_c = false;
 # define sprintf_s  sprintf
 # define vsprintf_s vsnprintf
 # define strncpy_s  strncpy
+# define stricmp    strcasecmp
 #endif
 
 #ifdef WIN32

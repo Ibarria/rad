@@ -527,7 +527,7 @@ FunctionTypeAST *Parser::parseFunctionDeclaration()
         lex->consumeToken();
         fundec->return_type = parseType();
     } else {
-        fundec->return_type = getType(TK_VOID, "void");
+        fundec->return_type = getType(TK_VOID, (char *)"void");
     }
     if (!success) {
         return nullptr;
