@@ -1872,17 +1872,18 @@ bool Interpreter::doWorkAST(interp_work * work)
                 case AST_ARRAY_TYPE: {
                     char ltype[64] = {};
                     printTypeToStr(ltype, type);
-                    Error(unop, "Unary operation [%s] is only allowed on numeric and pointer types, found: %s\n",
+                    Error(unop, "Unary operation [%s] is only allowed on numeric or pointer or boolean types, found: %s\n",
                         TokenTypeToCOP(unop->op), ltype);
                     return false;
                 }
                 case AST_DIRECT_TYPE: {
                     auto dt = (DirectTypeAST *)type;
 
-                    if (!((dt->basic_type == BASIC_TYPE_FLOATING) || (dt->basic_type == BASIC_TYPE_INTEGER))) {
+                    if ((dt->basic_type != BASIC_TYPE_FLOATING) && (dt->basic_type != BASIC_TYPE_INTEGER) &&
+                        (dt->basic_type != BASIC_TYPE_BOOL)) {
                         char ltype[64] = {};
                         printTypeToStr(ltype, type);
-                        Error(unop, "Unary operation [%s] is only allowed on numeric types, found: %s\n",
+                        Error(unop, "Unary operation [%s] is only allowed on numeric or boolean types, found: %s\n",
                             TokenTypeToCOP(unop->op), ltype);
                         return false;
                     }                

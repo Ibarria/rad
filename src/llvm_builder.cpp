@@ -158,7 +158,7 @@ static void generateCode(BaseAST *ast)
         generateCode(ifst->condition);
 
         Value *cond = ifst->condition->codegen;
-        cond = Builder.CreateICmpNE(cond, ConstantInt::getFalse(TheContext), "if_cond");
+        cond = Builder.CreateICmpEQ(cond, ConstantInt::getTrue(TheContext), "if_cond");
 
         Function *lfunc = Builder.GetInsertBlock()->getParent();
 
@@ -300,7 +300,7 @@ static void generateCode(BaseAST *ast)
             break;
         }
         case TK_PLUS: {
-            Builder.CreateAdd(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = Builder.CreateAdd(binop->lhs->codegen, binop->rhs->codegen);
             break;
         }
         case TK_MINUS: {
@@ -314,7 +314,8 @@ static void generateCode(BaseAST *ast)
     }
     case AST_UNARY_OPERATION: {
         auto unop = (UnaryOperationAST *)ast;
-        assert(false);
+        generateCode(unop->expr);
+        unop->codegen = Builder.CreateNot(unop->expr->codegen);
         break;
     }
     case AST_ASSIGNMENT: {

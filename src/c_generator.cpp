@@ -63,7 +63,9 @@ void c_generator::generate_preamble()
 
 void c_generator::do_ident()
 {
-    if (ident > 0) fprintf(output_file, "%*s", ident, "");
+    if (ident > 0) {
+        fprintf(output_file, "%*s", ident, "");
+    }
 }
 
 void c_generator::generate_line_info(BaseAST * ast)
@@ -71,7 +73,7 @@ void c_generator::generate_line_info(BaseAST * ast)
     if ((last_filename != ast->filename) || (last_linenum != ast->line_num)) {
         last_linenum = ast->line_num;
         last_filename = ast->filename;
-        fprintf(output_file, "#line %d \"%s\"\n", ast->line_num, ast->filename);
+        fprintf(output_file, "\n#line %d \"%s\"\n", ast->line_num, ast->filename);
     }
 }
 
@@ -432,6 +434,7 @@ void c_generator::generate_statement_block(StatementBlockAST * block)
     generate_line_info(block);
     do_ident();
     fprintf(output_file, "{\n");
+    generate_line_info(block);
     ident += 4;
 
     if (insert_dangling_funcs) {
@@ -473,6 +476,10 @@ void c_generator::generate_statement(StatementAST * stmt)
     }
     case AST_IF_STATEMENT: {
         generate_if_statement((IfStatementAST *)stmt);
+        break;
+    }
+    case AST_STATEMENT_BLOCK: {
+        generate_statement_block((StatementBlockAST *)stmt);
         break;
     }
     default:
