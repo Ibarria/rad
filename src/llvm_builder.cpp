@@ -354,11 +354,25 @@ static void generateCode(BaseAST *ast)
             break;
         }
         case TK_STAR: {
-            assert(false);
+            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+                assert(!"Pointers and booleans cannot be multiplied!");
+            } else if (isTypeInteger(binop->lhs->expr_type) || isTypeFloating(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateMul(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                assert(!"Type not supported for division!");
+            }
             break;
         }
         case TK_DIV: {
-            assert(false);
+            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+                assert(!"Pointers and booleans cannot be divided!");
+            } else if (isTypeInteger(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateUDiv(binop->lhs->codegen, binop->rhs->codegen);
+            } else if (isTypeFloating(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateFDiv(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                assert(!"Type not supported for division!");
+            }
             break;
         }
         case TK_MOD: {
