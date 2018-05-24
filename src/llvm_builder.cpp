@@ -684,7 +684,7 @@ xsaveopt                      - Support xsaveopt instructions.
 xsaves                        - Support xsaves instructions.
 */
 
-extern "C" DLLEXPORT void llvm_compile(FileAST *root, double &codegenTime, double &bingenTime, double &linkTime, bool option_llvm_print)
+extern "C" DLLEXPORT void llvm_compile(FileAST *root, const char *obj_file, double &codegenTime, double &bingenTime, double &linkTime, bool option_llvm_print)
 {   
     Timer timer;
 
@@ -723,11 +723,10 @@ extern "C" DLLEXPORT void llvm_compile(FileAST *root, double &codegenTime, doubl
     codegenTime = timer.stopTimer();
 
     timer.startTimer();
-    auto Filename = "output.o";
 
     {
         std::error_code EC;
-        raw_fd_ostream dest(Filename, EC, sys::fs::F_None);
+        raw_fd_ostream dest(obj_file, EC, sys::fs::F_None);
 
         if (EC) {
             errs() << "Could not open file: " << EC.message();
@@ -751,13 +750,13 @@ extern "C" DLLEXPORT void llvm_compile(FileAST *root, double &codegenTime, doubl
         bingenTime = timer.stopTimer();
     }
 
-    outs() << "Object generation [" << Filename << "] completed, now linking...\n";
+    outs() << "Object generation [" << obj_file << "] completed, now linking...\n";
     outs().flush();
 
     {
         CPU_SAMPLE("LLVM external link");
         timer.startTimer();
-        link_object(Filename, root->imports);
+        link_object(obj_file, root->imports);
         linkTime = timer.stopTimer();
     }
 

@@ -163,13 +163,16 @@ int main(int argc, char **argv)
 
     astBuildTime = timer.stopTimer();
 
+    char *c_filename = getCfilename(root_file);
+
     if (option_llvm) {
-        llvm_compile(parsedFile, codegenTime, binaryGenTime, linkTime, option_llvm_print);   
+        c_filename[strlen(c_filename) - 3] = 'o';
+        c_filename[strlen(c_filename) - 2] = 0;
+        llvm_compile(parsedFile, c_filename, codegenTime, binaryGenTime, linkTime, option_llvm_print);
     } else if (option_c) {
         timer.startTimer();
 
         c_generator gen;
-        char *c_filename = getCfilename(root_file);
         gen.generate_c_file(c_filename, parsedFile);
 
         codegenTime = timer.stopTimer();

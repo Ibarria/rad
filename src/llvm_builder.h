@@ -7,5 +7,5 @@
 #define DLLEXPORT 
 #endif
 
-extern "C" DLLEXPORT void llvm_compile(FileAST *root, double &codegenTime, double &bingenTime, double &linkTime, bool option_llvm_print);
+extern "C" DLLEXPORT void llvm_compile(FileAST *root, const char *obj_file, double &codegenTime, double &bingenTime, double &linkTime, bool option_llvm_print);
 
