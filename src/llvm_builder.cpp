@@ -28,7 +28,8 @@
 
 using namespace llvm;
 
-extern bool option_llvm_print;
+// function on llvm_backend.cpp
+int link_object(const char *obj_file, ImportsHash &imports);
 
 // These should be wrapped in some kinda class... some day
 static LLVMContext TheContext;
@@ -682,7 +683,7 @@ xsaveopt                      - Support xsaveopt instructions.
 xsaves                        - Support xsaves instructions.
 */
 
-void llvm_compile(FileAST *root, double &codegenTime, double &bingenTime, double &linkTime)
+extern "C" DLLEXPORT void llvm_compile(FileAST *root, double &codegenTime, double &bingenTime, double &linkTime, bool option_llvm_print)
 {   
     Timer timer;
 

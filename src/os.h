@@ -36,4 +36,3 @@ u64 osGetCurrentProcessId();
 u64 osGetCurrentThreadId();
 
 int compile_c_into_binary(const char *filename, ImportsHash &imports);
-int link_object(const char *obj_file, ImportsHash &imports);

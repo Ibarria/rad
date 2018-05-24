@@ -57,9 +57,6 @@
     <ClCompile Include="src\os.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\llvm_builder.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\Hash.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

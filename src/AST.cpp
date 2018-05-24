@@ -248,45 +248,6 @@ void printAST(const BaseAST *ast, int ident)
     }
 }
 
-bool isFunctionDeclaration(VariableDeclarationAST *decl)
-{
-    if (decl && (decl->specified_type) &&
-        decl->specified_type->ast_type == AST_FUNCTION_TYPE) {
-        return true;
-    }
-    return false;
-}
-
-bool isFunctionDefinition(VariableDeclarationAST *decl)
-{
-    if (decl && (decl->definition) &&
-        (decl->definition->ast_type == AST_FUNCTION_DEFINITION)) {
-            return true;
-    }
-        
-    return false;
-}
-
-bool isFunctionForeign(VariableDeclarationAST *decl)
-{
-    if (isFunctionDeclaration(decl)) {
-        auto ft = (FunctionTypeAST *)decl->specified_type;
-        return ft->isForeign;
-    }
-
-    return false;
-}
-
-bool isStructDeclaration(VariableDeclarationAST *decl)
-{
-    if (decl && (decl->definition) &&
-        (decl->definition->ast_type == AST_STRUCT_DEFINITION)) {
-        return true;
-    }
-
-    return false;
-}
-
 DirectTypeAST *findFinalDirectType(PointerTypeAST *pt)
 {
     assert(pt->points_to_type);

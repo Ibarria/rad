@@ -48,16 +48,16 @@
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\</IntDir>
     <GenerateManifest>false</GenerateManifest>
-    <IncludePath>C:\code\llvm\build_6.0\include;C:\code\llvm\llvm\include;$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\code\llvm\build_6.0\Debug\lib;$(MSBuildProjectDirectory)\dyncall\lib\win;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(OutDir);$(MSBuildProjectDirectory)\dyncall\lib\win;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\</IntDir>
     <GenerateManifest>false</GenerateManifest>
-    <IncludePath>C:\code\llvm\build\include;C:\code\llvm\llvm\include;$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\code\llvm\build\Release\lib;$(MSBuildProjectDirectory)\dyncall\lib\win;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(MSBuildProjectDirectory)\dyncall\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(OutDir);$(MSBuildProjectDirectory)\dyncall\lib\win;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -70,13 +70,14 @@
       <ExceptionHandling>false</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <EnableModules>true</EnableModules>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
       <DiagnosticsFormat>Caret</DiagnosticsFormat>
+      <BufferSecurityCheck>
+      </BufferSecurityCheck>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>kernel32.lib;user32.lib;libdyncall_s.lib;libdynload_s.lib;LLVMLTO.lib;LLVMPasses.lib;LLVMObjCARCOpts.lib;LLVMMIRParser.lib;LLVMSymbolize.lib;LLVMDebugInfoPDB.lib;LLVMDebugInfoDWARF.lib;LLVMCoverage.lib;LLVMTableGen.lib;LLVMDlltoolDriver.lib;LLVMOrcJIT.lib;LLVMLibDriver.lib;LLVMOption.lib;LLVMWindowsManifest.lib;LLVMFuzzMutate.lib;LLVMX86Disassembler.lib;LLVMX86AsmParser.lib;LLVMX86CodeGen.lib;LLVMGlobalISel.lib;LLVMSelectionDAG.lib;LLVMAsmPrinter.lib;LLVMDebugInfoCodeView.lib;LLVMDebugInfoMSF.lib;LLVMX86Desc.lib;LLVMMCDisassembler.lib;LLVMX86Info.lib;LLVMX86AsmPrinter.lib;LLVMX86Utils.lib;LLVMMCJIT.lib;LLVMLineEditor.lib;LLVMInterpreter.lib;LLVMExecutionEngine.lib;LLVMRuntimeDyld.lib;LLVMCodeGen.lib;LLVMTarget.lib;LLVMCoroutines.lib;LLVMipo.lib;LLVMInstrumentation.lib;LLVMVectorize.lib;LLVMScalarOpts.lib;LLVMLinker.lib;LLVMIRReader.lib;LLVMAsmParser.lib;LLVMInstCombine.lib;LLVMTransformUtils.lib;LLVMBitWriter.lib;LLVMAnalysis.lib;LLVMProfileData.lib;LLVMObject.lib;LLVMMCParser.lib;LLVMMC.lib;LLVMBitReader.lib;LLVMCore.lib;LLVMBinaryFormat.lib;LLVMSupport.lib;LLVMDemangle.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;libdyncall_s.lib;libdynload_s.lib;llvm_backend.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -87,16 +88,19 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <SDLCheck>true</SDLCheck>
+      <SDLCheck>false</SDLCheck>
       <ExceptionHandling>false</ExceptionHandling>
       <BufferSecurityCheck>false</BufferSecurityCheck>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>kernel32.lib;user32.lib;libdyncall_s.lib;libdynload_s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;libdyncall_s.lib;libdynload_s.lib;llvm_backend.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -129,10 +133,6 @@
     <ClCompile Include="src/Timer.cpp" />
     <ClCompile Include="src/Token.cpp" />
     <ClCompile Include="src\Hash.cpp" />
-    <ClCompile Include="src\llvm_builder.cpp">
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/DWIN32 /D_WINDOWS   /Zc:inline /Zc:strictStrings /Oi /Zc:rvalueCast -wd4141 -wd4146 -wd4180 -wd4244 -wd4258 -wd4267 -wd4291 -wd4345 -wd4351 -wd4355 -wd4456 -wd4457 -wd4458 -wd4459 -wd4503 -wd4624 -wd4722 -wd4800 -wd4100 -wd4127 -wd4512 -wd4505 -wd4610 -wd4510 -wd4702 -wd4245 -wd4706 -wd4310 -wd4701 -wd4703 -wd4389 -wd4611 -wd4805 -wd4204 -wd4577 -wd4091 -wd4592 -wd4319 -wd4324 -w14062 -we4238   /EHs-c- /GR- -D_CRT_SECURE_NO_DEPRECATE -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NONSTDC_NO_WARNINGS -D_SCL_SECURE_NO_DEPRECATE -D_SCL_SECURE_NO_WARNINGS -DUNICODE -D_UNICODE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/DWIN32 /D_WINDOWS   /Zc:inline /Zc:strictStrings /Oi /Zc:rvalueCast -wd4141 -wd4146 -wd4180 -wd4244 -wd4258 -wd4267 -wd4291 -wd4345 -wd4351 -wd4355 -wd4456 -wd4457 -wd4458 -wd4459 -wd4503 -wd4624 -wd4722 -wd4800 -wd4100 -wd4127 -wd4512 -wd4505 -wd4610 -wd4510 -wd4702 -wd4245 -wd4706 -wd4310 -wd4701 -wd4703 -wd4389 -wd4611 -wd4805 -wd4204 -wd4577 -wd4091 -wd4592 -wd4319 -wd4324 -w14062 -we4238   /EHs-c- /GR- -D_CRT_SECURE_NO_DEPRECATE -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NONSTDC_NO_WARNINGS -D_SCL_SECURE_NO_DEPRECATE -D_SCL_SECURE_NO_WARNINGS -DUNICODE -D_UNICODE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS %(AdditionalOptions)</AdditionalOptions>
-    </ClCompile>
     <ClCompile Include="src\os.cpp" />
     <ClCompile Include="src\Profiler.cpp" />
   </ItemGroup>

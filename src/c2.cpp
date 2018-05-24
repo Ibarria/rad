@@ -164,11 +164,8 @@ int main(int argc, char **argv)
     astBuildTime = timer.stopTimer();
 
     if (option_llvm) {
-
-        llvm_compile(parsedFile, codegenTime, binaryGenTime, linkTime);
-        
+        llvm_compile(parsedFile, codegenTime, binaryGenTime, linkTime, option_llvm_print);   
     } else if (option_c) {
-
         timer.startTimer();
 
         c_generator gen;
