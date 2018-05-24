@@ -6,14 +6,16 @@ sum :: (a: int, b: float) -> int{
 
 main::()
 {
-// 	A := 42;
+ 	A := 42;
 	bb : bool = true;
-
+	ba := false;
+	AA := 42;
+	bb = ba;
 //	B := 3.14;
 //	C := sum(A, B);
-	if (bb) {
+	if (bb == ba) {
 		print("Inside the first if\n");
-		if (!bb) print("No bb, first if\n");
+		if (A == AA ) print("Equals, first if\n");
 		else print("First If, but bb\n");
 		print("Outside the first if, before the else\n");
 	}

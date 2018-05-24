@@ -407,6 +407,15 @@ inline bool isTypeInteger(TypeAST *t)
     return false;
 }
 
+inline bool isTypeFloating(TypeAST *t)
+{
+    if (t->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)t;
+        return dt->basic_type == BASIC_TYPE_FLOATING;
+    }
+    return false;
+}
+
 inline bool isTypePointer(TypeAST *t)
 {
     return t->ast_type == AST_POINTER_TYPE;

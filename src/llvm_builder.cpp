@@ -264,27 +264,93 @@ static void generateCode(BaseAST *ast)
         generateCode(binop->rhs);
         switch (binop->op) {
         case TK_EQ: {
-            assert(false);
+            if (isTypeInteger(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type) ||
+                isTypePointer(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateICmpEQ(binop->lhs->codegen, binop->rhs->codegen);
+            } else if (isTypeFloating(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateFCmpOEQ(binop->lhs->codegen, binop->rhs->codegen);
+            } else { 
+                assert(!"Type not supported for comparison!"); 
+            }
             break;
         }
         case TK_LEQ: {
-            assert(false);
+            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
+            } else if (isTypeInteger(binop->lhs->expr_type)) {
+                auto dt = (DirectTypeAST *)binop->lhs->expr_type;
+                if (dt->isSigned) {
+                    binop->codegen = Builder.CreateICmpSLE(binop->lhs->codegen, binop->rhs->codegen);
+                } else {
+                    binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
+                }
+            } else if (isTypeFloating(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateFCmpOLE(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                assert(!"Type not supported for comparison!");
+            }
             break;
         }
         case TK_GEQ: {
-            assert(false);
+            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
+            } else if (isTypeInteger(binop->lhs->expr_type)) {
+                auto dt = (DirectTypeAST *)binop->lhs->expr_type;
+                if (dt->isSigned) {
+                    binop->codegen = Builder.CreateICmpSGE(binop->lhs->codegen, binop->rhs->codegen);
+                } else {
+                    binop->codegen = Builder.CreateICmpUGE(binop->lhs->codegen, binop->rhs->codegen);
+                }
+            } else if (isTypeFloating(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateFCmpOGE(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                assert(!"Type not supported for comparison!");
+            }
             break;
         }
         case TK_NEQ: {
-            assert(false);
+            if (isTypeInteger(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type) ||
+                isTypePointer(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateICmpNE(binop->lhs->codegen, binop->rhs->codegen);
+            } else if (isTypeFloating(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateFCmpONE(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                assert(!"Type not supported for comparison!");
+            }
             break;
         }
         case TK_LT: {
-            assert(false);
+            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
+            } else if (isTypeInteger(binop->lhs->expr_type)) {
+                auto dt = (DirectTypeAST *)binop->lhs->expr_type;
+                if (dt->isSigned) {
+                    binop->codegen = Builder.CreateICmpSLT(binop->lhs->codegen, binop->rhs->codegen);
+                } else {
+                    binop->codegen = Builder.CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
+                }
+            } else if (isTypeFloating(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateFCmpOLT(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                assert(!"Type not supported for comparison!");
+            }
             break;
         }
         case TK_GT: {
-            assert(false);
+            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
+            } else if (isTypeInteger(binop->lhs->expr_type)) {
+                auto dt = (DirectTypeAST *)binop->lhs->expr_type;
+                if (dt->isSigned) {
+                    binop->codegen = Builder.CreateICmpSGT(binop->lhs->codegen, binop->rhs->codegen);
+                } else {
+                    binop->codegen = Builder.CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
+                }
+            } else if (isTypeFloating(binop->lhs->expr_type)) {
+                binop->codegen = Builder.CreateFCmpOGT(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                assert(!"Type not supported for comparison!");
+            }
             break;
         }
         case TK_STAR: {
@@ -304,7 +370,7 @@ static void generateCode(BaseAST *ast)
             break;
         }
         case TK_MINUS: {
-            assert(false);
+            binop->codegen = Builder.CreateSub(binop->lhs->codegen, binop->rhs->codegen);
             break;
         }
         default:
@@ -320,7 +386,14 @@ static void generateCode(BaseAST *ast)
     }
     case AST_ASSIGNMENT: {
         auto assign = (AssignmentAST *)ast;
-        assert(false);
+        // This can work for identifiers but not for arrays or structs
+        generateCode(assign->rhs);
+        if (assign->lhs->ast_type == AST_IDENTIFIER) {
+            auto id = (IdentifierAST *)assign->lhs;
+            Builder.CreateStore(assign->rhs->codegen, id->decl->codegen);
+        } else {
+            assert(!"Not implemented complex assignment, needs GEP");
+        }
         break;
     }
     case AST_VARIABLE_DECLARATION: {
