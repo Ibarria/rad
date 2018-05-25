@@ -8,3 +8,8 @@ modules/Basic\.lib
 modules/Basic\.pdb
 
 modules/vc140\.pdb
+
+*.pdb
+*.ilk
+*.o
+*.exe

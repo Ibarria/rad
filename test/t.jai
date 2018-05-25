@@ -1,18 +1,31 @@
 #import "Basic"
 
-sum :: (a: int, b: float) -> int{
-	return a;
+test_param ::(n: u64)
+{
+	print("This is n: %d\n", n);
 }
+
+
+factorial :: (n: u64) -> u64
+{
+	if (n <= 1) return 1;
+	return n * factorial(n-1);
+}
+
 
 main::()
 {
- 	A := 42;
-	bb : bool = true;
-	ba := false;
-	AA := 32;
-	c :: 3;
-	bb = ba;
+	n : u64 = 3;
+	arg : u64 = 10;
+	bb := n < arg;
+	u :u64;
 
-	print("%d times %d is %d\n", A, AA, A*AA);
-	print("Also, %d / %d is %d\n", A, c, A/c);
+	test_param(3);
+
+	if (bb) print("Yeah true\n");
+
+	u = factorial(10);
+
+	print("Factorial of 10 is %d\n", u);
+	
 }

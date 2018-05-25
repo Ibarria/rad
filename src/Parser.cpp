@@ -321,7 +321,6 @@ DirectTypeAST *Parser::createType(TOKEN_TYPE tktype, TextType name)
         type->basic_type = BASIC_TYPE_INTEGER;
         type->size_in_bytes = 4;
         break;
-    case TK_INT:
     case TK_U64:
         type->basic_type = BASIC_TYPE_INTEGER;
         type->size_in_bytes = 8;
@@ -341,6 +340,7 @@ DirectTypeAST *Parser::createType(TOKEN_TYPE tktype, TextType name)
         type->isSigned = true;
         type->size_in_bytes = 4;
         break;
+    case TK_INT:
     case TK_S64:
         type->basic_type = BASIC_TYPE_INTEGER;
         type->isSigned = true;
@@ -851,7 +851,7 @@ ExpressionAST * Parser::parseLiteral()
         // setASTinfo(this, ex->typeAST);
 
         if (t.type == TK_NUMBER) {
-            ex->typeAST = getType(TK_INT, nullptr);
+            ex->typeAST = getType(TK_U64, nullptr);
             //ex->typeAST.basic_type = BASIC_TYPE_INTEGER;
             //ex->typeAST.size_in_bytes = 8;
             ex->_u64 = t._u64;

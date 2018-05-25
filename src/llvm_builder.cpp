@@ -107,6 +107,12 @@ static void allocateVariable(VariableDeclarationAST *decl)
             llvm_function->getEntryBlock().begin());
         auto AllocA = TmpB.CreateAlloca(decl->specified_type->llvm_type, nullptr, decl->varname);
 
+        if (decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT) {
+            // codegen should be here because it is generated in the function definition generation
+            assert(decl->codegen);
+            TmpB.CreateStore(decl->codegen, AllocA);
+        }
+
         decl->codegen = AllocA;
     }
 }
@@ -229,7 +235,8 @@ static void generateCode(BaseAST *ast)
             auto llvm_val = ConstantInt::get(
                 lit->typeAST->llvm_type, 
                 APInt(lit->typeAST->size_in_bytes * 8, 
-                    lit->_u64, lit->typeAST->isSigned));
+                    (lit->typeAST->isSigned ? lit->_s64 : lit->_u64), 
+                    lit->typeAST->isSigned));
             lit->codegen = llvm_val;
             break;
         }
@@ -429,6 +436,11 @@ static void generateCode(BaseAST *ast)
 
             Function *llvm_func = (Function *)decl->codegen;
 
+            u32 arg_index = 0;
+            auto& arg_decls = func_decl->function_body->block_scope.decls;
+            for (auto& llvm_arg : llvm_func->args()) {
+                arg_decls[arg_index++]->codegen = &llvm_arg;
+            }
             // If it is not foreign, we should do the body here
             // Create a new basic block to start insertion into.
             BasicBlock *BB = BasicBlock::Create(TheContext, "entry", llvm_func);

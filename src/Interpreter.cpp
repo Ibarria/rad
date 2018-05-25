@@ -432,6 +432,11 @@ static bool literal_value_fits_in_bytes(LiteralAST *lit, DirectTypeAST *dt)
             }
             break;
         }
+        case 8: {
+            mask = 0xFFFFFFFFFFFFFFFFULL;
+            val = lit->_u64;
+            break;
+        }
         default:
             assert(!"We should never be here");
             return false;
@@ -610,7 +615,7 @@ VariableDeclarationAST *Interpreter::validateFunctionCall(FunctionCallAST *a)
         return nullptr;
     }
 
-    if (decl->specified_type && decl->specified_type->ast_type != AST_FUNCTION_TYPE) {
+    if (!isFunctionDeclaration(decl) && !isFunctionDefinition(decl)) {
         Error(a, "Cannot perform a function call on a variable [%s] that is not a function\n",
             a->function_name);
         return nullptr;
@@ -1452,13 +1457,21 @@ bool Interpreter::doWorkAST(interp_work * work)
             if (!decl) return false;
 
             // do not recurse on inferring types as this could cause infinite recursion
-            if (decl->specified_type == nullptr) {
+            if ((decl->specified_type == nullptr) && !isFunctionDefinition(decl)) {
+                // For constant functions, of type f :: () -> int {return 1;} , 
+                // have no specified type but have a definition
                 return false;
             }
 
             assert(isFunctionDefinition(decl));
             assert(decl->definition->ast_type == AST_FUNCTION_DEFINITION);
             funcall->fundef = (FunctionDefinitionAST *)decl->definition;
+
+            if (decl->specified_type == nullptr) {
+                decl->specified_type = funcall->fundef->declaration;
+                decl->flags |= DECL_FLAG_HAS_BEEN_INFERRED;
+            }
+
             FunctionTypeAST *fundecl = (FunctionTypeAST *)decl->specified_type;
             funcall->expr_type = fundecl->return_type;
             return true;

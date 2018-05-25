@@ -250,10 +250,12 @@ struct IdentifierAST : VarReferenceAST
 struct LiteralAST : ExpressionAST
 {
     LiteralAST() { ast_type = AST_LITERAL; }
-    u64 _u64 = 0;
-    s64 _s64 = 0;
-    f64 _f64 = 0.0;
-    bool _bool = false;
+    union {
+        u64 _u64 = 0;
+        s64 _s64 ;
+        f64 _f64 ;
+        bool _bool;
+    };
     TextType str = nullptr;
     DirectTypeAST *typeAST;
 };
