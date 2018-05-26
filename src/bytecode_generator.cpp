@@ -598,8 +598,10 @@ external_library * bytecode_generator::findOrLoadLibrary(TextType filename)
     assert(lib_name[l - 3] == 'j');  assert(lib_name[l - 2] == 'a'); assert(lib_name[l - 1] == 'i');
     #if defined(PLATFORM_WINDOWS)
     lib_name[l - 3] = 'd'; lib_name[l - 2] = 'l'; lib_name[l - 1] = 'l';
-    #else
+    #elif defined(PLATFORM_LINUX)
     lib_name[l - 3] = 's'; lib_name[l - 2] = 'o'; lib_name[l - 1] = '\0';
+    #elif defined(PLATFORM_MACOS)
+    lib_name[l - 3] = 'd'; lib_name[l - 2] = 'y'; lib_name[l - 1] = 'l'; lib_name[l] = 'i'; lib_name[l + 1] = 'b';	
     #endif
 
     for (auto lib : program->external_libs) {
@@ -611,6 +613,9 @@ external_library * bytecode_generator::findOrLoadLibrary(TextType filename)
     external_library *lib = new (pool) external_library;
     lib->name = CreateTextType(pool, lib_name);
     lib->dll = dlLoadLibrary(lib_name);
+	if (lib->dll == nullptr) {
+		printf("Could not find library: %s\n", lib_name);
+	}
     assert(lib->dll != nullptr);
     program->external_libs.push_back(lib);
     return lib;
