@@ -808,6 +808,14 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         }
         break;
     }
+	case AST_RUN_DIRECTIVE: {
+        auto run = (RunDirectiveAST *)stmt;
+        s16 mark = program->machine.reg_mark();
+        run->reg = reserveRegistersForSize(&program->machine, run->expr->expr_type->size_in_bytes);
+        computeExpressionIntoRegister(run->expr, run->reg);
+        program->machine.pop_mark(mark);
+		break;
+	}
     default:
         assert(!"Generate Statement Block in Bytecode, unknown AST");
     }
@@ -994,7 +1002,8 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     }
     case AST_FUNCTION_CALL: {
         auto funcall = (FunctionCallAST *)expr;
-        assert(!isVoidType(funcall->fundef->declaration->return_type));
+		// This assert here was to ensure expressions would have a value, but #run directives are a special case
+        //assert(!isVoidType(funcall->fundef->declaration->return_type));
         compute_function_call_into_register(funcall, reg);
         break;
     }

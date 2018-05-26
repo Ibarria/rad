@@ -753,8 +753,7 @@ void Interpreter::traversePostfixTopLevel(FileAST * root)
             // @TODO: implement checks for run directive
             // At some point we want to execute the run directive, after checks
             // and sizes
-            auto run = (RunDirectiveAST *)ast;
-            traversePostfixTopLevelDirective(run);
+            traversePostfixTopLevelDirective((RunDirectiveAST **)&root->items[i]);
             break;
         }
         default:
@@ -777,9 +776,17 @@ void Interpreter::traversePostfixTopLevelDeclaration(VariableDeclarationAST ** d
     }
 }
 
-void Interpreter::traversePostfixTopLevelDirective(RunDirectiveAST * run)
+void Interpreter::traversePostfixTopLevelDirective(RunDirectiveAST ** runp)
 {
-    assert(!"Not implemented top level directive in new dependency system");
+	auto run = *runp;
+    assert(run->deps == nullptr);
+    run->deps = new (&pool) interp_deps;
+
+    traversePostfixAST((BaseAST **)runp, *run->deps);
+
+    if (!run->deps->empty()) {
+        overall_deps.push_back(run->deps);
+    }
 }
 
 void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
@@ -966,6 +973,11 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         addCheckWork(&pool, astp, deps);
         break;
     }
+	case AST_RUN_DIRECTIVE: {
+		auto run = (RunDirectiveAST *)ast;
+		traversePostfixAST(PPC(run->expr), deps);
+		break;
+	}
     default:
         assert(!"AST type not being handled on traversePostfixAST");
     }

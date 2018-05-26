@@ -146,6 +146,7 @@ struct RunDirectiveAST : ExpressionAST
 {
     RunDirectiveAST() { ast_type = AST_RUN_DIRECTIVE; }
     ExpressionAST *expr = nullptr;
+	s16 reg = -1;
     interp_deps *deps = nullptr; // only applicable for global directives
 };
 

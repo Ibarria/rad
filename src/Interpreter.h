@@ -71,7 +71,7 @@ struct Interpreter
 
     void traversePostfixTopLevel(FileAST *root);
     void traversePostfixTopLevelDeclaration(VariableDeclarationAST **decl);
-    void traversePostfixTopLevelDirective(RunDirectiveAST *run);
+    void traversePostfixTopLevelDirective(RunDirectiveAST **run);
 
     void traversePostfixAST(BaseAST **ast, interp_deps &deps);
 
