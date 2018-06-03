@@ -562,17 +562,7 @@ IfStatementAST * Parser::parseIfStatement()
         return nullptr;
     }
 
-    MustMatchToken(TK_OPEN_PAREN);
-    if (!success) {
-        return nullptr;
-    }
-
     ifst->condition = parseExpression();
-    if (!success) {
-        return nullptr;
-    }
-
-    MustMatchToken(TK_CLOSE_PAREN);
     if (!success) {
         return nullptr;
     }
@@ -1156,8 +1146,8 @@ RunDirectiveAST* Parser::parseRunDirective()
     RunDirectiveAST *run = NEW_AST(RunDirectiveAST);
     run->expr = expr;
 
-    // TODO: we might want to have a list of all run directives to process them later on
-
+    // have a list of all run directives to process them later on
+    top_level_ast->run_items.push_back(run);
     return run;
 }
 
@@ -1315,6 +1305,9 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
             if (!success) {
                 return nullptr;
             }
+            // Allow semicolons after a #run directive
+            lex.lookaheadToken(t);
+            if (t.type == TK_SEMICOLON) lex.consumeToken();
 
             file_inst->items.push_back(r);
         } else {

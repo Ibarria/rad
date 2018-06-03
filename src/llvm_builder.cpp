@@ -206,7 +206,7 @@ static void generateCode(BaseAST *ast)
     }
     case AST_FUNCTION_DEFINITION: {
         auto fundef = (FunctionDefinitionAST *)ast;
-        assert(false);
+        assert(!"LLVM function definition is not implemented!");
         break;
     }
     case AST_FUNCTION_CALL: {
@@ -261,7 +261,7 @@ static void generateCode(BaseAST *ast)
             break;
         }
         default:
-            assert(false);
+            assert(!"Unknonw literal type!");
         }
         break;
     }
@@ -277,7 +277,7 @@ static void generateCode(BaseAST *ast)
             } else if (isTypeFloating(binop->lhs->expr_type)) {
                 binop->codegen = Builder.CreateFCmpOEQ(binop->lhs->codegen, binop->rhs->codegen);
             } else { 
-                assert(!"Type not supported for comparison!"); 
+                assert(!"Type not supported for EQ comparison!"); 
             }
             break;
         }
@@ -294,7 +294,7 @@ static void generateCode(BaseAST *ast)
             } else if (isTypeFloating(binop->lhs->expr_type)) {
                 binop->codegen = Builder.CreateFCmpOLE(binop->lhs->codegen, binop->rhs->codegen);
             } else {
-                assert(!"Type not supported for comparison!");
+                assert(!"Type not supported for LEQ comparison!");
             }
             break;
         }
@@ -311,7 +311,7 @@ static void generateCode(BaseAST *ast)
             } else if (isTypeFloating(binop->lhs->expr_type)) {
                 binop->codegen = Builder.CreateFCmpOGE(binop->lhs->codegen, binop->rhs->codegen);
             } else {
-                assert(!"Type not supported for comparison!");
+                assert(!"Type not supported for GEQ comparison!");
             }
             break;
         }
@@ -322,7 +322,7 @@ static void generateCode(BaseAST *ast)
             } else if (isTypeFloating(binop->lhs->expr_type)) {
                 binop->codegen = Builder.CreateFCmpONE(binop->lhs->codegen, binop->rhs->codegen);
             } else {
-                assert(!"Type not supported for comparison!");
+                assert(!"Type not supported for NEQ comparison!");
             }
             break;
         }
@@ -339,7 +339,7 @@ static void generateCode(BaseAST *ast)
             } else if (isTypeFloating(binop->lhs->expr_type)) {
                 binop->codegen = Builder.CreateFCmpOLT(binop->lhs->codegen, binop->rhs->codegen);
             } else {
-                assert(!"Type not supported for comparison!");
+                assert(!"Type not supported for LT comparison!");
             }
             break;
         }
@@ -356,7 +356,7 @@ static void generateCode(BaseAST *ast)
             } else if (isTypeFloating(binop->lhs->expr_type)) {
                 binop->codegen = Builder.CreateFCmpOGT(binop->lhs->codegen, binop->rhs->codegen);
             } else {
-                assert(!"Type not supported for comparison!");
+                assert(!"Type not supported for GT comparison!");
             }
             break;
         }
@@ -383,7 +383,7 @@ static void generateCode(BaseAST *ast)
             break;
         }
         case TK_MOD: {
-            assert(false);
+            assert(!"TK_MOD has not been implemented for llvm!");
             break;
         }
         case TK_PLUS: {
@@ -395,7 +395,7 @@ static void generateCode(BaseAST *ast)
             break;
         }
         default:
-            assert(false);
+            assert(!"Token operation is not recognized/supported!");
         }
         break;
     }
@@ -474,23 +474,23 @@ static void generateCode(BaseAST *ast)
             break;
         }
         default:
-            assert(false);
+            assert(!"Type of variable declaration on llvm is not supported!");
         }
         break;
     }
     case AST_STRUCT_DEFINITION: {
         auto defn = (StructDefinitionAST *)ast;
-        assert(false);
+        assert(!"Struct definition is not supported on llvm yet");
         break;
     }
     case AST_ARRAY_ACCESS: {
         auto aa = (ArrayAccessAST *)ast;
-        assert(false);
+        assert(!"Array access is not supported on llvm yet");
         break;
     }
     case AST_STRUCT_ACCESS: {
         auto sac = (StructAccessAST *)ast;
-        assert(false);
+        assert(!"Struct access is not supported on llvm yet");
         break;
     }
     case AST_FUNCTION_TYPE: {
@@ -518,7 +518,7 @@ static void generateCode(BaseAST *ast)
             break;
         }
         case BASIC_TYPE_CUSTOM: {
-            assert(false);
+            assert(!"Custom types not supported on llvm yet");
             break;
         }
         case BASIC_TYPE_FLOATING: {
@@ -532,7 +532,7 @@ static void generateCode(BaseAST *ast)
                 break;
             }
             default:
-                assert(false);
+                assert(!"Unsupported byte number for floating point");
             }
             break;
         }
@@ -555,7 +555,7 @@ static void generateCode(BaseAST *ast)
                 break;
             }
             default:
-                assert(false);
+                assert(!"Unsupported byte number for integer");
             }
             break;
         }
@@ -572,27 +572,35 @@ static void generateCode(BaseAST *ast)
             return;
         }
         default:
-            assert(false);
+            assert(!"Unknonw basic type on llvm generation");
         }
         break;
     }
     case AST_POINTER_TYPE: {
         auto ptype = (PointerTypeAST *)ast;
-        assert(false);
+        assert(!"Pointer type is not supported on llvm yet");
         break;
     }
     case AST_ARRAY_TYPE: {
         auto atype = (ArrayTypeAST *)ast;
-        assert(false);
+        assert(!"Array type is not supported on llvm yet");
         break;
     }
     case AST_STRUCT_TYPE: {
         auto stype = (StructTypeAST *)ast;
-        assert(false);
+        assert(!"Structure type is not supported on llvm yet");
+        break;
+    }
+    case AST_RUN_DIRECTIVE: {
+        auto run = (RunDirectiveAST *)ast;
+        if (isVoidType(run->expr_type)) break;
+        // @TODO: just use the new expr generated here
+        assert(!"Unimplemented run directive type");
+        generateCode(run->new_ast);
         break;
     }
     default:
-        assert(false);
+        assert(!"Unknonw AST type on LLVM generation");
     }
 }
 

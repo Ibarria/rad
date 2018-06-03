@@ -117,10 +117,14 @@ struct bytecode_generator
 
     void setPool(PoolAllocator *p) { pool = p; }
     bytecode_program *compileToBytecode(FileAST *root);
+    void compileAllFunctions(FileAST *root);
 
+    void initializeGlobalVariables(Scope *scope);
+    void initializeGlobalFunctions(Scope *scope);
     void initializeVariablesInScope(Scope *scope);
     void initializeVariable(VariableDeclarationAST *decl);
     void generate_function(TextType name, FunctionDefinitionAST *fundef);
+    void generate_run_directive(RunDirectiveAST *run);
     void generate_statement(StatementAST *stmt);
     void generate_statement_block(StatementBlockAST *block);
 
@@ -146,7 +150,7 @@ struct bytecode_runner
     void run_bc_function(bytecode_function *func);
 
     void run_preamble();
-    ExpressionAST * run_directive(RunDirectiveAST *run);
+    void run_directive(RunDirectiveAST *run, PoolAllocator *ast_pool);
     void callExternalFunction(FunctionDefinitionAST *fundef, BCI *bci);
 };
 

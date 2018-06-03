@@ -661,7 +661,7 @@ bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
     
     // set the correct value in the bss area for vars (bytecode instruction)
     current_function = &program->preamble_function;
-    initializeVariablesInScope(&root->global_scope);
+    initializeGlobalVariables(&root->global_scope);
     current_function = nullptr;
     
     // Update function variable addresses?
@@ -669,8 +669,16 @@ bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
     return bp;
 }
 
+void bytecode_generator::compileAllFunctions(FileAST * root)
+{
+    CPU_SAMPLE("compile bytecode");
+
+    initializeGlobalFunctions(&root->global_scope);
+}
+
 void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST * fundef)
 {
+    fundef->being_generated = true;
     if (fundef->declaration->isForeign) {
         assert(fundef->declaration->func_ptr == nullptr);
 
@@ -811,7 +819,8 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
 	case AST_RUN_DIRECTIVE: {
         auto run = (RunDirectiveAST *)stmt;
         s16 mark = program->machine.reg_mark();
-        run->reg = reserveRegistersForSize(&program->machine, run->expr->expr_type->size_in_bytes);
+        if (!isVoidType(run->expr->expr_type)) 
+            run->reg = reserveRegistersForSize(&program->machine, run->expr->expr_type->size_in_bytes);
         computeExpressionIntoRegister(run->expr, run->reg);
         program->machine.pop_mark(mark);
 		break;
@@ -830,6 +839,27 @@ void bytecode_generator::generate_statement_block(StatementBlockAST *block)
     }
 }
 
+void bytecode_generator::initializeGlobalVariables(Scope * scope)
+{
+    for (auto decl : scope->decls) {
+        if (isFunctionDefinition(decl)) {
+            // foreign functions need to be initialized early
+            if (isFunctionForeign(decl)) initializeVariable(decl);
+        } else {
+            initializeVariable(decl);
+        }
+    }
+}
+
+void bytecode_generator::initializeGlobalFunctions(Scope * scope)
+{
+    for (auto decl : scope->decls) {
+        if (isFunctionDefinition(decl) && !isFunctionForeign(decl)) {
+            initializeVariable(decl);
+        }
+    }
+}
+
 void bytecode_generator::initializeVariablesInScope(Scope * scope)
 {
     for (auto decl : scope->decls) {
@@ -839,17 +869,31 @@ void bytecode_generator::initializeVariablesInScope(Scope * scope)
 
 void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
 {
-    if (!decl->definition) return; // nothing to do for this var
+    if (decl->flags & DECL_FLAG_HAS_BEEN_BT_GEN) {
+        return;
+    }
+
+    if (!decl->definition) {
+        decl->flags |= DECL_FLAG_HAS_BEEN_BT_GEN;
+        return; // nothing to do for this var
     // @TODO: initialize it to 0 by default
+    }
     
     if (decl->definition->ast_type == AST_FUNCTION_DEFINITION) {
+        // Do not generate functions when doing only global vars
         auto fundef = (FunctionDefinitionAST *)decl->definition;
+        if (fundef->bc_function != nullptr) {
+            decl->flags |= DECL_FLAG_HAS_BEEN_BT_GEN;
+            return;
+        }
         generate_function(decl->varname, fundef);
+        decl->flags |= DECL_FLAG_HAS_BEEN_BT_GEN;
         return;
     }
     if (decl->definition->ast_type == AST_STRUCT_DEFINITION) {
         // struct definitions do not cause any code to be created
         // when they are instantiated, yes
+        decl->flags |= DECL_FLAG_HAS_BEEN_BT_GEN;
         return;
     }
     // @TODO: we do not support function pointers yet
@@ -863,6 +907,7 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
     createStoreInstruction(decl, reg);
     
     program->machine.pop_mark(mark);
+    decl->flags |= DECL_FLAG_HAS_BEEN_BT_GEN;
 }
 
 void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16 reg)
@@ -1003,7 +1048,12 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     case AST_FUNCTION_CALL: {
         auto funcall = (FunctionCallAST *)expr;
 		// This assert here was to ensure expressions would have a value, but #run directives are a special case
-        //assert(!isVoidType(funcall->fundef->declaration->return_type));
+        assert((reg == -1) || !isVoidType(funcall->fundef->declaration->return_type));
+        // Recursive bytecode generation, if needed. Being_generated is here for recursive calls, or circular calls
+        if (funcall->fundef->bc_function == nullptr && !funcall->fundef->being_generated) {
+            generate_function(funcall->function_name, funcall->fundef);
+            assert(funcall->fundef->bc_function);
+        }
         compute_function_call_into_register(funcall, reg);
         break;
     }
@@ -1900,9 +1950,44 @@ void bytecode_runner::run_preamble()
     run_bc_function(&program->preamble_function);
 }
 
-ExpressionAST * bytecode_runner::run_directive(RunDirectiveAST * run)
+void bytecode_generator::generate_run_directive(RunDirectiveAST *run)
 {
-    return nullptr;
+    // TODO: we need to run the code attached to the run directive and likely create a new AST
+    // or bytecode with the final result
+    bytecode_function *old_current = current_function;
+    bytecode_function *func = new (pool) bytecode_function;
+    func->function_name = CreateTextType(pool, "Run Directive");
+    func->function_id = run->s;
+    current_function = func;
+
+    s16 mark = program->machine.reg_mark();
+    s16 reg = -1;
+    if (!isVoidType(run->expr_type)) {
+        // Return types are reserved first
+        reg = reserveRegistersForSize(&program->machine, run->expr_type->size_in_bytes);
+    }
+
+    computeExpressionIntoRegister((ExpressionAST *)run->expr, reg);
+    program->machine.pop_mark(mark);
+
+    current_function = old_current;
+
+    assert(run->bc_function == nullptr);
+    run->bc_function = func;
+//    program->functions.push_back(func);
+}
+
+void bytecode_runner::run_directive(RunDirectiveAST * run, PoolAllocator *ast_pool)
+{
+    // First run the bytecode in order to have the result of the run directive on the first registers
+    run_bc_function(run->bc_function);
+
+    if (!isVoidType(run->expr_type)) {
+        // Allocate a new AST for the run expression
+        //    run->new_ast = 
+        assert(!"Run directive with non void type return not supported yet");
+    }
+    return;
 }
 
 void bytecode_runner::callExternalFunction(FunctionDefinitionAST * fundef, BCI * bci)

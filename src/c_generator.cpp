@@ -223,7 +223,7 @@ void c_generator::ensure_deps_are_generated(StructTypeAST *stype)
         
         if (dt && dt->custom_type && (dt->custom_type->ast_type == AST_STRUCT_TYPE)) {
             auto st = (StructTypeAST *)dt->custom_type;
-            if (st->decl && !(st->decl->flags & DECL_FLAG_HAS_BEEN_GENERATED)) {
+            if (st->decl && !(st->decl->flags & DECL_FLAG_HAS_BEEN_C_GENERATED)) {
                 generate_variable_declaration(st->decl);
             }
         }
@@ -240,7 +240,7 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         ensure_deps_are_generated(stype);
     }
 
-    if (decl->flags & DECL_FLAG_HAS_BEEN_GENERATED) {
+    if (decl->flags & DECL_FLAG_HAS_BEEN_C_GENERATED) {
         // if we generated this already, nothing to do
         return;
     }
@@ -410,7 +410,7 @@ void c_generator::generate_variable_declaration(VariableDeclarationAST * decl)
         assert(!"Type not suported on C code generation yet");
     }
 
-    decl->flags |= DECL_FLAG_HAS_BEEN_GENERATED;
+    decl->flags |= DECL_FLAG_HAS_BEEN_C_GENERATED;
 }
 
 void c_generator::generate_argument_declaration(VariableDeclarationAST * arg)

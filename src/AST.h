@@ -12,6 +12,7 @@ struct TypeAST;
 struct ExpressionAST;
 struct VariableDeclarationAST;
 struct FunctionDefinitionAST;
+struct RunDirectiveAST;
 struct bytecode_function;
 struct interp_deps;
 
@@ -73,6 +74,7 @@ struct FileAST : BaseAST
 {
     FileAST() { ast_type = AST_FILE; }
     Array<BaseAST *>items;
+    Array<RunDirectiveAST *>run_items;
     Scope global_scope;
     ImportsHash imports;
 };
@@ -135,6 +137,7 @@ struct FunctionDefinitionAST : DefinitionAST
     VariableDeclarationAST *var_decl = nullptr; // so that we can find the name of the function
     u32 size_in_bytes = 8;
     bytecode_function *bc_function = nullptr;
+    bool being_generated = false;
 };
 
 struct ExpressionAST : DefinitionAST
@@ -145,9 +148,12 @@ struct ExpressionAST : DefinitionAST
 struct RunDirectiveAST : ExpressionAST
 {
     RunDirectiveAST() { ast_type = AST_RUN_DIRECTIVE; }
+    BaseAST *new_ast = nullptr;
     ExpressionAST *expr = nullptr;
 	s16 reg = -1;
     interp_deps *deps = nullptr; // only applicable for global directives
+    bytecode_function *bc_function = nullptr;
+    bool being_generated = false;
 };
 
 struct FunctionCallAST : ExpressionAST
@@ -201,13 +207,14 @@ struct StructDefinitionAST : DefinitionAST
 
 #define DECL_FLAG_IS_CONSTANT          0x01
 #define DECL_FLAG_HAS_BEEN_INFERRED    0x02
-#define DECL_FLAG_HAS_BEEN_GENERATED   0x04
+#define DECL_FLAG_HAS_BEEN_C_GENERATED 0x04
 #define DECL_FLAG_IS_FUNCTION_ARGUMENT 0x08
 #define DECL_FLAG_IS_LOCAL_VARIABLE    0x10
 #define DECL_FLAG_IS_GLOBAL_VARIABLE   0x20
 #define DECL_FLAG_IS_TYPE              0x40
 #define DECL_FLAG_IS_STRUCT_MEMBER     0x80
 #define DECL_FLAG_HAS_PROTOTYPE_GEN   0x100
+#define DECL_FLAG_HAS_BEEN_BT_GEN     0x200
 
 struct VariableDeclarationAST : StatementAST
 {

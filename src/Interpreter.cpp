@@ -690,7 +690,6 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
 
 void Interpreter::perform_bytecode(FileAST * root)
 {
-
     bytecode_generator bcgen;
     // @TODO : should the bytecode have its own pool? 
     // makes sense since it is emphymeral, but we need to be able to
@@ -703,7 +702,7 @@ void Interpreter::perform_bytecode(FileAST * root)
     
     if (option_printBytecode) print_bc_program(bp);
 
-    if (0)
+//    if (0)
     {
         CPU_SAMPLE("run bytecode");
 
@@ -714,7 +713,14 @@ void Interpreter::perform_bytecode(FileAST * root)
         // @TODO: remove, this is only for testing
         // Just code to test the bytecode runner
         runner.run_preamble();
-        runner.run_bc_function(bp->start_function);
+        for (auto run : root->run_items) {
+            if (!run->bc_function) bcgen.generate_run_directive(run);            
+            runner.run_directive(run, &pool);
+        }
+
+        // Now, all #run directives should have been processed and we can generate all the code
+        bcgen.compileAllFunctions(root);
+//        runner.run_bc_function(bp->start_function);
     }
 }
 
@@ -787,6 +793,52 @@ void Interpreter::traversePostfixTopLevelDirective(RunDirectiveAST ** runp)
     if (!run->deps->empty()) {
         overall_deps.push_back(run->deps);
     }
+}
+
+// Returns true if the AST does not contain access to any variable or
+// any non const
+bool Interpreter::enforceRunDirectiveConstraints(BaseAST * ast)
+{
+    switch (ast->ast_type) {
+    case AST_LITERAL: 
+        return true;
+    case AST_UNARY_OPERATION: {
+        auto unop = (UnaryOperationAST *)ast;
+        return enforceRunDirectiveConstraints(unop->expr);
+    }
+    case AST_BINARY_OPERATION: {
+        auto binop = (BinaryOperationAST *)ast;
+        bool left, right;
+        left = enforceRunDirectiveConstraints(binop->lhs);
+        right = enforceRunDirectiveConstraints(binop->rhs);
+        return left && right;
+    }
+    case AST_FUNCTION_CALL: {
+        auto funcall = (FunctionCallAST *)ast;
+        bool valid = true;
+        for (auto arg : funcall->args) {
+            valid = valid && enforceRunDirectiveConstraints(arg);
+            if (!valid) return false;
+        }
+        return valid;
+    }
+    case AST_IDENTIFIER: {
+        auto id = (IdentifierAST *)ast;
+        VariableDeclarationAST *decl = validateVariable(id);
+
+        // do not recurse on inferring types as this could cause infinite recursion
+        if (!decl) return false;
+        if (!(decl->flags & DECL_FLAG_IS_CONSTANT)) {
+            Error(ast, "Run directive can only use constant or literals, variable %s is neither.", id->name);
+            return false;
+        }
+        return true;
+    }
+    default:
+        Error(ast, "Run directive is only suported on function calls, unary and binary operations that use constants or literals");
+        return false;
+    }
+    return true;
 }
 
 void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
@@ -976,6 +1028,11 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
 	case AST_RUN_DIRECTIVE: {
 		auto run = (RunDirectiveAST *)ast;
 		traversePostfixAST(PPC(run->expr), deps);
+
+        addTypeWork(&pool, astp, deps);
+//        addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
+
 		break;
 	}
     default:
@@ -2139,9 +2196,13 @@ bool Interpreter::doWorkAST(interp_work * work)
             assert(type);
 
             run->expr_type = type;
+        } else if (work->action == IA_OPERATION_CHECK) {
+            // Run directives can only depend on constants/literals
+            auto res = enforceRunDirectiveConstraints(run->expr);
+            return res;
         } else {
             assert(!"Unimplemented");
-        }
+        } 
         break;
     }
     default:

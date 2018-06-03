@@ -49,7 +49,7 @@ static const char *BoolToStr(bool b)
 
 static void printDeclarationASTFlags(u32 flags)
 {
-    if (flags & DECL_FLAG_HAS_BEEN_GENERATED) {
+    if (flags & DECL_FLAG_HAS_BEEN_C_GENERATED) {
         printf("DECL_FLAG_HAS_BEEN_GENERATED ");
     }
     if (flags & DECL_FLAG_HAS_BEEN_INFERRED) {
