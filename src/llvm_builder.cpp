@@ -594,9 +594,12 @@ static void generateCode(BaseAST *ast)
     case AST_RUN_DIRECTIVE: {
         auto run = (RunDirectiveAST *)ast;
         if (isVoidType(run->expr_type)) break;
-        // @TODO: just use the new expr generated here
-        assert(!"Unimplemented run directive type");
-        generateCode(run->new_ast);
+
+        assert(run->new_ast->ast_type == AST_LITERAL);
+        auto lit = (LiteralAST *)run->new_ast;
+
+        generateCode(lit);
+        run->codegen = lit->codegen;
         break;
     }
     default:

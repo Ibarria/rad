@@ -697,6 +697,24 @@ static u32 overallRunItems(FileAST *root)
     return num_runs;
 }
 
+static u32 overallRunDependencies(RunDirectiveAST *run)
+{
+    u32 num_deps = 0;
+    for (auto dep : run->run_deps) {
+        if (!dep->computed) num_deps++;
+    }
+    return num_deps;
+}
+
+static u32 totalRunsWithDeps(FileAST *root)
+{
+    u32 run_deps = 0;
+    for (auto run : root->run_items) {
+        if (overallRunDependencies(run) > 0) run_deps++;
+    }
+    return run_deps;
+}
+
 void Interpreter::perform_bytecode(FileAST * root)
 {
     bytecode_generator bcgen;
@@ -744,12 +762,33 @@ void Interpreter::perform_bytecode(FileAST * root)
         return;
     }
 
-    for (auto run : root->run_items) {
-        runner.run_directive(run, &pool);
+    do {
+        for (auto run : root->run_items) {
+            if (overallRunDependencies(run) == 0)
+                runner.run_directive(run);
+        }
+        old_remain = current_remain;
+        current_remain = totalRunsWithDeps(root);
+        if (current_remain == 0) {
+            break;
+        } else if (current_remain < old_remain) {
+            // if we made progress, clear up errors as they are transient
+            reset_errors();
+        }
+    } while (current_remain < old_remain);
+
+    if (current_remain > 0) {
+        Error(nullptr, "Could not process all run directives");
+        success = false;
+        return;
     }
+
 
     // Now, all #run directives should have been processed and we can generate all the code
     bcgen.compileAllFunctions(root);
+    if (!success) return;
+
+    bcgen.validateAllFunctions();
     if (!success) return;
 
     if (option_printBytecode) print_bc_program(bp);

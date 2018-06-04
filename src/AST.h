@@ -15,6 +15,7 @@ struct FunctionDefinitionAST;
 struct RunDirectiveAST;
 struct bytecode_function;
 struct interp_deps;
+struct BCI;
 
 namespace llvm { class Value; class Type; }
 
@@ -153,7 +154,11 @@ struct RunDirectiveAST : ExpressionAST
 	s16 reg = -1;
     interp_deps *deps = nullptr; // only applicable for global directives
     bytecode_function *bc_function = nullptr;
+    bytecode_function *enclosing_func = nullptr;
+    Array<RunDirectiveAST *> run_deps;
     bool being_generated = false;
+    bool computed = false;
+    BCI *bci = nullptr;
 };
 
 struct FunctionCallAST : ExpressionAST
@@ -429,6 +434,18 @@ inline bool isTypeFloating(TypeAST *t)
 inline bool isTypePointer(TypeAST *t)
 {
     return t->ast_type == AST_POINTER_TYPE;
+}
+
+// Should this include the VOID type?
+inline bool isTypeRunSupported(TypeAST *t) 
+{
+    if (t->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)t;
+        return (dt->basic_type == BASIC_TYPE_BOOL) ||
+            (dt->basic_type == BASIC_TYPE_INTEGER) ||
+            (dt->basic_type == BASIC_TYPE_FLOATING);
+    }
+    return false;
 }
 
 TypeAST *getDefinedType(VarReferenceAST *ast);

@@ -19,6 +19,15 @@ extern bool option_printTokens;
 
 static u64 sequence_id = 100;
 
+void copyASTinfo(BaseAST *src, BaseAST *dst) 
+{
+    dst->filename = src->filename;
+    dst->line_num = src->line_num;
+    dst->char_num = src->char_num;
+    dst->s = sequence_id++;
+    dst->scope = src->scope;
+}
+
 static BaseAST * setASTloc(Parser *p, BaseAST *ast)
 {
     SrcLocation loc;

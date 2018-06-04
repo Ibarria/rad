@@ -9,6 +9,8 @@
 #include "Interpreter.h"
 
 const u64 stack_size = 10 * 1024;
+// Function implemented in Parser.cpp, useful to create correct AST for #run
+void copyASTinfo(BaseAST *src, BaseAST *dst);
 
 template <class T> const T& max(const T& a, const T& b) {
     return (a<b) ? b : a;     
@@ -615,9 +617,9 @@ external_library * bytecode_generator::findOrLoadLibrary(TextType filename)
     external_library *lib = new (pool) external_library;
     lib->name = CreateTextType(pool, lib_name);
     lib->dll = dlLoadLibrary(lib_name);
-	if (lib->dll == nullptr) {
-		printf("Could not find library: %s\n", lib_name);
-	}
+    if (lib->dll == nullptr) {
+        printf("Could not find library: %s\n", lib_name);
+    }
     assert(lib->dll != nullptr);
     program->external_libs.push_back(lib);
     return lib;
@@ -678,6 +680,18 @@ void bytecode_generator::compileAllFunctions(FileAST * root)
     initializeGlobalFunctions(&root->global_scope);
 }
 
+bool bytecode_generator::validateAllFunctions()
+{
+    for (auto func : program->functions) {
+        if (func->missing_run_directives > 0) {
+            interp->Error(nullptr, "Function %s had dependent #run directives that could not be evaluated\n",
+                func->function_name);
+            return false;
+        }
+    }
+    return true;
+}
+
 void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST * fundef)
 {
     fundef->being_generated = true;
@@ -686,7 +700,7 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
 
         external_library *exlib = findOrLoadLibrary(fundef->declaration->filename);
         fundef->declaration->func_ptr = dlFindSymbol((DLLib *)exlib->dll, fundef->var_decl->varname);
-				
+                
         assert(fundef->declaration->func_ptr);
         // During bytecode processing is the best time to go and ensure the function is setup
         return; // foreign functions just get called
@@ -697,7 +711,7 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
     func->function_name = name;
     func->function_id = fundef->s;
     current_function = func;
-	
+    
     assert(fundef->declaration);
     auto fundecl = fundef->declaration;
     if (!isVoidType(fundecl->return_type)) {
@@ -715,8 +729,16 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
     
     // Creating a function is the same as processing its statementBlock
     generate_statement_block(fundef->function_body);
-	
-	current_function = old_current;
+    
+    current_function = old_current;
+    fundef->being_generated = false;
+
+    if (!interp->success) {
+        // This wastes all the instructions on the function so far. 
+        // We try to run #run directives in place, but it might fail
+        return;
+    }
+
     if (!strcmp(name, "main") && (fundef->scope->parent == nullptr)) {
         program->start_function = func;
     }
@@ -825,8 +847,10 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         }
         break;
     }
-	case AST_RUN_DIRECTIVE: {
+    case AST_RUN_DIRECTIVE: {
         auto run = (RunDirectiveAST *)stmt;
+        
+        run->enclosing_func = current_function;
         // All run directives should be processed, the loop in Interpreter ensures it
         if (run->bc_function == nullptr) {
             interp->Error(run, "Detected recursive #run directive, this is not allowed\n");
@@ -836,15 +860,29 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         if (isVoidType(run->expr_type)) break;
 
         assert(run->new_ast);
-        
+        auto lit = (LiteralAST *)run->new_ast;
 
         s16 mark = program->machine.reg_mark();
         run->reg = reserveRegistersForSize(&program->machine, run->expr_type->size_in_bytes);
-        assert(!"Unsupported run directive with a result");
-        // computeExpressionIntoRegister(run->new_ast, run->reg);
+        if (run->bci == nullptr) {
+            BCI *extra = nullptr;
+            BCI *bci = create_load_literal_instruction(lit, -1, &extra);
+            assert(extra == nullptr);
+            run->bci = bci;
+        }
+
+        run->bci->dst_reg = run->reg;
+        issue_instruction(run->bci);
+
+        if (!run->computed) {
+            current_function->missing_run_directives++;
+            assert(current_run != run);
+            current_run->run_deps.push_back(run);
+        }
+
         program->machine.pop_mark(mark);
-		break;
-	}
+        break;
+    }
     default:
         assert(!"Generate Statement Block in Bytecode, unknown AST");
     }
@@ -930,65 +968,72 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
     decl->flags |= DECL_FLAG_HAS_BEEN_BT_GEN;
 }
 
+BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit, s16 reg, BCI **extra)
+{
+    BCI *bci = nullptr;
+    switch (lit->typeAST->basic_type) {
+    case BASIC_TYPE_INTEGER: {
+        u64 val;
+        if (lit->typeAST->isSigned) val = straight_convert(lit->_s64);
+        else val = lit->_u64;
+        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
+        assert(lit->typeAST->size_in_bytes < 256);
+        bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
+        bci->dst_type = (lit->typeAST->isSigned ? REGTYPE_SINT : REGTYPE_UINT);
+        break;
+    }
+    case BASIC_TYPE_STRING: {
+        // Hacky version, the string data will use the pointer in the AST... 
+        // @TODO: think of a better version to handle strings, such as:
+        /*
+        - Strings in some data segment (all the ones in the program?)
+        - allocate memory for all the strings, malloc style
+        - Inline the strings (if known size), right after the pointer or such
+        - Are strings mutable? How does allocation work? Do we care?
+        */
+        u64 val = straight_convert(lit->str);
+        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
+        bci->dst_type_bytes = 8;
+        bci->dst_type = REGTYPE_POINTER;
+        assert(extra != nullptr);
+        *extra = bci;
+        val = strlen(lit->str);
+        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg + 1, val);
+        bci->dst_type_bytes = 8;
+        bci->dst_type = REGTYPE_UINT;
+        break;
+    }
+    case BASIC_TYPE_BOOL: {
+        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, lit->_bool);
+        assert(lit->typeAST->size_in_bytes < 256);
+        bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
+        bci->dst_type = REGTYPE_UINT;
+        break;
+    }
+    case BASIC_TYPE_FLOATING: {
+        u64 val = straight_convert(lit->_f64);
+        assert(lit->typeAST->size_in_bytes < 256);
+        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
+        bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
+        bci->dst_type = REGTYPE_FLOAT;
+        break;
+    }
+    default:
+        assert(false);
+    }
+    return bci;
+}
+
 void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16 reg)
 {
     switch (expr->ast_type) {
     case AST_LITERAL: {
         auto lit = (LiteralAST *)expr;
-
-        switch (lit->typeAST->basic_type) {
-        case BASIC_TYPE_INTEGER: {
-            u64 val;
-            if (lit->typeAST->isSigned) val = straight_convert(lit->_s64);
-            else val = lit->_u64;
-            BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
-            assert(lit->typeAST->size_in_bytes < 256);
-            bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
-            bci->dst_type = (lit->typeAST->isSigned ? REGTYPE_SINT : REGTYPE_UINT);
-            issue_instruction(bci);
-            break;
-        }
-        case BASIC_TYPE_STRING: {
-            // Hacky version, the string data will use the pointer in the AST... 
-            // @TODO: think of a better version to handle strings, such as:
-            /*
-               - Strings in some data segment (all the ones in the program?)
-               - allocate memory for all the strings, malloc style
-               - Inline the strings (if known size), right after the pointer or such
-               - Are strings mutable? How does allocation work? Do we care?
-            */
-            u64 val = straight_convert(lit->str);
-            BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
-            bci->dst_type_bytes = 8;
-            bci->dst_type = REGTYPE_POINTER;
-            issue_instruction(bci);
-            val = strlen(lit->str);
-            bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg+1, val);
-            bci->dst_type_bytes = 8;
-            bci->dst_type = REGTYPE_UINT;
-            issue_instruction(bci);
-            break;
-        }
-        case BASIC_TYPE_BOOL: {
-            BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, lit->_bool);
-            assert(lit->typeAST->size_in_bytes < 256);
-            bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
-            bci->dst_type = REGTYPE_UINT;
-            issue_instruction(bci);
-            break;
-        }
-        case BASIC_TYPE_FLOATING: {
-            u64 val = straight_convert(lit->_f64);
-            assert(lit->typeAST->size_in_bytes < 256);
-            BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
-            bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
-            bci->dst_type = REGTYPE_FLOAT;
-            issue_instruction(bci);
-            break;
-        }
-        default:
-            assert(false);
-        }
+        BCI *bci, *extra;
+        bci = extra = nullptr;
+        bci = create_load_literal_instruction(lit, reg, &extra);
+        if (extra != nullptr) issue_instruction(extra);
+        issue_instruction(bci);
         break;
     }
     case AST_UNARY_OPERATION: {
@@ -1067,7 +1112,7 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     }
     case AST_FUNCTION_CALL: {
         auto funcall = (FunctionCallAST *)expr;
-		// This assert here was to ensure expressions would have a value, but #run directives are a special case
+        // This assert here was to ensure expressions would have a value, but #run directives are a special case
         assert((reg == -1) || !isVoidType(funcall->fundef->declaration->return_type));
         // Recursive bytecode generation, if needed. Being_generated is here for recursive calls, or circular calls
         if (funcall->fundef->bc_function == nullptr && !funcall->fundef->being_generated) {
@@ -1097,7 +1142,39 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     case AST_ARRAY_ACCESS:
         assert(!"These two AST types should never be here, only as a subset of Identifier");
         break;
-                           
+    case AST_RUN_DIRECTIVE: {
+        auto run = (RunDirectiveAST *)expr;
+        run->enclosing_func = current_function;
+
+        if (run->new_ast == nullptr) {
+            interp->Error(expr, "Run directive recursive call not allowed\n");
+            return;
+        }
+
+        assert(run->new_ast->ast_type == AST_LITERAL);
+        assert(run->new_ast);
+        auto lit = (LiteralAST *)run->new_ast;
+
+        s16 mark = program->machine.reg_mark();
+        run->reg = reg;
+        if (run->bci == nullptr) {
+            BCI *extra = nullptr;
+            BCI *bci = create_load_literal_instruction(lit, -1, &extra);
+            assert(extra == nullptr);
+            run->bci = bci;
+        }
+
+        run->bci->dst_reg = run->reg;
+        issue_instruction(run->bci);
+
+        if (!run->computed) {
+            current_function->missing_run_directives++;
+            assert(current_run != run);
+            current_run->run_deps.push_back(run);
+        }
+
+        break;
+    }
     default:
         assert(!"Unknown expression AST for bytecode");
     }
@@ -1976,39 +2053,76 @@ void bytecode_generator::generate_run_directive(RunDirectiveAST *run)
     // or bytecode with the final result
     bytecode_function *old_current = current_function;
     bytecode_function *func = new (pool) bytecode_function;
+    RunDirectiveAST *old_run = current_run;
+
     func->function_name = CreateTextType(pool, "Run Directive");
     func->function_id = run->s;
     current_function = func;
+    current_run = run;
 
     s16 mark = program->machine.reg_mark();
     s16 reg = -1;
+    assert(mark == 0);
+
     if (!isVoidType(run->expr_type)) {
         // Return types are reserved first
         reg = reserveRegistersForSize(&program->machine, run->expr_type->size_in_bytes);
+        run->reg = reg;
     }
 
     computeExpressionIntoRegister((ExpressionAST *)run->expr, reg);
     program->machine.pop_mark(mark);
 
     current_function = old_current;
+    current_run = old_run;
 
     // do an early exit in case of any errors, such as those by recursive #run calls
     if (!interp->success) return;
 
     assert(run->bc_function == nullptr);
     run->bc_function = func;
-//    program->functions.push_back(func);
+
+    if (!isVoidType(run->expr_type)) {
+        if (!isTypeRunSupported(run->expr_type)) {
+            assert(!"Run directive with non void type return not supported yet");
+        }
+        // Allocate a new AST for the run expression
+        LiteralAST *lit = new (&interp->pool) LiteralAST();
+        run->new_ast = lit;
+        copyASTinfo(run, lit);
+
+        assert(run->expr_type->ast_type == AST_DIRECT_TYPE);
+        lit->typeAST = (DirectTypeAST *)run->expr_type;
+        lit->_u64 = 0;
+
+        if (run->bci == nullptr) {
+            BCI *extra = nullptr;
+            BCI *bci = create_load_literal_instruction(lit, -1, &extra);
+            assert(extra == nullptr);
+            run->bci = bci;
+        }
+    }
 }
 
-void bytecode_runner::run_directive(RunDirectiveAST * run, PoolAllocator *ast_pool)
+void bytecode_runner::run_directive(RunDirectiveAST * run)
 {
     // First run the bytecode in order to have the result of the run directive on the first registers
     run_bc_function(run->bc_function);
+    run->computed = true;
 
     if (!isVoidType(run->expr_type)) {
-        // Allocate a new AST for the run expression
-        //    run->new_ast = 
-        assert(!"Run directive with non void type return not supported yet");
+        if (!isTypeRunSupported(run->expr_type)) {
+            assert(!"Run directive with non void type return not supported yet");
+        }
+        LiteralAST *lit = (LiteralAST *)run->new_ast;
+
+        // This should work for all types because it is a union underneath... 
+        lit->_u64 = program->machine.regs[0].data._u64;
+        assert(run->bci != nullptr);
+        run->bci->big_const = lit->_u64;
+        if (run->enclosing_func) {
+            run->enclosing_func->missing_run_directives--;
+        }
     }
     return;
 }

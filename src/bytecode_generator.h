@@ -61,10 +61,11 @@ struct bc_base_memory {
 
 struct bytecode_function
 {
-	Array<BCI *> instructions;
-	TextType function_name = nullptr;
+    Array<BCI *> instructions;
+    TextType function_name = nullptr;
     u64 bc_params_size = 0; // space to take from the stack for this function
-	u64 function_id;
+    u64 function_id;
+    u64 missing_run_directives = 0;
 };
 
 struct external_library
@@ -92,8 +93,8 @@ struct bytecode_program
 {
     bc_base_memory bss;
     bytecode_machine machine;
-	bytecode_function preamble_function;
-	bytecode_function *start_function = nullptr;
+    bytecode_function preamble_function;
+    bytecode_function *start_function = nullptr;
     Array<bytecode_function *> functions;
     Array<external_library *>external_libs;
 };
@@ -102,12 +103,14 @@ struct bytecode_generator
 {
     PoolAllocator *pool = nullptr;
     bytecode_program *program = nullptr;
-	bytecode_function *current_function = nullptr;
+    bytecode_function *current_function = nullptr;
     Interpreter *interp;
+    RunDirectiveAST *current_run = nullptr;
 
     external_library *findOrLoadLibrary(TextType filename);
 
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const);
+    BCI *create_load_literal_instruction(LiteralAST *lit, s16 reg, BCI **extra);
     void createStoreInstruction(VariableDeclarationAST *decl, s16 reg);
     void createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
     void createStoreInstruction(BytecodeInstructionOpcode opcode, s16 ptrreg, s16 datareg, u64 size_in_bytes);
@@ -122,6 +125,7 @@ struct bytecode_generator
     void setInterpreter(Interpreter *i) { interp = i; }
     bytecode_program *compileToBytecode(FileAST *root);
     void compileAllFunctions(FileAST *root);
+    bool validateAllFunctions();
 
     void initializeGlobalVariables(Scope *scope);
     void initializeGlobalFunctions(Scope *scope);
@@ -154,7 +158,7 @@ struct bytecode_runner
     void run_bc_function(bytecode_function *func);
 
     void run_preamble();
-    void run_directive(RunDirectiveAST *run, PoolAllocator *ast_pool);
+    void run_directive(RunDirectiveAST *run);
     void callExternalFunction(FunctionDefinitionAST *fundef, BCI *bci);
 };
 
