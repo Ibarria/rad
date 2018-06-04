@@ -829,7 +829,7 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         auto run = (RunDirectiveAST *)stmt;
         // All run directives should be processed, the loop in Interpreter ensures it
         if (run->bc_function == nullptr) {
-            interp->Error(run, "Detected recursive #run directive, this is not allowed");
+            interp->Error(run, "Detected recursive #run directive, this is not allowed\n");
             return;
         }
         // Void return have no code generated, just skip
@@ -1991,6 +1991,9 @@ void bytecode_generator::generate_run_directive(RunDirectiveAST *run)
     program->machine.pop_mark(mark);
 
     current_function = old_current;
+
+    // do an early exit in case of any errors, such as those by recursive #run calls
+    if (!interp->success) return;
 
     assert(run->bc_function == nullptr);
     run->bc_function = func;
