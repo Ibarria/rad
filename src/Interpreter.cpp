@@ -688,6 +688,15 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
     }
 }
 
+static u32 overallRunItems(FileAST *root)
+{
+    u32 num_runs = 0;
+    for (auto run : root->run_items) {
+        if (run->bc_function == nullptr) num_runs++;
+    }
+    return num_runs;
+}
+
 void Interpreter::perform_bytecode(FileAST * root)
 {
     bytecode_generator bcgen;
@@ -698,30 +707,52 @@ void Interpreter::perform_bytecode(FileAST * root)
     // finding the dependencies can be tricky... 
     PoolAllocator bc_pool;   
     bcgen.setPool(&bc_pool);
+    bcgen.setInterpreter(this);
+
+    CPU_SAMPLE("run bytecode");
+
     bytecode_program *bp = bcgen.compileToBytecode(root);
+
+    if (!success) return;
     
-    if (option_printBytecode) print_bc_program(bp);
+    // Find and run the #run directives now that we have a program compiled
+    bytecode_runner runner;
+    runner.program = bp;
 
-//    if (0)
-    {
-        CPU_SAMPLE("run bytecode");
+    assert(success);
 
-        // Find and run the #run directives now that we have a program compiled
-        bytecode_runner runner;
-        runner.program = bp;
-
-        // @TODO: remove, this is only for testing
-        // Just code to test the bytecode runner
-        runner.run_preamble();
+    runner.run_preamble();
+    u32 old_remain = overallRunItems(root);
+    u32 current_remain = old_remain;
+    do {
         for (auto run : root->run_items) {
-            if (!run->bc_function) bcgen.generate_run_directive(run);            
-            runner.run_directive(run, &pool);
+            if (run->bc_function == nullptr) bcgen.generate_run_directive(run);
         }
+        old_remain = current_remain;
+        current_remain = overallRunItems(root);
+        if (current_remain == 0) {
+            break;
+        } else if (current_remain < old_remain) {
+            // if we made progress, clear up errors as they are transient
+            reset_errors();
+        }
+    } while (current_remain < old_remain);
 
-        // Now, all #run directives should have been processed and we can generate all the code
-        bcgen.compileAllFunctions(root);
-//        runner.run_bc_function(bp->start_function);
+    if (current_remain > 0) {
+        Error(nullptr, "Could not process all run directives");
+        success = false;
+        return;
     }
+
+    for (auto run : root->run_items) {
+        runner.run_directive(run, &pool);
+    }
+
+    // Now, all #run directives should have been processed and we can generate all the code
+    bcgen.compileAllFunctions(root);
+    if (!success) return;
+
+    if (option_printBytecode) print_bc_program(bp);
 }
 
 void Interpreter::printErrors()

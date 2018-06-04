@@ -6,6 +6,8 @@
 #include <dyncall.h>
 #include <dynload.h>
 
+#include "Interpreter.h"
+
 const u64 stack_size = 10 * 1024;
 
 template <class T> const T& max(const T& a, const T& b) {
@@ -769,6 +771,13 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
     case AST_FUNCTION_CALL: {
         auto funcall = (FunctionCallAST *)stmt;
         // on statements we do not care about return values
+
+        // Recursive bytecode generation, if needed. Being_generated is here for recursive calls, or circular calls
+        if (funcall->fundef->bc_function == nullptr && !funcall->fundef->being_generated) {
+            generate_function(funcall->function_name, funcall->fundef);
+            assert(funcall->fundef->bc_function);
+        }
+
         compute_function_call_into_register(funcall, -1);
         break;
     }
@@ -818,10 +827,21 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
     }
 	case AST_RUN_DIRECTIVE: {
         auto run = (RunDirectiveAST *)stmt;
+        // All run directives should be processed, the loop in Interpreter ensures it
+        if (run->bc_function == nullptr) {
+            interp->Error(run, "Detected recursive #run directive, this is not allowed");
+            return;
+        }
+        // Void return have no code generated, just skip
+        if (isVoidType(run->expr_type)) break;
+
+        assert(run->new_ast);
+        
+
         s16 mark = program->machine.reg_mark();
-        if (!isVoidType(run->expr->expr_type)) 
-            run->reg = reserveRegistersForSize(&program->machine, run->expr->expr_type->size_in_bytes);
-        computeExpressionIntoRegister(run->expr, run->reg);
+        run->reg = reserveRegistersForSize(&program->machine, run->expr_type->size_in_bytes);
+        assert(!"Unsupported run directive with a result");
+        // computeExpressionIntoRegister(run->new_ast, run->reg);
         program->machine.pop_mark(mark);
 		break;
 	}

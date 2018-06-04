@@ -135,7 +135,7 @@ static void generateCode(BaseAST *ast)
                 break;
             }
             case AST_RUN_DIRECTIVE: {
-                assert(!"There should be no run directives in llvm");
+                // Run directives either have already been executed, or in top level they do nothing
                 break;
             }
             default:

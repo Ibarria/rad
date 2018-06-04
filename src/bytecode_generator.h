@@ -5,6 +5,8 @@
 #include "bytecode_instructions.h"
 #include "AST.h"
 
+struct Interpreter;
+
 union bc_register_data {
     u64 _u64 = 0;
     u32 _u32;
@@ -101,6 +103,7 @@ struct bytecode_generator
     PoolAllocator *pool = nullptr;
     bytecode_program *program = nullptr;
 	bytecode_function *current_function = nullptr;
+    Interpreter *interp;
 
     external_library *findOrLoadLibrary(TextType filename);
 
@@ -116,6 +119,7 @@ struct bytecode_generator
     void issueReserveStackSpace(u64 size);
 
     void setPool(PoolAllocator *p) { pool = p; }
+    void setInterpreter(Interpreter *i) { interp = i; }
     bytecode_program *compileToBytecode(FileAST *root);
     void compileAllFunctions(FileAST *root);
 
