@@ -45,6 +45,10 @@ struct BCI {
     u8 dst_type_bytes = 0;
     s32 inst_index = -1; // This holds the relative position of the instruction on the function
     RegisterType dst_type = REGTYPE_UNKNOWN;
+    u64 s = 0;
+    // These should be their own struct, with filename too
+    u32 line_num = 0;
+    u32 char_num = 0;
 };
 
 struct bc_base_memory {
@@ -63,7 +67,10 @@ struct bytecode_function
 {
     Array<BCI *> instructions;
     TextType function_name = nullptr;
-    u64 bc_params_size = 0; // space to take from the stack for this function
+    s16 num_regs = 0;
+    bc_register *regs = nullptr;
+    u64 bc_arg_size = 0; // Number of registers for the calling record for the args and return
+    u64 bc_local_var_size = 0; // space to take from the stack for this function
     u64 function_id;
     u64 missing_run_directives = 0;
 };
@@ -74,25 +81,9 @@ struct external_library
     void *dll = nullptr;
 };
 
-struct bytecode_machine
-{
-    bc_register regs[128]; // Maybe do SSA, like LLVM wants?
-    s16 regs_used = 0;
-    s16 reserve_register(u64 count = 1)
-    {
-        assert(regs_used + count < 128);
-        s16 ret_value = regs_used;
-        regs_used += (u16)count;
-        return ret_value;
-    }
-    s16 reg_mark() const { return regs_used; }
-    void pop_mark(s16 mark) { regs_used = mark; }
-};
-
 struct bytecode_program
 {
     bc_base_memory bss;
-    bytecode_machine machine;
     bytecode_function preamble_function;
     bytecode_function *start_function = nullptr;
     Array<bytecode_function *> functions;

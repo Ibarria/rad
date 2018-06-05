@@ -1277,7 +1277,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 // Go around all the members of the struct and assign relative bc_mem_offset (offset from struct parent)
                 u64 bc_offset = 0;
                 for (auto member : struct_def->struct_type->struct_scope.decls) {
-                    member->bc_mem_offset = bc_offset;
+                    member->bc_offset = bc_offset;
                     bc_offset += member->specified_type->size_in_bytes;
                 }
 

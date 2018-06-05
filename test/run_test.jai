@@ -1,12 +1,25 @@
 #import "Basic"
 
+factorial:: (x: u64) -> u64
+{
+//	print("Starting Factorial for %d\n", x);
+	if (x <= 1) {
+//		print("Early return on Factorial\n");
+		return 1;
+	}
+	return x * factorial(x-1);
+//	print("The factorial of %d is %d\n", x, result);
+//	return result;
+}
+
+
 test::()
 {
 	// This is a check of #run calls with result value
 	a := #run (30 + 21 + 15);
 
 	print("Inside function, this is called from a GLOBAL #RUN\n\n\n");
-// 	#run print("This is directly inside #run\n");
+ 	#run print("This is directly inside #run, Factorial of 10 is %d\n", factorial(10));
 
 	print("This is a from #run: %d -- \n", a);
 
@@ -25,9 +38,22 @@ test::()
 	// #run test();
 }
 
+
 main::()
 {
 	test();
+// 	#run print("This is directly inside #run, Factorial of 5 is %d\n", factorial(5));
+
 }
 
-#run test();
+// #run factorial(10);
+
+/*
+
+  Need to test multiple parameter passing
+  test2::(a: s16, b: s32, c: u64) -> u64
+  {
+	return 0;
+  }
+
+*/

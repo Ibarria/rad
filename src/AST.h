@@ -228,7 +228,7 @@ struct VariableDeclarationAST : StatementAST
     TypeAST *specified_type = nullptr;
     DefinitionAST *definition = nullptr;
     u32 flags = 0;
-    u64 bc_mem_offset = 0; 
+    u64 bc_offset = 0; // This can be memory offset for global variables or register offset for arguments
     interp_deps *deps = nullptr; // only applicable for global variables
 };
 
