@@ -1095,6 +1095,15 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         addCheckWork(&pool, astp, deps);
         break;
     }
+    case AST_NEW: {
+        auto nast = (NewAllocAST *)ast;
+        traversePostfixAST(PPC(nast->type), deps);
+
+        addTypeWork(&pool, astp, deps);
+        addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
+        break;
+    }
 	case AST_RUN_DIRECTIVE: {
 		auto run = (RunDirectiveAST *)ast;
 		traversePostfixAST(PPC(run->expr), deps);
@@ -2257,6 +2266,27 @@ bool Interpreter::doWorkAST(interp_work * work)
         } else {
             assert(!"Unknown dependency work type");
         }
+        break;
+    }
+    case AST_NEW: {
+        auto nast = (NewAllocAST *)ast;
+        if (work->action == IA_RESOLVE_TYPE) {
+            TypeAST *type = nast->type;
+            assert(type);
+            PointerTypeAST *pt = new (&pool) PointerTypeAST;
+            copyASTloc(nast, pt);
+            pt->points_to_type = type;
+            pt->size_in_bytes = 8;
+
+            nast->expr_type = pt;
+        } else if (work->action == IA_COMPUTE_SIZE) {
+//            nast->size_in_bytes = 8;
+
+        } else if (work->action == IA_OPERATION_CHECK) {
+            // Decide on what checks to do for a new call, if any
+        } else {
+            assert(!"Unimplemented");
+        } 
         break;
     }
     case AST_RUN_DIRECTIVE: {
