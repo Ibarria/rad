@@ -216,7 +216,8 @@ static bool isBuiltInType(TOKEN_TYPE t)
         || (t == TK_FLOAT)
         || (t == TK_F32)
         || (t == TK_F64)
-        || (t == TK_STRING_KEYWORD);
+        || (t == TK_STRING_KEYWORD)
+        || (t == TK_VOID);
 }
 
 static bool isHexNumber(Token &t)
