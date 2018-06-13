@@ -54,6 +54,8 @@ struct ReservedKeyword {
     { "bool",     TK_BOOL },
     { "true",     TK_TRUE },
     { "false",    TK_FALSE },
+    { "new",      TK_NEW },
+    { "delete",   TK_DELETE },
     { "void",     TK_VOID },
     { "string",   TK_STRING_KEYWORD },
     { "int",      TK_INT },
@@ -328,6 +330,11 @@ bool Lexer::openFile(const char * filename)
     CPU_SAMPLE("openFile");
 
 	return file.open(filename);
+}
+
+bool Lexer::loadString(const char *str, u64 size)
+{
+    return file.loadString(str, size);
 }
 
 void Lexer::parseFile()

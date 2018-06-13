@@ -25,6 +25,7 @@ public:
 	~Lexer();
     void setPoolAllocator(PoolAllocator *p) { pool = p; }
 	bool openFile(const char *filename);
+    bool loadString(const char *str, u64 size);
     void parseFile();
     void getCurrentToken(Token &tok);
     void getNextToken(Token &tok);

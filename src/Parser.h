@@ -48,5 +48,7 @@ struct Parser {
     void parseLoadDirective();
     RunDirectiveAST * parseRunDirective();
     FileAST * Parse(const char *filename, PoolAllocator *pool, FileAST *fast = nullptr);
+    FileAST * ParseFromString(const char *str, u64 str_size, PoolAllocator *pool, FileAST *fast = nullptr);
+    FileAST * ParseInternal(FileAST *fast);
 };
 

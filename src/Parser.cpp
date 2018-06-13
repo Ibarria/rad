@@ -926,6 +926,13 @@ ExpressionAST * Parser::parseUnaryExpression()
         if (lex->checkAheadToken(TK_OPEN_PAREN, 1)) {
             return parseFunctionCall();
         }
+    } else if (t.type == TK_NEW) {
+        lex->consumeToken();
+        NewAllocAST *nast = NEW_AST(NewAllocAST);
+        nast->type = parseType();
+        if (!success) return nullptr;
+
+        return nast;    
     } else if (isUnaryPrefixOperator(t.type)) {
         lex->consumeToken();
         ExpressionAST *expr = parseUnaryExpression();
@@ -1264,7 +1271,6 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
 	Lexer lex;
     this->lex = &lex;
     this->pool = pool;
-    FileAST *file_inst = nullptr;
 
     CPU_SAMPLE("Parser Main");
 
@@ -1274,6 +1280,31 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
         sprintf_s(errorString, "Error: File [%s] could not be opened to be processed\n", filename);
         return nullptr;
     }
+
+    return ParseInternal(fast);
+}
+
+FileAST * Parser::ParseFromString(const char *str, u64 str_size, PoolAllocator *pool, FileAST *fast)
+{
+    Lexer lex;
+    this->lex = &lex;
+    this->pool = pool;
+
+    CPU_SAMPLE("Parser From String");
+
+    lex.setPoolAllocator(pool);
+
+    if (!lex.loadString(str, str_size)) {
+        sprintf_s(errorString, "Error: String could not be loaded to be processed\n");
+        return nullptr;
+    }
+
+    return ParseInternal(fast);
+}
+
+FileAST * Parser::ParseInternal(FileAST *fast)
+{
+    FileAST *file_inst = nullptr;
 
     if (fast != nullptr) {
         file_inst = fast;
@@ -1287,24 +1318,24 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
 
     defineBuiltInTypes();
 
-    lex.parseFile();
+    lex->parseFile();
 
     if (option_printTokens) {
-        while (!lex.checkToken(TK_LAST_TOKEN)) {
+        while (!lex->checkToken(TK_LAST_TOKEN)) {
             Token t;
-            lex.getNextToken(t);
+            lex->getNextToken(t);
             t.print();
         }
-        lex.setTokenStreamPosition(0);
+        lex->setTokenStreamPosition(0);
     }
 
     if (current_scope == nullptr) {
         current_scope = &file_inst->global_scope;        
     }
 
-	while (!lex.checkToken(TK_LAST_TOKEN)) {
+    while (!lex->checkToken(TK_LAST_TOKEN)) {
         Token t;
-        lex.lookaheadToken(t);
+        lex->lookaheadToken(t);
         if (t.type == TK_IMPORT) {
             parseImportDirective();
         } else if (t.type == TK_LOAD) {
@@ -1315,8 +1346,8 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
                 return nullptr;
             }
             // Allow semicolons after a #run directive
-            lex.lookaheadToken(t);
-            if (t.type == TK_SEMICOLON) lex.consumeToken();
+            lex->lookaheadToken(t);
+            if (t.type == TK_SEMICOLON) lex->consumeToken();
 
             file_inst->items.push_back(r);
         } else {
@@ -1331,5 +1362,7 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
     }
 
     this->lex = nullptr;
-	return file_inst;
+    return file_inst;
 }
+
+
