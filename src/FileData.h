@@ -20,6 +20,7 @@ public:
 	FileData();
 	~FileData();
 	bool open(const char *filename);
+	bool loadString(const char *str, u64 num_chars);
 	void close();
 	bool getc(char &c);
 	bool peek(char &c);

@@ -61,14 +61,26 @@ bool FileData::open(const char * filename)
 	return true;
 }
 
+bool FileData::loadString(const char *str, u64 num_chars)
+{
+	close();
+	const char *fakename = "In Place String";
+	data = (char *) malloc(num_chars);
+	memcpy(data, str, num_chars);
+	size = num_chars;
+	strncpy_s(this->filename, fakename, strlen(fakename) );	
+
+	return true;
+}
+
 void FileData::close()
 {
 	if (data) {
 		free(data);
 		data = nullptr;
-		index = 0;
-		size = 0;
 	}
+	index = 0;
+	size = 0;	
 }
 
 bool FileData::getc(char & c)
