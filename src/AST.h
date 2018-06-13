@@ -52,6 +52,8 @@ enum AST_CLASS_TYPE {
     AST_BINARY_OPERATION,
     AST_UNARY_OPERATION,
     AST_ASSIGNMENT,
+    AST_NEW,
+    AST_DELETE,
     AST_VARIABLE_DECLARATION,
     AST_RUN_DIRECTIVE,
     AST_STRUCT_TYPE,
@@ -294,6 +296,18 @@ struct AssignmentAST : ExpressionAST
     ExpressionAST *lhs = nullptr;
     ExpressionAST *rhs = nullptr;
     TOKEN_TYPE op = TK_INVALID;
+};
+
+struct NewAllocAST : ExpressionAST 
+{
+    NewAllocAST() { ast_type = AST_NEW; }
+    TypeAST *type = nullptr;
+};
+
+struct DeleteAST : StatementAST
+{
+    DeleteAST() {ast_type = AST_DELETE; }
+    ExpressionAST *expr = nullptr;
 };
 
 void printAST(const BaseAST*ast, int ident);
