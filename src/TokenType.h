@@ -63,6 +63,8 @@ enum TOKEN_TYPE {
     TK_RETURN,
     TK_TRUE,
     TK_FALSE,
+    TK_NEW, 
+    TK_DELETE, 
 
     // Types, the order here matters, see Parser.cpp::TypeHelper
 

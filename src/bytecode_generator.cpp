@@ -335,6 +335,8 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_GOTO_CONSTANT_IF_FALSE);
         CASE_BC_OPCODE(BC_GOTO_CONSTANT_IF_TRUE);
         CASE_BC_OPCODE(BC_GOTO_CONSTANT);
+        CASE_BC_OPCODE(BC_MALLOC);
+        CASE_BC_OPCODE(BC_FREE);
     default:
             assert(!"Unknown bytecode Instruction opcode, please add");
             return "UNKNOWN OPCODE";
@@ -1231,6 +1233,15 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
 
         break;
     }
+    case AST_NEW: {
+        auto nast = (NewAllocAST *)expr;
+        BCI *bci = create_instruction(BC_MALLOC, -1, reg, nast->type->size_in_bytes);
+        bci->dst_type_bytes = 8;
+        bci->dst_type = get_regtype_from_type(nast->expr_type);
+        copyLoc(bci, expr);
+        issue_instruction(bci);
+        break;
+    }
     default:
         assert(!"Unknown expression AST for bytecode");
     }
@@ -2108,6 +2119,14 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             inst_index = (u32)bci->big_const;
             assert(inst_index < func->instructions.size());
             continue;
+        }
+        case BC_MALLOC: {
+            u64 bytes = bci->big_const;
+            u8 *ptr = (u8 *)malloc(bytes);
+            dstreg.data._ptr = ptr;
+            dstreg.bytes = bci->dst_type_bytes;
+            dstreg.type = bci->dst_type;
+            break;
         }
         default:
             assert(!"Unknown Instruction type");
