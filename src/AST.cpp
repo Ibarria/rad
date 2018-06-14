@@ -217,6 +217,7 @@ void printAST(const BaseAST *ast, int ident)
         auto acc = (const ArrayAccessAST *)ast;
         printf("%*sArrayAccess:\n", ident, "");
         printAST(acc->array_exp, ident + 3);
+        printAST(acc->access_type, ident + 3);
         printAST(acc->next, ident + 6);
         break;
     }
@@ -236,12 +237,24 @@ void printAST(const BaseAST *ast, int ident)
         }
         break;
     }
+    case AST_ARRAY_TYPE: {
+        auto atype = (const ArrayTypeAST *)ast;
+        printf("%*sArrayType: \n", ident, "");
+        printf("%*sArray of Type: \n", ident+3, "");
+        printAST(atype->array_of_type, ident + 3);
+        printf("%*sNumElems: %" U64FMT "u\n", ident + 3, "", atype->num_elems);
+        printf("%*sNumber Expression: \n", ident+3, "");
+        printAST(atype->num_expr, ident + 3);
+        printf("%*sIsDynamic: %s  Flags: %x\n", ident + 3, "", 
+            (atype->isDynamic ? "YES" : "NO"), atype->flags);
+        break;
+    }
     case AST_RUN_DIRECTIVE: {
         auto run = (const RunDirectiveAST *)ast;
         printf("%*sRun Directive:\n", ident, "");
         printAST(run->expr, ident + 3);
         break;
-    }                            
+    }
     default : 
         printf("%*sUnknown AST type\n", ident, "");
         assert(false);

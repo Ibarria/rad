@@ -418,6 +418,14 @@ inline bool isDirectTypeVariation(TypeAST *type) {
         || (type->ast_type == AST_POINTER_TYPE);
 }
 
+inline bool isDirectType(TypeAST *type) {
+    return (type->ast_type == AST_DIRECT_TYPE);
+}
+
+inline bool isArrayType(TypeAST *type) {
+    return type->ast_type == AST_ARRAY_TYPE;
+}
+
 inline bool isTypeBoolean(TypeAST *t) 
 {
     if (t->ast_type == AST_DIRECT_TYPE) {

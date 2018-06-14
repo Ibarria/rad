@@ -109,7 +109,7 @@ bool isLValue(ExpressionAST *expr, bool allowStar)
 
 /*
 This function checks that an expression constant, in the sense that
-the expression represents a value that can be assigned to. Similar to lvalue.
+the expression represents a value that cannot be assigned to. Similar to lvalue.
 */
 bool isConstExpression(ExpressionAST *expr)
 {
@@ -1721,6 +1721,9 @@ bool Interpreter::doWorkAST(interp_work * work)
         if (work->action == IA_RESOLVE_TYPE) {
             
         } else if (work->action == IA_COMPUTE_SIZE) {
+            // @TODO: this will break because on case of new, the array needs not have a defined
+            // expression. Only on globals or local variable declaration this is needed
+            // this check would be better done at a higher level
             if (at->num_expr) {
                 if (!isDefinedExpression(at->num_expr)) {
                     Error(at, "Array needs to have a constant and defined size for number of elements\n");

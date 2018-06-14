@@ -411,46 +411,32 @@ TypeAST *Parser::parseDirectType()
         // this is an array declaration
         // The only supported options are: [] , [..] , [constant number expression]
         // option 3 is evaluated at Interpreter time
+        ArrayTypeAST *at = NEW_AST(ArrayTypeAST);
+
         if (lex->checkToken(TK_CLOSE_SQBRACKET)) {
             lex->consumeToken();
-            ArrayTypeAST *at = NEW_AST(ArrayTypeAST);
-            at->array_of_type = parseType();
-            return at;
         } else if (lex->checkToken(TK_DOUBLE_PERIOD)) {
             lex->consumeToken();
             MustMatchToken(TK_CLOSE_SQBRACKET, "Declaration of array type needs a closed square bracket");
             if (!success) {
                 return nullptr;
             }
-
-            ArrayTypeAST *at = NEW_AST(ArrayTypeAST);
-            at->array_of_type = parseType();
-            if (!success) {
-                return nullptr;
-            }
             at->isDynamic = true;
-            return at;
         } else {
-            ArrayTypeAST *at = NEW_AST(ArrayTypeAST);
             at->num_expr = parseExpression();
             if (!success) {
                 return nullptr;
             }
-
             MustMatchToken(TK_CLOSE_SQBRACKET, "Declaration of array type needs a closed square bracket");
             if (!success) {
                 return nullptr;
             }
-
-            at->array_of_type = parseType();
-            if (!success) {
-                return nullptr;
-            }
-
-            return at;
         }
-        assert(!"Arrays not implemented yet");
-        return nullptr;
+        at->array_of_type = parseType();
+        if (!success) {
+            return nullptr;
+        }
+        return at;
     } else {
         if (t.type == TK_STRUCT) {
             Error("To declare a struct you need to use the form of <var> := struct { ... }");

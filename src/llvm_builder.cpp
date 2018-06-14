@@ -98,14 +98,17 @@ static void allocateVariable(VariableDeclarationAST *decl)
         if (isConstant || decl->definition) {
             generateCode(decl->definition);
             initializer = (llvm::Constant *) decl->definition->codegen;
+        } else {
+            initializer = ConstantAggregateZero::get(decl->specified_type->llvm_type);
         }
         auto gv = new GlobalVariable(*TheModule, decl->specified_type->llvm_type, isConstant, 
-            GlobalValue::ExternalLinkage, initializer, decl->varname);
+            GlobalValue::CommonLinkage, initializer, decl->varname);
         decl->codegen = gv;
     } else {
         IRBuilder<> TmpB(&llvm_function->getEntryBlock(),
-            llvm_function->getEntryBlock().begin());
-        auto AllocA = TmpB.CreateAlloca(decl->specified_type->llvm_type, nullptr, decl->varname);
+                 llvm_function->getEntryBlock().begin());
+        Value *arraySize = nullptr;
+        auto AllocA = TmpB.CreateAlloca(decl->specified_type->llvm_type, arraySize, decl->varname);
 
         if (decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT) {
             // codegen should be here because it is generated in the function definition generation
@@ -224,7 +227,42 @@ static void generateCode(BaseAST *ast)
     }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
-        id->codegen = Builder.CreateLoad(id->decl->codegen, id->name);
+        if (id->next != nullptr) {
+            // this is the case of an ARRAY or STRUCT access, we need GEP
+            std::vector<Value *> idx;
+            auto decl = id->decl;
+            BaseAST *loop_ast = id->next;
+            Value *val = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, 0));
+            idx.push_back(val);
+            
+            idx.push_back(val);
+            while(loop_ast != nullptr) {
+                switch(loop_ast->ast_type) {
+                    case AST_ARRAY_ACCESS: {
+                        auto loop_aa = (ArrayAccessAST *)loop_ast;
+                        generateCode(loop_aa->array_exp);
+                        idx.push_back(loop_aa->array_exp->codegen);
+                        loop_ast = loop_aa->next;
+                        break;
+                    }
+                    case AST_STRUCT_ACCESS: {
+                        auto loop_sac = (StructAccessAST *)loop_ast;
+                        assert(!"Struct access in LLVM is not implemented yet");
+                        break;
+                    }
+                    default:
+                        assert(!"We should never get here!");
+                }
+            }
+            
+            Value *gep = Builder.CreateGEP(
+                // decl->specified_type->llvm_type, 
+                decl->codegen, idx);
+            id->codegen = Builder.CreateLoad(gep, id->name);
+        } else {
+            // This is the easy case, where the id->decl has all the info (the ptr)
+            id->codegen = Builder.CreateLoad(id->decl->codegen, id->name);
+        }
         break;
     }
     case AST_LITERAL: {
@@ -411,7 +449,42 @@ static void generateCode(BaseAST *ast)
         generateCode(assign->rhs);
         if (assign->lhs->ast_type == AST_IDENTIFIER) {
             auto id = (IdentifierAST *)assign->lhs;
-            Builder.CreateStore(assign->rhs->codegen, id->decl->codegen);
+            if (id->next != nullptr) {
+                // this is the case of an ARRAY or STRUCT access, we need GEP
+                std::vector<Value *> idx;
+                auto decl = id->decl;
+                BaseAST *loop_ast = id->next;
+                Value *val = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, 0));
+                idx.push_back(val);
+                
+                idx.push_back(val);
+                while(loop_ast != nullptr) {
+                    switch(loop_ast->ast_type) {
+                        case AST_ARRAY_ACCESS: {
+                            auto loop_aa = (ArrayAccessAST *)loop_ast;
+                            generateCode(loop_aa->array_exp);
+                            idx.push_back(loop_aa->array_exp->codegen);
+                            loop_ast = loop_aa->next;
+                            break;
+                        }
+                        case AST_STRUCT_ACCESS: {
+                            auto loop_sac = (StructAccessAST *)loop_ast;
+                            assert(!"Struct access in LLVM is not implemented yet");
+                            break;
+                        }
+                        default:
+                            assert(!"We should never get here!");
+                    }
+                }
+                
+                id->codegen = Builder.CreateGEP(
+                    // decl->specified_type->llvm_type, 
+                    decl->codegen, idx);
+                Builder.CreateStore(assign->rhs->codegen, id->codegen);
+            } else {
+                // This is the easy case, where the id->decl has all the info (the ptr)
+                Builder.CreateStore(assign->rhs->codegen, id->decl->codegen);                
+            }
         } else {
             assert(!"Not implemented complex assignment, needs GEP");
         }
@@ -473,6 +546,33 @@ static void generateCode(BaseAST *ast)
 
             break;
         }
+        case AST_POINTER_TYPE: {
+            // @TODO: check if we can merge POINTER TYPE with DIRECT_TYPE
+            // Global variables do not require the initialization, it is done in another section.
+            if (isGlobalDeclaration(decl)) return;
+
+            generateCode(decl->specified_type);
+            // The variable has already been allocated, now we might have to initialize it
+            if (!decl->definition) return;
+
+            generateCode(decl->definition);
+            Builder.CreateStore(decl->definition->codegen, decl->codegen);
+
+            break;            
+        }
+        case AST_ARRAY_TYPE: {
+            // Global variables do not require the initialization, it is done in another section.
+            if (isGlobalDeclaration(decl)) return;
+
+            generateCode(decl->specified_type);
+            // The variable has already been allocated, now we might have to initialize it
+            if (!decl->definition) return;
+
+            generateCode(decl->definition);
+            Builder.CreateStore(decl->definition->codegen, decl->codegen);
+
+            break;
+        }
         default:
             assert(!"Type of variable declaration on llvm is not supported!");
         }
@@ -485,6 +585,8 @@ static void generateCode(BaseAST *ast)
     }
     case AST_ARRAY_ACCESS: {
         auto aa = (ArrayAccessAST *)ast;
+        generateCode(aa->array_exp);
+//        Builder.CreateGEP()
         assert(!"Array access is not supported on llvm yet");
         break;
     }
@@ -578,12 +680,32 @@ static void generateCode(BaseAST *ast)
     }
     case AST_POINTER_TYPE: {
         auto ptype = (PointerTypeAST *)ast;
-        assert(!"Pointer type is not supported on llvm yet");
+        if (ptype->llvm_type) return;
+        if (!isDirectType(ptype->points_to_type)) {
+            assert(!"Only pointers to direct types are supported for now");
+        }
+        auto dtype = (DirectTypeAST *)ptype->points_to_type;
+        generateCode(dtype);
+        assert(dtype->llvm_type != nullptr);
+        ptype->llvm_type = dtype->llvm_type->getPointerTo();
         break;
     }
     case AST_ARRAY_TYPE: {
         auto atype = (ArrayTypeAST *)ast;
-        assert(!"Array type is not supported on llvm yet");
+        generateCode(atype->array_of_type);
+        assert(atype->array_of_type->llvm_type != nullptr);
+        // An array is implemented as a struct type
+        std::vector<Type *> array_members;
+        if (atype->num_expr != nullptr && (atype->num_elems > 0)) {
+            // @TODO: this code will work for static array allocation, but not for new allocs
+//            generateCode(atype->num_expr);
+            ArrayType *llvm_atype = ArrayType::get(atype->array_of_type->llvm_type, atype->num_elems);
+            array_members.push_back(llvm_atype);
+        } else {
+            array_members.push_back(atype->array_of_type->llvm_type->getPointerTo()); // the pointer to array elements
+        }
+        array_members.push_back(Type::getInt64Ty(TheContext)); // the size
+        atype->llvm_type = StructType::create(TheContext, array_members, "Array");
         break;
     }
     case AST_STRUCT_TYPE: {
