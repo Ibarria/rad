@@ -37,7 +37,7 @@ endif
 
 LLVM_LIB = llvm_backend.$(SOEXT)
 
-bin/$(LLVM_LIB):
+bin/$(LLVM_LIB): $(LLVM_SOURCES)
 	clang $(CFLAGS) $(LLVM_INCLUDES) $(SOFLAGS) -g -fPIC $(LLVM_SOURCES) $(LLVM_LFLAGS) -o bin/$(LLVM_LIB) 
 
 bin:
