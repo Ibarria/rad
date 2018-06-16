@@ -1491,7 +1491,6 @@ bool Interpreter::doWorkAST(interp_work * work)
                     return false;
                 }
                 auto dt = (DirectTypeAST *)acc->array_exp->expr_type;
-                assert(acc->array_exp->expr_type->ast_type == AST_DIRECT_TYPE);
                 if (dt->basic_type != BASIC_TYPE_INTEGER) {
                     char ltype[64] = {};
                     printTypeToStr(ltype, atype);
