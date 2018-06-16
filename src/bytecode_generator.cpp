@@ -601,6 +601,7 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
             bci->dst_type_bytes = 8;
             copyLoc(bci, expr);
         }
+        break;
     }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)expr;
