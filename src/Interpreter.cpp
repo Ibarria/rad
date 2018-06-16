@@ -40,12 +40,12 @@ static void printTypeToStr(char *s, TypeAST *type)
     case AST_ARRAY_TYPE: {
         auto at = (ArrayTypeAST *)type;
         sprintf(s, "[");
-        if (at->isDynamic) {
+        if (isDynamicArray(at)) {
             sprintf(s + strlen(s), "..");
-        } else if (at->num_elems > 0) {
-            sprintf(s + strlen(s), "%d", (int)at->num_elems);
+        } else if (isStaticArray(at)) {
+            sprintf(s + strlen(s), "%u", (u32)at->num_elems);
         }
-        sprintf(s, "]");
+        sprintf(s + strlen(s), "]");
         printTypeToStr(s + strlen(s), at->array_of_type);
         break;
     }
@@ -69,6 +69,14 @@ static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
         if (!strcmp(name, d->varname)) return d;
     }
     return findVariable(name, scope->parent);
+}
+
+static VariableDeclarationAST *findVariable(TextType name, Array<VariableDeclarationAST *>& decls)
+{
+    for (auto d : decls) {
+        if (!strcmp(name, d->varname)) return d;
+    }
+    return nullptr;
 }
 
 bool isLValue(ExpressionAST *expr, bool allowStar)
@@ -324,31 +332,6 @@ bool isTypeStruct(TypeAST *type)
         return isTypeStruct(pt->points_to_type);
     }
     return false;
-}
-
-TypeAST *getDefinedType(VarReferenceAST *ast)
-{
-    switch (ast->ast_type) {
-    case AST_ARRAY_ACCESS: {
-        auto ac = (ArrayAccessAST *)ast;
-        return ac->access_type;
-        break;
-    }
-    case AST_STRUCT_ACCESS: {
-        auto sac = (StructAccessAST *)ast;
-        assert(sac->decl);
-        return sac->decl->specified_type;
-        break;
-    }
-    case AST_IDENTIFIER: {
-        auto id = (IdentifierAST *)ast;
-        assert(id->decl);
-        return id->decl->specified_type;
-        break;
-    }
-    default: assert(!"Invalid AST type for a reference");
-        return nullptr;
-    }
 }
 
 static void addTypeWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
@@ -960,6 +943,7 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         // do post processing to grab the type
         addTypePostWork(&pool, astp, deps);
         addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
         break;
     }
     case AST_ARRAY_ACCESS: {
@@ -974,6 +958,7 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         // do post processing to grab the type
         addTypePostWork(&pool, astp, deps);
         addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
         break;
     }
     case AST_STATEMENT_BLOCK: {
@@ -1059,6 +1044,7 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         traversePostfixAST(PPC(id->next), deps);
         addTypePostWork(&pool, astp, deps);
         addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
         break;
     }
     case AST_LITERAL: {
@@ -1289,8 +1275,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     member->bc_offset = bc_offset;
                     bc_offset += member->specified_type->size_in_bytes;
                 }
-
-            }
+            } 
         } else if (work->action == IA_OPERATION_CHECK) {
             // Check here for the size of operands on the type itself and if it has a definition
             if (decl->definition) { // Nothing to do if there is no definition
@@ -1389,6 +1374,19 @@ bool Interpreter::doWorkAST(interp_work * work)
             if (sac->decl == nullptr) {
                 assert(sac->prev);
                 TypeAST *enclosingType = getDefinedType(sac->prev);
+                if (isTypeArray(enclosingType)) {
+                    // Arrays of all type support the struct access .count, some .reserved_size
+                    ArrayTypeAST *atype = (ArrayTypeAST *)enclosingType;
+                    VariableDeclarationAST *decl = findVariable(sac->name, atype->decls);
+                    if (decl == nullptr) {
+                        Error(sac, "Variable [%s] cannot be found on Array\n", sac->name);
+                        return false;                        
+                    }
+
+                    sac->decl = decl;
+                    break;
+                }
+
                 if (!isTypeStruct(enclosingType)) {
                     char ltype[64] = {};
                     printTypeToStr(ltype, enclosingType);
@@ -1437,6 +1435,31 @@ bool Interpreter::doWorkAST(interp_work * work)
             } else {
                 sac->size_in_bytes = sac->decl->specified_type->size_in_bytes;
             }
+        } else if (work->action == IA_OPERATION_CHECK) {
+            // This phase checks if we can replace the whole StructAccess for a literal
+            // For now for Static Arrays, in the future for Enums
+            if (sac->next != nullptr) {
+                sac->known_val = sac->next->known_val;
+            } else {
+                TypeAST *enclosingType = getDefinedType(sac->prev);
+                if (isTypeArray(enclosingType)) {
+                    auto atype = (ArrayTypeAST *)enclosingType;
+                    if (isStaticArray(atype)) {
+                        if (atype->num_elems == 0) {
+                            // break here, we need to compute the num_elems
+                            Error(sac, "Could not compute the size of a static array\n");
+                            return false;
+                        }
+                        LiteralAST *lit = new (&pool) LiteralAST;
+                        copyASTloc(sac, lit);
+                        lit->_u64 = atype->num_elems;
+                        lit->typeAST = (DirectTypeAST *)sac->expr_type;
+                        assert(sac->expr_type->ast_type == AST_DIRECT_TYPE);
+                        lit->expr_type = sac->expr_type;
+                        sac->known_val = lit;
+                    }
+                }
+            }
         } else {
             assert(!"Not implemented");
         }
@@ -1468,6 +1491,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     return false;
                 }
                 auto dt = (DirectTypeAST *)acc->array_exp->expr_type;
+                assert(acc->array_exp->expr_type->ast_type == AST_DIRECT_TYPE);
                 if (dt->basic_type != BASIC_TYPE_INTEGER) {
                     char ltype[64] = {};
                     printTypeToStr(ltype, atype);
@@ -1500,6 +1524,12 @@ bool Interpreter::doWorkAST(interp_work * work)
             } else {
                 acc->size_in_bytes = acc->access_type->size_in_bytes;
             }
+        } else if (work->action == IA_OPERATION_CHECK) {
+            // This phase checks if we can replace the whole StructAccess for a literal
+            // For now for Static Arrays, in the future for Enums
+            if (acc->next != nullptr) {
+                acc->known_val = acc->next->known_val;
+            } 
         } else {
             assert(!"Not implemented");
         }
@@ -1724,11 +1754,12 @@ bool Interpreter::doWorkAST(interp_work * work)
             // @TODO: this will break because on case of new, the array needs not have a defined
             // expression. Only on globals or local variable declaration this is needed
             // this check would be better done at a higher level
-            if (at->num_expr) {
+            if (isStaticArray(at)) {
                 if (!isDefinedExpression(at->num_expr)) {
                     Error(at, "Array needs to have a constant and defined size for number of elements\n");
                     return false;
                 }
+                assert(at->num_expr);
                 if (at->num_expr->expr_type->ast_type != AST_DIRECT_TYPE) {
                     Error(at, "Array needs to have an integer type for their size\n");
                     return false;
@@ -1739,15 +1770,25 @@ bool Interpreter::doWorkAST(interp_work * work)
                     return false;
                 }
                 at->num_elems = computeValue(at->num_expr);
+                if (at->num_elems == 0) {
+                    Error(at, "Array cannot have 0 length\n");
+                    return false;
+                }
                 at->size_in_bytes = (u32)at->num_elems * at->array_of_type->size_in_bytes;
             } else {
-                if (at->isDynamic) {
-                    // Data pointer, Total num elems, Used Elems
+                if (isDynamicArray(at)) {
+                    // Data pointer, count, reserved_size
                     at->size_in_bytes = 8 + 8 + 8; 
                 } else {
+                    assert(isSizedArray(at));
                     // Data pointer, Total num elems
                     at->size_in_bytes = 8 + 8;
                 }
+            }
+            u64 bc_offset = 0; // for all the cases that matter, we have .data
+            for(auto d: at->decls) {
+                d->bc_offset = bc_offset;
+                bc_offset += d->specified_type->size_in_bytes;
             }
         }
         return true;
@@ -1790,7 +1831,17 @@ bool Interpreter::doWorkAST(interp_work * work)
                 id->size_in_bytes = id->expr_type->size_in_bytes;
             }
         } else if (work->action == IA_OPERATION_CHECK) {
-            assert(!"No check for a single identifier");
+            // This phase checks if we can replace the whole StructAccess for a literal
+            // For now for Static Arrays, in the future for Enums
+            if (id->next != nullptr) {
+                id->known_val = id->next->known_val;
+            } 
+
+            if (id->known_val != nullptr) {
+                *work->ast = id->known_val;
+                return true;
+            }
+
         } else {
             assert(!"Unknown dependency work type");
         }

@@ -194,10 +194,12 @@ void c_generator::generate_array_type_prototype(ArrayTypeAST *at)
     } else {
         assert(!"Not implemented!");
     }
-    if (at->isDynamic) {
-        fprintf(output_file, "    u64 used;\n");
-    } 
-    fprintf(output_file, "    u64 count;\n};\n");
+    if (isDynamicArray(at)) {
+        fprintf(output_file, "    u64 reserved_size;\n");
+    }  else if (isSizedArray(at)) {
+        fprintf(output_file, "    u64 count;\n");        
+    }
+    fprintf(output_file, "};\n");
     at->flags |= ARRAY_TYPE_FLAG_C_GENERATED;
 }
 
