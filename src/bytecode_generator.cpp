@@ -330,7 +330,6 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_BINARY_OPERATION);
         CASE_BC_OPCODE(BC_UNARY_OPERATION);
         CASE_BC_OPCODE(BC_RESERVE_STACK_SIZE);
-        CASE_BC_OPCODE(BC_COPY_REG);
         CASE_BC_OPCODE(BC_CAST);
         CASE_BC_OPCODE(BC_GOTO_CONSTANT_IF_FALSE);
         CASE_BC_OPCODE(BC_GOTO_CONSTANT_IF_TRUE);
@@ -561,8 +560,8 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
     case AST_ARRAY_ACCESS: {
         auto ac = (ArrayAccessAST *)expr;
 
-        // @TODO: Fix this to support either static known arrays, static arrays or dynamic ones
-        // Right now only handles static known arrays
+        // @TODO: Fix this to support either static arrays, Sized arrays or dynamic ones
+        // Right now only handles static arrays
 
         s16 index_reg = reserveRegistersForSize(current_function, 8);
         computeExpressionIntoRegister(ac->array_exp, index_reg);
@@ -580,12 +579,16 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
         copyLoc(bci, expr);
         issue_instruction(bci);
 
-        s16 offset_reg = reserveRegistersForSize(current_function, 8);
+        s16 offset_reg = reg;
+        if (ac->next) {
+            offset_reg = reserveRegistersForSize(current_function, 8);
+        }
         bci = create_instruction(BC_BINARY_OPERATION, index_reg, offset_reg, TK_STAR);
         bci->src2_reg = size_reg;
         bci->dst_type = REGTYPE_UINT;
         bci->dst_type_bytes = 8;
         copyLoc(bci, expr);
+        issue_instruction(bci);
 
         if (ac->next) {
             s16 inner_reg = reserveRegistersForSize(current_function, 8);
@@ -595,12 +598,8 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
             bci->dst_type = REGTYPE_UINT;
             bci->dst_type_bytes = 8;
             copyLoc(bci, expr);
-        } else {
-            bci = create_instruction(BC_COPY_REG, offset_reg, reg, 0);
-            bci->dst_type = REGTYPE_UINT;
-            bci->dst_type_bytes = 8;
-            copyLoc(bci, expr);
-        }
+            issue_instruction(bci);
+        } 
         break;
     }
     case AST_IDENTIFIER: {
