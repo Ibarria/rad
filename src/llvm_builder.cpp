@@ -681,8 +681,6 @@ static void generateCode(BaseAST *ast)
                 llvm_name = "DynamicArray";
             }
             atype->llvm_type = StructType::create(TheContext, array_members, llvm_name);
-
-            atype->llvm_type->print(outs(), false);
         }
         break;
     }
