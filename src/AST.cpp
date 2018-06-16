@@ -41,6 +41,21 @@ const char *BasicTypeToStr(const DirectTypeAST *t)
     return "UNKNOWN";
 }
 
+static const char *Array_Type_ToStr(ArrayTypeAST::Array_Type at)
+{
+    if (at == ArrayTypeAST::UNKNOWN_ARRAY) {
+        return "UNKNOWN ARRAY";
+    } else if (at == ArrayTypeAST::STATIC_ARRAY) {
+        return "STATIC_ARRAY";
+    } else if (at == ArrayTypeAST::SIZED_ARRAY) {
+        return "SIZED_ARRAY";
+    } else if (at == ArrayTypeAST::DYNAMIC_ARRAY) {
+        return "DYNAMIC_ARRAY";
+    } else {
+        return "INVALID ARRAY TYPE";
+    }
+}
+
 static const char *BoolToStr(bool b)
 {
     if (b) return "YES";
@@ -60,9 +75,17 @@ static void printDeclarationASTFlags(u32 flags)
     }
 }
 
+extern bool option_printSeq;
+
 void printAST(const BaseAST *ast, int ident)
 {
     if (ast == nullptr) return;
+
+    u32 ex = 0;
+    if (option_printSeq) {
+        printf("%04u ", (u32)ast->s);
+        ex += 5;
+    }
 
     switch (ast->ast_type) {
     case AST_LITERAL: {
@@ -98,18 +121,18 @@ void printAST(const BaseAST *ast, int ident)
     case AST_BINARY_OPERATION: {
         const BinaryOperationAST *b = (const BinaryOperationAST *)ast;
         printf("%*sBinOpAST op: %s\n", ident, "", TokenTypeToStr(b->op));
-        printf("%*s LHS:\n", ident, "");
+        printf("%*s LHS:\n", ident + ex, "");
         printAST(b->lhs, ident + 3);
-        printf("%*s RHS:\n", ident, "");
+        printf("%*s RHS:\n", ident + ex, "");
         printAST(b->rhs, ident + 3);
         break;
     }
     case AST_ASSIGNMENT: {
         const AssignmentAST *a = (const AssignmentAST *)ast;
         printf("%*sAssignAST op: %s\n", ident, "", TokenTypeToStr(a->op));
-        printf("%*s LHS:\n", ident, "");
+        printf("%*s LHS:\n", ident + ex, "");
         printAST(a->lhs, ident + 3);
-        printf("%*s RHS:\n", ident, "");
+        printf("%*s RHS:\n", ident + ex, "");
         printAST(a->rhs, ident + 3);
         break;
     }
@@ -117,14 +140,14 @@ void printAST(const BaseAST *ast, int ident)
         const VariableDeclarationAST *a = (const VariableDeclarationAST *)ast;
         printf("%*sDeclAST varname: [%s] flags: ", ident, "", a->varname);
         printDeclarationASTFlags(a->flags);     
-        printf("\n%*s SpecifiedType: ", ident, "");
+        printf("\n%*s SpecifiedType: ", ident+ ex, "");
         if (a->specified_type) {
             printf("\n");
             printAST(a->specified_type, ident + 3);
         } else {
             printf(" NONE\n");
         }
-        printf("%*s DefinitionAST: ", ident, "");
+        printf("%*s DefinitionAST: ", ident + ex, "");
         if (a->definition) {
             printf("\n");
             printAST(a->definition, ident + 3);
@@ -147,13 +170,13 @@ void printAST(const BaseAST *ast, int ident)
     case AST_FUNCTION_TYPE: {
         const FunctionTypeAST *a = (const FunctionTypeAST *)ast;
         printf("%*sFunctionDeclarationAST with %d arguments\n", ident, "", (int)a->arguments.size());
-        printf("%*s  Foreign: %s VariableArguments: %s\n", ident, "", BoolToStr(a->isForeign), BoolToStr(a->hasVariableArguments));
+        printf("%*s  Foreign: %s VariableArguments: %s\n", ident + ex, "", BoolToStr(a->isForeign), BoolToStr(a->hasVariableArguments));
         for (const auto & arg : a->arguments) printAST(arg, ident + 3);
         if (a->return_type) {
-            printf("%*s and return type:\n", ident, "");
+            printf("%*s and return type:\n", ident + ex, "");
             printAST(a->return_type, ident + 3);
         } else {
-            printf("%*s  and no return type, void inferred\n", ident, "");
+            printf("%*s  and no return type, void inferred\n", ident + ex, "");
         }
         break;
     }
@@ -240,13 +263,13 @@ void printAST(const BaseAST *ast, int ident)
     case AST_ARRAY_TYPE: {
         auto atype = (const ArrayTypeAST *)ast;
         printf("%*sArrayType: \n", ident, "");
-        printf("%*sArray of Type: \n", ident+3, "");
+        printf("%*sArray of Type: \n", ident+3+ex, "");
         printAST(atype->array_of_type, ident + 3);
-        printf("%*sNumElems: %" U64FMT "u\n", ident + 3, "", atype->num_elems);
-        printf("%*sNumber Expression: \n", ident+3, "");
+        printf("%*sNumElems: %" U64FMT "u\n", ident + 3+ex, "", atype->num_elems);
+        printf("%*sNumber Expression: \n", ident+3+ex, "");
         printAST(atype->num_expr, ident + 3);
-        printf("%*sIsDynamic: %s  Flags: %x\n", ident + 3, "", 
-            (atype->isDynamic ? "YES" : "NO"), atype->flags);
+        printf("%*sArray Type: %s  Flags: %x\n", ident + 3+ex, "", 
+            Array_Type_ToStr(atype->array_type), atype->flags);
         break;
     }
     case AST_RUN_DIRECTIVE: {

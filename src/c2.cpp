@@ -18,6 +18,8 @@
 static const char *root_file = nullptr;
 bool option_printTokens = false;
 bool option_printAST = false;
+bool option_printAST2 = false;
+bool option_printSeq = false;
 bool option_printBytecode = false;
 bool option_llvm = true;
 bool option_llvm_print = false;
@@ -47,9 +49,11 @@ void usage()
     printf("\t\tC: use the C backend\n");
     printf("\t\tNULL: do not output code\n");
     printf("\t-tokens: Print lexeical tokens\n");
-    printf("\t-ast: Print ast tree\n");
+    printf("\t-ast: Print ast tree, before replacements\n");
+    printf("\t-ast2: Print ast tree, after replacements\n");
     printf("\t-bytecode: Print bytecode\n");
     printf("\t-printIR: Print llvm IR, this requires the llvm backend\n");
+    printf("\t-seq: Print sequence numbers\n");
 }
 
 void parseOptions(int argc, char **argv)
@@ -58,8 +62,12 @@ void parseOptions(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-tokens")) {
             option_printTokens = true;
+        } else if (!strcmp(argv[i], "-ast2")) {
+            option_printAST2 = true;
         } else if (!strcmp(argv[i], "-ast")) {
             option_printAST = true;
+        } else if (!strcmp(argv[i], "-seq")) {
+            option_printSeq = true;
         } else if (!strcmp(argv[i], "-bytecode")) {
             option_printBytecode = true;
         } else if (!strncmp(argv[i], "-backend:", strlen("-backend:"))) {
@@ -159,6 +167,10 @@ int main(int argc, char **argv)
         interp.printErrors();
         printf("There were errors during the semantic analysis. Exiting...\n");
         exit(1);
+    }
+
+    if (option_printAST2) {
+        printAST(parsedFile, 0);
     }
 
     astBuildTime = timer.stopTimer();

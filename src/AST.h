@@ -13,11 +13,14 @@ struct ExpressionAST;
 struct VariableDeclarationAST;
 struct FunctionDefinitionAST;
 struct RunDirectiveAST;
+struct LiteralAST;
 struct bytecode_function;
 struct interp_deps;
 struct BCI;
 
 namespace llvm { class Value; class Type; }
+
+#pragma pack(push, 4)
 
 struct Scope {
     Scope *parent = nullptr;
@@ -191,13 +194,36 @@ struct PointerTypeAST : TypeAST
 
 struct ArrayTypeAST : TypeAST
 {
+    enum Array_Type {
+        UNKNOWN_ARRAY = 0,
+        STATIC_ARRAY = 1,
+        SIZED_ARRAY = 2,
+        DYNAMIC_ARRAY = 3
+    };
+
     ArrayTypeAST() { ast_type = AST_ARRAY_TYPE; }
     TypeAST *array_of_type = nullptr;
     u64 num_elems = 0; // zero means static of unknown size
     ExpressionAST* num_expr = nullptr;
-    bool isDynamic = false;
+    Array<VariableDeclarationAST *> decls;
+    Array_Type array_type = UNKNOWN_ARRAY;
     u32 flags = 0;
 };
+
+inline bool isStaticArray(ArrayTypeAST *at)
+{
+    return at->array_type == ArrayTypeAST::STATIC_ARRAY;
+}
+
+inline bool isSizedArray(ArrayTypeAST *at)
+{
+    return at->array_type == ArrayTypeAST::SIZED_ARRAY;
+}
+
+inline bool isDynamicArray(ArrayTypeAST *at)
+{
+    return at->array_type == ArrayTypeAST::DYNAMIC_ARRAY;
+}
 
 struct StructTypeAST : TypeAST
 {
@@ -238,6 +264,8 @@ struct VarReferenceAST : ExpressionAST
 {
     VarReferenceAST *next = nullptr;
     VarReferenceAST *prev = nullptr; // for errors
+    LiteralAST *known_val = nullptr; // In some cases (enum, .count for array) the whole var Reference 
+                                     // can be known, store such a literal and move it up
     u32 size_in_bytes = 0; // this is to refer to the size in bits of the whole reference 
 };
 
@@ -246,7 +274,7 @@ struct ArrayAccessAST : VarReferenceAST
     ArrayAccessAST() { ast_type = AST_ARRAY_ACCESS; }
     ExpressionAST *array_exp = nullptr;
     TypeAST *access_type = nullptr;
-};
+} ; // __attribute__((packed));
 
 struct StructAccessAST : VarReferenceAST
 {
@@ -309,6 +337,8 @@ struct DeleteAST : StatementAST
     DeleteAST() {ast_type = AST_DELETE; }
     ExpressionAST *expr = nullptr;
 };
+
+#pragma pack(pop)
 
 void printAST(const BaseAST*ast, int ident);
 const char *BasicTypeToStr(const DirectTypeAST* t);
@@ -422,7 +452,7 @@ inline bool isDirectType(TypeAST *type) {
     return (type->ast_type == AST_DIRECT_TYPE);
 }
 
-inline bool isArrayType(TypeAST *type) {
+inline bool isTypeArray(TypeAST *type) {
     return type->ast_type == AST_ARRAY_TYPE;
 }
 
@@ -470,6 +500,29 @@ inline bool isTypeRunSupported(TypeAST *t)
     return false;
 }
 
-TypeAST *getDefinedType(VarReferenceAST *ast);
+inline TypeAST *getDefinedType(VarReferenceAST *ast)
+{
+    switch (ast->ast_type) {
+    case AST_ARRAY_ACCESS: {
+        auto ac = (ArrayAccessAST *)ast;
+        return ac->access_type;
+        break;
+    }
+    case AST_STRUCT_ACCESS: {
+        auto sac = (StructAccessAST *)ast;
+        assert(sac->decl);
+        return sac->decl->specified_type;
+        break;
+    }
+    case AST_IDENTIFIER: {
+        auto id = (IdentifierAST *)ast;
+        assert(id->decl);
+        return id->decl->specified_type;
+        break;
+    }
+    default: assert(!"Invalid AST type for a reference");
+        return nullptr;
+    }
+}
 
 // Update all AST_IDENTIFIER to be possible to have a next
