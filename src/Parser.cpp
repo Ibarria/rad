@@ -412,16 +412,35 @@ TypeAST *Parser::parseDirectType()
         // The only supported options are: [] , [..] , [constant number expression]
         // option 3 is evaluated at Interpreter time
         ArrayTypeAST *at = NEW_AST(ArrayTypeAST);
+        
+        VariableDeclarationAST *data_decl = NEW_AST(VariableDeclarationAST);
+        PointerTypeAST *pt = NEW_AST(PointerTypeAST);
+        pt->points_to_type = nullptr; // will be filled later
+        pt->size_in_bytes = 8;
+        data_decl->specified_type = pt;
+        data_decl->varname = CreateTextType(pool, "data");
+        at->decls.push_back(data_decl);
+
+        VariableDeclarationAST *count_decl = NEW_AST(VariableDeclarationAST);
+        count_decl->specified_type = getType(TK_U64, nullptr);
+        count_decl->varname = CreateTextType(pool, "count");
+        at->decls.push_back(count_decl);
 
         if (lex->checkToken(TK_CLOSE_SQBRACKET)) {
             lex->consumeToken();
+            at->array_type = ArrayTypeAST::SIZED_ARRAY;
         } else if (lex->checkToken(TK_DOUBLE_PERIOD)) {
             lex->consumeToken();
             MustMatchToken(TK_CLOSE_SQBRACKET, "Declaration of array type needs a closed square bracket");
             if (!success) {
                 return nullptr;
             }
-            at->isDynamic = true;
+            at->array_type = ArrayTypeAST::DYNAMIC_ARRAY;
+            VariableDeclarationAST *rsize_decl = NEW_AST(VariableDeclarationAST);
+            rsize_decl->specified_type = getType(TK_U64, nullptr);
+            rsize_decl->varname = CreateTextType(pool, "reserved_size");
+            at->decls.push_back(rsize_decl);
+
         } else {
             at->num_expr = parseExpression();
             if (!success) {
@@ -431,11 +450,13 @@ TypeAST *Parser::parseDirectType()
             if (!success) {
                 return nullptr;
             }
+            at->array_type = ArrayTypeAST::STATIC_ARRAY;
         }
         at->array_of_type = parseType();
         if (!success) {
             return nullptr;
         }
+        pt->points_to_type = at->array_of_type;
         return at;
     } else {
         if (t.type == TK_STRUCT) {
