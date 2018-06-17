@@ -13,3 +13,6 @@ modules/vc140\.pdb
 *.ilk
 *.o
 *.exe
+*.dylib
+*.dSYM
+*DS_Store
