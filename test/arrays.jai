@@ -71,8 +71,8 @@ test_static_array :: ()
     print("Inner is a static array with %d elements\n", inner.count);
     print("inner values are %d %d %d %d %d\n", inner[0], inner[1], inner[2], inner[3], inner[4]);
 
-
 // This should be an error, only declare this as parameters
+// Maybe, for completeness, allow this (shoot yourself in the foot carefully)
 // err : [] int;
 }
 
@@ -106,6 +106,6 @@ add := (x: u64, y: u64) -> u64
     return x + y;
 }
 */
-// #run main()
+#run main()
 
 
