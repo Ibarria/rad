@@ -1277,14 +1277,6 @@ bool Interpreter::doWorkAST(interp_work * work)
                 }
             } 
         } else if (work->action == IA_OPERATION_CHECK) {
-            // Check that Sized arrays are not allowed as normal declarations
-            if (isTypeArray(decl->specified_type)) {
-                auto atype = (ArrayTypeAST *)decl->specified_type;
-                if (isSizedArray(atype) && !(decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT)) {
-                    Error(decl, "Sized arrays cannot be declared as a variable, only as function arguments. Variable %s is not valid.", decl->varname);
-                    return false;
-                }
-            }
             // Check here for the size of operands on the type itself and if it has a definition
             if (decl->definition) { // Nothing to do if there is no definition
 
