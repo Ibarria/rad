@@ -737,7 +737,16 @@ void bytecode_generator::generate_function(TextType name, FunctionDefinitionAST 
         assert(fundef->declaration->func_ptr == nullptr);
 
         external_library *exlib = findOrLoadLibrary(fundef->declaration->filename);
+        if (exlib == nullptr) {
+            printf("Could not find compiler library: %s\n", fundef->declaration->filename);
+            exit(1);
+        }
         fundef->declaration->func_ptr = dlFindSymbol((DLLib *)exlib->dll, fundef->var_decl->varname);
+        if (fundef->declaration->func_ptr == nullptr) {
+            printf("Could not load function %s from compiler library: %s\n", 
+                fundef->var_decl->varname, fundef->declaration->filename);
+            exit(1);
+        }
                 
         assert(fundef->declaration->func_ptr);
         // During bytecode processing is the best time to go and ensure the function is setup
