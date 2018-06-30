@@ -24,6 +24,16 @@ extern "C" DLLEXPORT void func()
     return;
 }
 
+extern "C" DLLEXPORT void * _malloc(unsigned long size)
+{
+    return nullptr;
+}
+
+extern "C" DLLEXPORT void _free(void *ptr)
+{
+    return;
+}
+
 int _strlen(const char *s)
 {
     int r = 0;

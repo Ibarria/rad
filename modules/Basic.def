@@ -3,3 +3,5 @@ EXPORTS
   print
   func
   end
+  _malloc
+  _free
