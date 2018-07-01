@@ -54,6 +54,16 @@ static void printFunction(Function *f)
     outs().flush();
 }
 
+static PointerType *getLlvmPointer(TypeAST *type)
+{
+    if (isVoidType(type)) 
+    {
+        return Type::getInt8PtrTy(TheContext);
+    } else {
+        return type->llvm_type->getPointerTo();
+    }
+}
+
 static void generateFunctionPrototype(VariableDeclarationAST *decl)
 {
     if (decl->codegen) return;
@@ -661,7 +671,7 @@ static void generateCode(BaseAST *ast)
         auto dtype = (DirectTypeAST *)ptype->points_to_type;
         generateCode(dtype);
         assert(dtype->llvm_type != nullptr);
-        ptype->llvm_type = dtype->llvm_type->getPointerTo();
+        ptype->llvm_type = getLlvmPointer(dtype);
         break;
     }
     case AST_ARRAY_TYPE: {
@@ -673,7 +683,7 @@ static void generateCode(BaseAST *ast)
         } else {
             // common parts for sized and dynamic arrays
             std::vector<Type *> array_members;
-            array_members.push_back(atype->array_of_type->llvm_type->getPointerTo()); // .data
+            array_members.push_back(getLlvmPointer(atype->array_of_type)); // .data
             array_members.push_back(Type::getInt64Ty(TheContext)); // This is .count
             const char *llvm_name = "SizedArray";
             if (isDynamicArray(atype)) {
