@@ -134,7 +134,10 @@ struct bytecode_generator
 
 struct bc_call_register
 {
-    bc_register *regs = nullptr;
+    // split the register into 3 separate arrays to ensure memory contiguity 
+    bc_register_data *data = nullptr;
+    RegisterType *type = nullptr;
+    u8 *bytes = nullptr;
     u64 num_regs;
 };
 

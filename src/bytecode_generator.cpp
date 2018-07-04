@@ -312,6 +312,7 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_UNINITIALIZED);
         CASE_BC_OPCODE(BC_NOP);
         CASE_BC_OPCODE(BC_ZERO_REG);
+        CASE_BC_OPCODE(BC_COPY_REG);
         CASE_BC_OPCODE(BC_LOAD_BIG_CONSTANT_TO_REG);
         CASE_BC_OPCODE(BC_STORE_TO_STACK_PLUS_CONSTANT);
         CASE_BC_OPCODE(BC_STORE_TO_BSS_PLUS_CONSTANT);
@@ -1189,19 +1190,78 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)expr;
         assert(id->decl);
-        s16 pointer_reg = reserveRegistersForSize(current_function, 8);
         BCI *bci = nullptr;
 
-        computeAddressIntoRegister(id, pointer_reg);
+        if (id->expr_type->ast_type == AST_DIRECT_TYPE) {
+            s16 pointer_reg = reserveRegistersForSize(current_function, 8);
+            computeAddressIntoRegister(id, pointer_reg);
 
-        // dereference the pointer to get the expression value
-        bci = create_instruction(BC_UNARY_OPERATION, pointer_reg, reg, TK_LSHIFT);
-        assert(id->expr_type->size_in_bytes < 256);
+            // dereference the pointer to get the expression value
+            bci = create_instruction(BC_UNARY_OPERATION, pointer_reg, reg, TK_LSHIFT);
+            assert(id->expr_type->size_in_bytes < 256);
 
-        bci->dst_type_bytes = (u8)id->expr_type->size_in_bytes;
-        bci->dst_type = get_regtype_from_type(id->expr_type);
-        copyLoc(bci, expr);
-        issue_instruction(bci);
+            bci->dst_type_bytes = (u8)id->expr_type->size_in_bytes;
+            bci->dst_type = get_regtype_from_type(id->expr_type);
+            copyLoc(bci, expr);
+            issue_instruction(bci);
+        } else if (id->expr_type->ast_type == AST_STRUCT_TYPE) {
+            assert(!"We should never be here as the interpreter should have replaced this");
+        } else if (id->expr_type->ast_type == AST_ARRAY_TYPE) {
+            auto arType = (ArrayTypeAST *)id->expr_type;
+            // We support arrays, first we need the data type, then the count (for SIZED, DYNAMIC) 
+            // and then reserved_size (DYNAMIC only)
+            s16 array_reg = reserveRegistersForSize(current_function, 8*4);
+            computeAddressIntoRegister(id, array_reg);
+            bci = create_instruction(BC_UNARY_OPERATION, array_reg, reg, TK_LSHIFT);
+            bci->dst_type_bytes = 8; // this is a pointer
+            bci->dst_type = REGTYPE_POINTER;
+            copyLoc(bci, expr);
+            issue_instruction(bci);
+            // now reg contains the array.data pointer
+
+            // Load the constant 8, the size of a pointer as we move through the array
+            bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, array_reg, 8);
+            bci->dst_type_bytes = 8;
+            bci->dst_type = REGTYPE_UINT;
+            copyLoc(bci, expr);
+            issue_instruction(bci);
+            
+            if (isSizedArray(arType) || isDynamicArray(arType)) {
+                // create a pointer to array.count
+                bci = create_instruction(BC_BINARY_OPERATION, array_reg, array_reg + 2, TK_PLUS);
+                bci->src2_reg = array_reg + 1;
+                bci->dst_type_bytes = 8;
+                bci->dst_type = REGTYPE_POINTER;
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+
+                // Now dereference the pointer to get the result
+                bci = create_instruction(BC_UNARY_OPERATION, array_reg + 2, reg + 1, TK_LSHIFT);
+                bci->dst_type_bytes = 8; // this is a pointer
+                bci->dst_type = REGTYPE_UINT;
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+                // now reg+1 contains the array.count pointer
+            }
+
+            if (isDynamicArray(arType)) {
+                // create a pointer to array.reserved_size
+                bci = create_instruction(BC_BINARY_OPERATION, array_reg+2, array_reg + 3, TK_PLUS);
+                bci->src2_reg = array_reg + 1;
+                bci->dst_type_bytes = 8;
+                bci->dst_type = REGTYPE_POINTER;
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+
+                // Now dereference the pointer to get the result
+                bci = create_instruction(BC_UNARY_OPERATION, array_reg + 3, reg + 2, TK_LSHIFT);
+                bci->dst_type_bytes = 8; // this is a pointer
+                bci->dst_type = REGTYPE_UINT;
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+                // now reg+2 contains the array.reserved_size pointer
+            }
+        }
 
         break;
     }
@@ -1249,6 +1309,60 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         bci->dst_type = get_regtype_from_type(nast->expr_type);
         copyLoc(bci, expr);
         issue_instruction(bci);
+        break;
+    }
+    case AST_CAST: {
+        auto cast = (CastAST *)expr;
+        s16 expr_reg = reserveRegistersForSize(current_function, cast->expr->expr_type->size_in_bytes);
+        computeExpressionIntoRegister(cast->expr, expr_reg);
+
+        // And now we need to convert / Copy what is needed
+        if (cast->dstType->ast_type == AST_ARRAY_TYPE) {
+            auto dstType = (ArrayTypeAST *)cast->dstType;
+            if (dstType->array_type != ArrayTypeAST::SIZED_ARRAY) {
+                assert(!"Unsupported cast");
+                exit(-1);
+            }
+            assert(cast->srcType->ast_type == AST_ARRAY_TYPE);
+            auto srcType = (ArrayTypeAST *)cast->srcType;
+            switch (srcType->array_type) {
+            case ArrayTypeAST::SIZED_ARRAY: {
+                assert(!"We should never be here, no need to convert from sized to sized");
+                break;
+            }
+            case ArrayTypeAST::DYNAMIC_ARRAY: {
+                // here we need to take the count of dynamic array and copy it
+                // discard the reserved_size
+                // this copies the data pointer
+                BCI *bci = create_instruction(BC_COPY_REG, expr_reg, reg, -1);
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+                // And now copy the count
+                bci = create_instruction(BC_COPY_REG, expr_reg + 1, reg + 1, -1);
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+                break;
+            }
+            case ArrayTypeAST::STATIC_ARRAY: {
+                // here the count is implicit, we have to output it from computed value
+                // this copies the data pointer
+                BCI *bci = create_instruction(BC_COPY_REG, expr_reg, reg, -1);
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+                // this adds the count from the type
+                bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg + 1, srcType->num_elems);
+                bci->dst_type = REGTYPE_UINT;
+                bci->dst_type_bytes = 8;
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+                break;
+            }
+            default:
+                assert(!"We should never be here, unknown array type");
+            }
+        } else {
+            assert(!"Unsupported cast");
+        }
         break;
     }
     default:
@@ -1324,8 +1438,7 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
 
     if (reg_return == -1) {
         assert(isVoidType(fundecl->return_type));
-    }
-    else {
+    } else {
         assert(!isVoidType(fundecl->return_type));
     }
 
@@ -1414,6 +1527,10 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             dstreg.type = bci->dst_type;
             break;
         }
+        case BC_COPY_REG: {
+            memcpy(&dstreg, &srcreg, sizeof(dstreg));
+            break;
+        }
         case BC_LOAD_BIG_CONSTANT_TO_REG: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             copy_bytes(&bci->big_const, &dstreg.data._u64, bci->dst_type_bytes);
@@ -1455,7 +1572,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(bci->big_const < current_call_register->num_regs);
             copy_bytes(&srcreg.data._u64, 
-                &current_call_register->regs[bci->big_const].data._u64,                
+                &current_call_register->data[bci->big_const]._u64,                
                 bci->dst_type_bytes);
             break;
         }
@@ -1490,7 +1607,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(current_call_register);
             assert(current_call_register->num_regs > bci->big_const);
-            copy_bytes(&current_call_register->regs[bci->big_const].data._u64,
+            copy_bytes(&current_call_register->data[bci->big_const]._u64,
                 &dstreg.data._u64,
                 bci->dst_type_bytes);
             dstreg.bytes = bci->dst_type_bytes;
@@ -1524,7 +1641,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
 
             // Since we are moving to doing address + mem access for all vars, we need to allow this
             // assert(!"Taking an address from a function parameter is not allowed");
-            dstreg.data._ptr = (u8 *)&current_call_register->regs[bci->big_const].data._u64;
+            dstreg.data._ptr = (u8 *)&current_call_register->data[bci->big_const]._u64;
 
             dstreg.bytes = bci->dst_type_bytes;
             dstreg.type = bci->dst_type;
@@ -1950,7 +2067,9 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             assert(bci->big_const < 256); // Sane value... 
             bc_call_register *call = new bc_call_register;
             if (bci->big_const > 0) {
-                call->regs = new bc_register[bci->big_const];
+                call->data = new bc_register_data[bci->big_const];
+                call->type = new RegisterType[bci->big_const];
+                call->bytes = new u8[bci->big_const];
             }
             call->num_regs = bci->big_const;
             assert(new_call_register == nullptr);
@@ -1964,10 +2083,10 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
                 s16 src_reg = bci->src_reg + ind;
                 
                 copy_bytes(&func->regs[src_reg].data._u64,
-                    &call->regs[ind].data._u64,
+                    &call->data[ind]._u64,
                     func->regs[src_reg].bytes);
-                call->regs[ind].bytes = func->regs[src_reg].bytes;
-                call->regs[ind].type = func->regs[src_reg].type;
+                call->bytes[ind] = func->regs[src_reg].bytes;
+                call->type[ind] = func->regs[src_reg].type;
             }
             new_call_register = call;
             break;
@@ -1995,7 +2114,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
                     // Do not support more than 1 register return
                     // Where are the type stored for the others? Too many questions for now
                     assert(bci->dst_type_bytes <= 8);
-                    copy_bytes((u8 *)&current_call_register->regs[0].data._u64, 
+                    copy_bytes((u8 *)&current_call_register->data[0]._u64, 
                         (u8 *)&dstreg.data._u64, bci->dst_type_bytes);
                     dstreg.bytes = bci->dst_type_bytes;
                     dstreg.type = get_regtype_from_type(fundef->declaration);
@@ -2005,8 +2124,10 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             // We have to free up the current call register here
             // assume the return reg has already been copied
 
-            if (current_call_register->regs) {
-                delete current_call_register->regs;
+            if (current_call_register->data) {
+                delete current_call_register->data;
+                delete current_call_register->type;
+                delete current_call_register->bytes;
             }
             delete current_call_register;
 
@@ -2219,7 +2340,9 @@ void bytecode_runner::run_directive(RunDirectiveAST * run)
 
     bc_register ret_val = {};
     bc_call_register ret_cr = {};
-    ret_cr.regs = &ret_val; ret_cr.num_regs = 1;
+    ret_cr.data = &ret_val.data; ret_cr.num_regs = 1;
+    ret_cr.bytes = &ret_val.bytes;
+    ret_cr.type = &ret_val.type;
     bc_call_register * old_call = current_call_register;
     current_call_register = &ret_cr;
 
@@ -2257,7 +2380,9 @@ void bytecode_runner::callExternalFunction(FunctionDefinitionAST * fundef, BCI *
     dcReset(vm);
 
     for (s32 i = 0; i < current_call_register->num_regs; i++) {
-        auto &reg = current_call_register->regs[i];
+        auto &data = current_call_register->data[i];
+        auto type = current_call_register->type[i];
+        auto bytes = current_call_register->bytes[i];
 
         // This code is so we do not push as arguments the return value regs
         if (bci->src2_reg != -1) {
@@ -2266,35 +2391,35 @@ void bytecode_runner::callExternalFunction(FunctionDefinitionAST * fundef, BCI *
             }
         }
 
-        if (reg.type == REGTYPE_POINTER) {
-            dcArgPointer(vm, reg.data._ptr);
+        if (type == REGTYPE_POINTER) {
+            dcArgPointer(vm, data._ptr);
         }
-        else if (reg.type == REGTYPE_FLOAT) {
-            switch (reg.bytes) {
+        else if (type == REGTYPE_FLOAT) {
+            switch (bytes) {
             case 4:
-                dcArgFloat(vm, reg.data._f32);
+                dcArgFloat(vm, data._f32);
                 break;
             case 8: 
-                dcArgDouble(vm, reg.data._f64);
+                dcArgDouble(vm, data._f64);
                 break;
             default:
                 assert(false);
             }
         }
         else {
-            assert((reg.type == REGTYPE_SINT) || (reg.type == REGTYPE_UINT));
-            switch (reg.bytes) {
+            assert((type == REGTYPE_SINT) || (type == REGTYPE_UINT));
+            switch (bytes) {
             case 1:
-                dcArgChar(vm, reg.data._s8);
+                dcArgChar(vm, data._s8);
                 break;
             case 2:
-                dcArgShort(vm, reg.data._s16);
+                dcArgShort(vm, data._s16);
                 break;
             case 4:
-                dcArgInt(vm, reg.data._s32);
+                dcArgInt(vm, data._s32);
                 break;
             case 8:
-                dcArgLongLong(vm, reg.data._s64);
+                dcArgLongLong(vm, data._s64);
                 break;
             }
         }
