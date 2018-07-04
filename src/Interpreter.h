@@ -67,7 +67,8 @@ struct Interpreter
     VariableDeclarationAST *validateVariable(IdentifierAST *a);
     VariableDeclarationAST *validateFunctionCall(FunctionCallAST *a);
 
-    bool compatibleTypes(TypeAST *lhs, TypeAST *rhs);
+    bool compatibleTypes(TypeAST *lhs, TypeAST *rhs, bool &needs_cast);
+    void addCast(ExpressionAST **expr, TypeAST *srcType, TypeAST *dstType);
 
     void traversePostfixTopLevel(FileAST *root);
     void traversePostfixTopLevelDeclaration(VariableDeclarationAST **decl);

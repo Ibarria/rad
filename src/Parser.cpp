@@ -17,7 +17,7 @@ extern bool option_printTokens;
 
 #define NEW_AST(ast_type) (ast_type *) setASTinfo(this, (BaseAST *) new(this->pool) ast_type )
 
-static u64 sequence_id = 100;
+u64 sequence_id = 100;
 
 void copyASTinfo(BaseAST *src, BaseAST *dst) 
 {

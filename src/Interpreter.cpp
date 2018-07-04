@@ -12,6 +12,7 @@
 #endif
 
 extern bool option_printBytecode;
+extern u64 sequence_id;
 
 bool isBoolOperator(TOKEN_TYPE type);
 
@@ -45,7 +46,7 @@ static void printTypeToStr(char *s, TypeAST *type)
         } else if (isStaticArray(at)) {
             sprintf(s + strlen(s), "%u", (u32)at->num_elems);
         }
-        sprintf(s + strlen(s), "]");
+        sprintf(s + strlen(s), "] ");
         printTypeToStr(s + strlen(s), at->array_of_type);
         break;
     }
@@ -57,6 +58,7 @@ static void printTypeToStr(char *s, TypeAST *type)
 static void copyASTloc(BaseAST *src, BaseAST *dst)
 {
     dst->filename = src->filename;
+    dst->char_num = src->char_num;
     dst->line_num = src->line_num;
 }
 
@@ -613,8 +615,9 @@ VariableDeclarationAST *Interpreter::validateFunctionCall(FunctionCallAST *a)
     For pointer types, both their point_to types have to match
     Future: support type alias
 */
-bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
+bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs, bool &needs_cast)
 {
+    needs_cast = false;
     if (lhs->ast_type != rhs->ast_type) {
         return false;
     }
@@ -631,23 +634,66 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
     case AST_POINTER_TYPE: {
         auto rpt = (PointerTypeAST *)rhs;
         auto lpt = (PointerTypeAST *)lhs;
-        return compatibleTypes(lpt->points_to_type, rpt->points_to_type);
+        bool ret = compatibleTypes(lpt->points_to_type, rpt->points_to_type, needs_cast);
+        // Do not allow casting of pointer types
+        return (ret && !needs_cast);
         break;
     }
     case AST_ARRAY_TYPE: {
-        assert(!"Unimplemented array type");
+        auto rt = (ArrayTypeAST *)rhs;
+        auto lt = (ArrayTypeAST *)lhs;
+        // Compatible array rules
+        /*
+            - Support Static and Dynamic conversion to Sized (variable assignment)
+            - Arrays must be of the same type and dimensionality (recursion)
+            - Array comparison is not supported! @TODO: verify
+        
+        
+        */
+        // first, the types of the arrays have to be the same
+        if (!compatibleTypes(lt->array_of_type, rt->array_of_type, needs_cast)) {
+            return false;
+        }
+        if (needs_cast) {
+            // We do not allow casting of the element inside the array
+            return false;
+        }
+        if (lt->array_type == rt->array_type) {
+            switch (lt->array_type) {
+            case ArrayTypeAST::STATIC_ARRAY: {
+                assert(lt->num_elems != 0);
+                return lt->num_elems == rt->num_elems;
+            }
+            case ArrayTypeAST::SIZED_ARRAY: {
+                return true;
+            }
+            case ArrayTypeAST::DYNAMIC_ARRAY: {
+                return true;
+            }
+            default:
+                assert(!"We should never be here, unknown array type");
+            }
+            
+        } else if (lt->array_type == ArrayTypeAST::SIZED_ARRAY) {
+            // Any array can be converted to a sized array, as long as the inner types match
+            needs_cast = true;
+            return true;
+        }
+            
         return false;
         break;
     }
     case AST_FUNCTION_TYPE: {
         auto rft = (FunctionTypeAST *)rhs;
         auto lft = (FunctionTypeAST *)lhs;
-        if (!compatibleTypes(lft->return_type, rft->return_type)) return false;
+        if (!compatibleTypes(lft->return_type, rft->return_type, needs_cast)) return false;
+        if (needs_cast) return false;
         if (lft->arguments.size() != rft->arguments.size()) return false;
         for (u32 i = 0; i < lft->arguments.size(); i++) {
             auto larg = lft->arguments[i];
             auto rarg = rft->arguments[i];
-            if (!compatibleTypes(larg->specified_type, rarg->specified_type)) return false;
+            if (!compatibleTypes(larg->specified_type, rarg->specified_type, needs_cast)) return false;
+            if (needs_cast) return false;
         }
         return true;
         break;
@@ -660,7 +706,8 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
         for (u32 i = 0; i < lst->struct_scope.decls.size(); i++) {
             auto larg = lst->struct_scope.decls[i];
             auto rarg = rst->struct_scope.decls[i];
-            if (!compatibleTypes(larg->specified_type, rarg->specified_type)) return false;
+            if (!compatibleTypes(larg->specified_type, rarg->specified_type, needs_cast)) return false;
+            if (needs_cast) return false;
         }
         return true;
 
@@ -669,6 +716,19 @@ bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs)
     default:
         return false;
     }
+}
+
+void Interpreter::addCast(ExpressionAST ** expr, TypeAST * srcType, TypeAST * dstType)
+{
+    CastAST *cast = new (&pool) CastAST();
+    copyASTloc(*expr, cast);
+    cast->s = sequence_id++;
+    cast->isImplicit = true;
+    cast->expr = *expr;
+    cast->expr_type = dstType;
+    cast->srcType = srcType;
+    cast->dstType = dstType;
+    *expr = cast;
 }
 
 static u32 overallRunItems(FileAST *root)
@@ -1285,13 +1345,15 @@ bool Interpreter::doWorkAST(interp_work * work)
                     return true;
                 }
 
+                bool needs_cast = false;
+
                 switch (decl->definition->ast_type) {
                 case AST_FUNCTION_DEFINITION: {
                     FunctionDefinitionAST *fundef = (FunctionDefinitionAST *)decl->definition;
                     TypeAST *dtype = fundef->declaration;
                     TypeAST *stype = decl->specified_type; 
                     
-                    if (!compatibleTypes(stype, stype)) {
+                    if (!compatibleTypes(stype, stype, needs_cast) || needs_cast) {
                         char ltype[64] = {}, rtype[64] = {};
                         printTypeToStr(ltype, stype);
                         printTypeToStr(rtype, dtype);
@@ -1305,7 +1367,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     auto struct_def = (StructDefinitionAST *)decl->definition;
                     TypeAST *dtype = struct_def->struct_type;
                     TypeAST *stype = decl->specified_type;
-                    if (!compatibleTypes(stype, stype)) {
+                    if (!compatibleTypes(stype, stype, needs_cast) || needs_cast) {
                         char ltype[64] = {}, rtype[64] = {};
                         printTypeToStr(ltype, stype);
                         printTypeToStr(rtype, dtype);
@@ -1452,6 +1514,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                         }
                         LiteralAST *lit = new (&pool) LiteralAST;
                         copyASTloc(sac, lit);
+                        lit->s = sequence_id++;
                         lit->_u64 = atype->num_elems;
                         lit->typeAST = (DirectTypeAST *)sac->expr_type;
                         assert(sac->expr_type->ast_type == AST_DIRECT_TYPE);
@@ -1553,6 +1616,7 @@ bool Interpreter::doWorkAST(interp_work * work)
         } else if (work->action == IA_OPERATION_CHECK) {
             // next we need to type check the return expression
             // with the enclosing function (!!)
+            bool needs_cast = false;
             TypeAST *ret_type = ret_stmt->ret->expr_type;
             FunctionDefinitionAST *fundef = findEnclosingFunction(ret_stmt);
             if (!fundef) {
@@ -1560,12 +1624,16 @@ bool Interpreter::doWorkAST(interp_work * work)
                 return false;
             }
             TypeAST *func_ret_type = fundef->declaration->return_type;
-            if (!compatibleTypes(ret_type, func_ret_type)) {
+            if (!compatibleTypes(ret_type, func_ret_type, needs_cast)) {
                 char ltype[64] = {}, rtype[64] = {};
                 printTypeToStr(ltype, ret_type);
                 printTypeToStr(rtype, func_ret_type);
                 Error(ret_stmt, "Incompatible types between the return statement: %s and the return type %s for function %s\n",
                     ltype, rtype, fundef->var_decl->varname);
+            }
+            // If we needed a cast, ensure we add it here
+            if (needs_cast) {
+                addCast(&ret_stmt->ret, ret_type, func_ret_type);
             }
 
         } else {
@@ -1678,17 +1746,24 @@ bool Interpreter::doWorkAST(interp_work * work)
 
             for (u32 i = 0; i < fundecl->arguments.size(); i++) {
                 TypeAST *lhsType, *rhsType;
-                lhsType = funcall->args[i]->expr_type;
-                rhsType = fundecl->arguments[i]->specified_type;
+                bool needs_cast = false;
+                // Function calls are like assignments to new vars, the function arguments are the lhs
+                lhsType = fundecl->arguments[i]->specified_type;
+                rhsType = funcall->args[i]->expr_type;
                 assert(lhsType); assert(rhsType);
-                if (!compatibleTypes(lhsType, rhsType)) {
+                if (!compatibleTypes(lhsType, rhsType, needs_cast)) {
                     char ltype[64] = {}, rtype[64] = {};
                     printTypeToStr(ltype, lhsType);
                     printTypeToStr(rtype, rhsType);
                     Error(funcall, "Incompatible types during function call: provided: %s and expected: %s\n",
-                        ltype, rtype);
+                        rtype, ltype);
                     return false;
                 }
+                // If we needed a cast, ensure we add it here
+                if (needs_cast) {
+                    addCast(&funcall->args[i], rhsType, lhsType);
+                }
+
             }
 
         } else {
@@ -1886,6 +1961,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 // Check for compatible types is done later
                 DirectTypeAST *dt = new (&pool) DirectTypeAST;
                 copyASTloc(binop, dt);
+                dt->s = sequence_id++;
                 binop->expr_type = dt;
                 dt->basic_type = BASIC_TYPE_BOOL;
                 dt->size_in_bytes = 1;
@@ -1896,6 +1972,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     auto lhsDtType = (DirectTypeAST *)lhsType;
                     DirectTypeAST *dt = new (&pool) DirectTypeAST;
                     copyASTloc(binop, dt);
+                    dt->s = sequence_id++;
                     binop->expr_type = dt;
                     dt->basic_type = lhsDtType->basic_type;
                     dt->size_in_bytes = lhsDtType->size_in_bytes;
@@ -1905,6 +1982,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     auto lhsPtType = (PointerTypeAST *)lhsType;
 
                     copyASTloc(binop, pt);
+                    pt->s = sequence_id++;
                     binop->expr_type = pt;
                     pt->points_to_type = lhsPtType->points_to_type;
                     pt->size_in_bytes = 8;
@@ -1915,6 +1993,7 @@ bool Interpreter::doWorkAST(interp_work * work)
 
         } else if (work->action == IA_OPERATION_CHECK) {
 
+            bool needs_cast = false;
             if (lhsType->ast_type == AST_POINTER_TYPE) {
                 /* Pointers are a special case
                    We allow The following operations:
@@ -1923,7 +2002,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 */
 
                 if (isBoolOperator(binop->op)) {
-                    if (!compatibleTypes(lhsType, rhsType)) {
+                    if (!compatibleTypes(lhsType, rhsType, needs_cast)) {
                         char ltype[64] = {}, rtype[64] = {};
                         printTypeToStr(ltype, lhsType);
                         printTypeToStr(rtype, rhsType);
@@ -1932,6 +2011,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                             ltype, rtype);
                         return false;
                     }
+                    assert(!needs_cast);
                     return true;
                 }
 
@@ -1977,7 +2057,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 (binop->op == TK_NEQ)) {
                 // Non boolean operators demand types that match
                 // same if we check for equality
-                if (!compatibleTypes(lhsType, rhsType)) {
+                if (!compatibleTypes(lhsType, rhsType, needs_cast)) {
                     char ltype[64] = {}, rtype[64] = {};
                     printTypeToStr(ltype, lhsType);
                     printTypeToStr(rtype, rhsType);
@@ -1986,11 +2066,12 @@ bool Interpreter::doWorkAST(interp_work * work)
                         ltype, rtype);
                     return false;
                 }
+                assert(!needs_cast);
             } else {
                 // Here we have a comparison operator
                 // @TODO: be a bit lenient on comparisons..., with auto cast
                 // For now the types have to match and they need to be INTEGER or FLOAT only
-                if (!compatibleTypes(lhsType, rhsType)) {
+                if (!compatibleTypes(lhsType, rhsType, needs_cast)) {
                     char ltype[64] = {}, rtype[64] = {};
                     printTypeToStr(ltype, lhsType);
                     printTypeToStr(rtype, rhsType);
@@ -1999,7 +2080,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                         ltype, rtype);
                     return false;
                 }
-
+                assert(!needs_cast);
                 if ((lhsType->ast_type == rhsType->ast_type) && 
                     (lhsType->ast_type == AST_DIRECT_TYPE)) {
                     // Only support direct type (for float and integer)
@@ -2072,6 +2153,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     // a signed one
                     DirectTypeAST *dtype = new (&pool) DirectTypeAST;
                     copyASTloc(unop, dtype);
+                    dtype->s = sequence_id++;
                     dtype->basic_type = dt->basic_type;
                     dtype->isSigned = true;
                     dtype->size_in_bytes = dt->size_in_bytes;
@@ -2112,6 +2194,7 @@ bool Interpreter::doWorkAST(interp_work * work)
 
                 DirectTypeAST *dt = new (&pool) DirectTypeAST;
                 copyASTloc(unop, dt);
+                dt->s = sequence_id++;
                 dt->basic_type = BASIC_TYPE_BOOL;
                 dt->size_in_bytes = 1;
                 unop->expr_type = dt;
@@ -2134,6 +2217,7 @@ bool Interpreter::doWorkAST(interp_work * work)
 
                 PointerTypeAST *pt = new (&pool) PointerTypeAST;
                 copyASTloc(unop, pt);
+                pt->s = sequence_id++;
                 pt->points_to_type = type;
                 pt->size_in_bytes = 8;
                 unop->expr_type = pt;
@@ -2214,6 +2298,8 @@ bool Interpreter::doWorkAST(interp_work * work)
                 assert(rhsType->ast_type == AST_DIRECT_TYPE);
                 DirectTypeAST *rhsDType = (DirectTypeAST *)rhsType;
                 DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
+
+                assert(lhsDType->basic_type != BASIC_TYPE_CUSTOM);
 
                 if (lhsDType->basic_type != rhsDType->basic_type) {
                     char ltype[64] = {}, rtype[64] = {};
@@ -2304,13 +2390,23 @@ bool Interpreter::doWorkAST(interp_work * work)
 
             } else {
                 // for non direct types, just check the basic compatible types checks
-
-                if (!compatibleTypes(lhsType, rhsType)) {
+                bool needs_cast = false;
+                if (!compatibleTypes(lhsType, rhsType, needs_cast)) {
                     char ltype[64] = {}, rtype[64] = {};
                     printTypeToStr(ltype, lhsType);
                     printTypeToStr(rtype, rhsType);
                     Error(assign, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
                 }
+                if (needs_cast) {
+                    addCast(&assign->rhs, rhsType, lhsType);
+                }
+
+                // Allow arrays to be assigned (as it is a known type with no more than 3 registers)
+                // But do not allow structures of known size, this should be replaced by a memcpy
+                if (lhsType->ast_type == AST_STRUCT_TYPE) {
+                    assert(!"Assignment of structs is unimplemented yet");
+                }
+
                 return true;
             }
 
@@ -2328,6 +2424,7 @@ bool Interpreter::doWorkAST(interp_work * work)
             assert(type);
             PointerTypeAST *pt = new (&pool) PointerTypeAST;
             copyASTloc(nast, pt);
+            pt->s = sequence_id++;
             pt->points_to_type = type;
             pt->size_in_bytes = 8;
 

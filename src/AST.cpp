@@ -136,6 +136,17 @@ void printAST(const BaseAST *ast, int ident)
         printAST(a->rhs, ident + 3);
         break;
     }
+    case AST_CAST: {
+        const CastAST *c = (const CastAST *)ast;
+        printf("%*sCastAST\n", ident, "");
+        printf("%*s From Type:\n", ident + ex, "");
+        printAST(c->srcType, ident + 3);
+        printf("%*s To Type:\n", ident + ex, "");
+        printAST(c->dstType, ident + 3);
+        printf("%*s Expression:\n", ident + ex, "");
+        printAST(c->expr, ident + 3);
+        break;
+    }
     case AST_VARIABLE_DECLARATION: {
         const VariableDeclarationAST *a = (const VariableDeclarationAST *)ast;
         printf("%*sDeclAST varname: [%s] flags: ", ident, "", a->varname);

@@ -57,6 +57,7 @@ enum AST_CLASS_TYPE {
     AST_ASSIGNMENT,
     AST_NEW,
     AST_DELETE,
+    AST_CAST,
     AST_VARIABLE_DECLARATION,
     AST_RUN_DIRECTIVE,
     AST_STRUCT_TYPE,
@@ -324,6 +325,15 @@ struct AssignmentAST : ExpressionAST
     ExpressionAST *lhs = nullptr;
     ExpressionAST *rhs = nullptr;
     TOKEN_TYPE op = TK_INVALID;
+};
+
+struct CastAST : ExpressionAST
+{
+    CastAST() { ast_type = AST_CAST; }
+    TypeAST *srcType = nullptr;
+    TypeAST *dstType = nullptr;
+    ExpressionAST *expr = nullptr;
+    bool isImplicit = false;
 };
 
 struct NewAllocAST : ExpressionAST 
