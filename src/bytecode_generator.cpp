@@ -1212,15 +1212,27 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
             // and then reserved_size (DYNAMIC only)
             s16 array_reg = reserveRegistersForSize(current_function, 8*4);
             computeAddressIntoRegister(id, array_reg);
-            bci = create_instruction(BC_UNARY_OPERATION, array_reg, reg, TK_LSHIFT);
-            bci->dst_type_bytes = 8; // this is a pointer
-            bci->dst_type = REGTYPE_POINTER;
-            copyLoc(bci, expr);
-            issue_instruction(bci);
-            // now reg contains the array.data pointer
+            
+            if (isStaticArray(arType)) {
+                // The address of `id` is the first field, the .data pointer already
+                bci = create_instruction(BC_COPY_REG, array_reg, reg, -1);
+                bci->dst_type_bytes = 8; // this is a pointer
+                bci->dst_type = REGTYPE_POINTER;
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+                // now reg contains the array.data pointer
+            } else {
+                // For other array types, we need a dereference to get to .data
+                bci = create_instruction(BC_UNARY_OPERATION, array_reg, reg, TK_LSHIFT);
+                bci->dst_type_bytes = 8; // this is a pointer
+                bci->dst_type = REGTYPE_POINTER;
+                copyLoc(bci, expr);
+                issue_instruction(bci);
+                // now reg contains the array.data pointer
+            }
 
             // Load the constant 8, the size of a pointer as we move through the array
-            bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, array_reg, 8);
+            bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, array_reg + 1, 8);
             bci->dst_type_bytes = 8;
             bci->dst_type = REGTYPE_UINT;
             copyLoc(bci, expr);
@@ -1389,6 +1401,23 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
             s16 offset_reg = reserveRegistersForSize(current_function, 8);
             createAddressInstruction(id->decl, pointer_reg);
 
+            // if what we access is an Array of Sized or Dynamic, the Address is just the data pointer,
+            // we have to do a de-reference here
+            
+            if (id->decl->specified_type->ast_type == AST_ARRAY_TYPE) {
+                auto at = (ArrayTypeAST *)id->decl->specified_type;
+                if (isSizedArray(at) || isDynamicArray(at)) {
+                    s16 extra_reg = reserveRegistersForSize(current_function, 8);
+                    BCI *bci = create_instruction(BC_UNARY_OPERATION, pointer_reg, extra_reg, TK_LSHIFT);
+                    bci->dst_type = REGTYPE_POINTER;
+                    bci->dst_type_bytes = 8;
+                    copyLoc(bci, expr);
+                    issue_instruction(bci);
+                    // update the register with the actual pointer to data
+                    pointer_reg = extra_reg;
+                }
+            }
+            
             createLoadOffsetInstruction(id->next, offset_reg);
 
             BCI *bci = create_instruction(BC_BINARY_OPERATION, pointer_reg, reg, TK_PLUS);
