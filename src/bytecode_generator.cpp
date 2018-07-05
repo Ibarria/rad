@@ -1402,9 +1402,10 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
             createAddressInstruction(id->decl, pointer_reg);
 
             // if what we access is an Array of Sized or Dynamic, the Address is just the data pointer,
-            // we have to do a de-reference here
+            // we have to do a de-reference here, but only for array access (a.data[x] , not a.count)
             
-            if (id->decl->specified_type->ast_type == AST_ARRAY_TYPE) {
+            if ((id->decl->specified_type->ast_type == AST_ARRAY_TYPE) && 
+                (id->next->ast_type == AST_ARRAY_ACCESS)) {
                 auto at = (ArrayTypeAST *)id->decl->specified_type;
                 if (isSizedArray(at) || isDynamicArray(at)) {
                     s16 extra_reg = reserveRegistersForSize(current_function, 8);
