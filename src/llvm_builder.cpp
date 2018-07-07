@@ -56,8 +56,7 @@ static void printFunction(Function *f)
 
 static PointerType *getLlvmPointer(TypeAST *type)
 {
-    if (isVoidType(type)) 
-    {
+    if (isVoidType(type)) {
         return Type::getInt8PtrTy(TheContext);
     } else {
         return type->llvm_type->getPointerTo();
@@ -123,6 +122,12 @@ static void allocateVariable(VariableDeclarationAST *decl)
         if (decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT) {
             // codegen should be here because it is generated in the function definition generation
             assert(decl->codegen);
+            if (decl->codegen->getType()->isPointerTy() && 
+                (isTypeArray(decl->specified_type) || isTypeStruct(decl->specified_type))) {
+                // if it is an argument and a pointer, there is no need to do a local copy from arguments
+                // for structs and arrays
+                return;
+            }
             TmpB.CreateStore(decl->codegen, AllocA);
         }
 
@@ -137,6 +142,7 @@ static Value *generateIdentifierCode(IdentifierAST *id)
         std::vector<Value *> idx;
         auto decl = id->decl;
         BaseAST *loop_ast = id->next;
+        Value *variable = decl->codegen;
         Value *val = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, 0));
         idx.push_back(val);
         
@@ -150,6 +156,11 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                         // Sized and Dynamic arrays are implemented as a struct and requires
                         // one more level of indirection
                         idx.push_back(ConstantInt::get(Type::getInt32Ty(TheContext), 0));
+                        // In this situation, llvm asks we load the pointer
+                        Value *gep = Builder.CreateGEP(variable, idx);
+                        Value *array_pointer = Builder.CreateLoad(gep);
+                        variable = array_pointer;
+                        idx.clear();
                     }
                     generateCode(loop_aa->array_exp);
                     idx.push_back(loop_aa->array_exp->codegen);
@@ -158,7 +169,9 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                 }
                 case AST_STRUCT_ACCESS: {
                     auto loop_sac = (StructAccessAST *)loop_ast;
-                    assert(!"Struct access in LLVM is not implemented yet");
+                    val = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, loop_sac->decl->llvm_index));
+                    idx.push_back(val);
+                    loop_ast = loop_sac->next;
                     break;
                 }
                 default:
@@ -167,7 +180,7 @@ static Value *generateIdentifierCode(IdentifierAST *id)
         }
         Value *gep = Builder.CreateGEP(
             // decl->specified_type->llvm_type, 
-            decl->codegen, idx);
+            variable, idx);
         return gep;
     } else {
         return id->decl->codegen;
@@ -584,7 +597,12 @@ static void generateCode(BaseAST *ast)
         std::vector<Type *> func_args;
         for (auto arg : ftype->arguments) {
             generateCode(arg->specified_type);
-            func_args.push_back(arg->specified_type->llvm_type);
+            // Complex data structures are pointers in llvm
+            if (isTypeArray(arg->specified_type) || isTypeStruct(arg->specified_type)) {
+                func_args.push_back(arg->specified_type->llvm_type->getPointerTo());
+            } else {
+                func_args.push_back(arg->specified_type->llvm_type);
+            }
         }
         generateCode(ftype->return_type);
         auto llvm_ft = FunctionType::get(ftype->return_type->llvm_type, // return type
@@ -676,6 +694,7 @@ static void generateCode(BaseAST *ast)
     }
     case AST_ARRAY_TYPE: {
         auto atype = (ArrayTypeAST *)ast;
+        if (atype->llvm_type != nullptr) return;
         generateCode(atype->array_of_type);
         assert(atype->array_of_type->llvm_type != nullptr);
         if (isStaticArray(atype)) {
@@ -708,6 +727,75 @@ static void generateCode(BaseAST *ast)
 
         generateCode(lit);
         run->codegen = lit->codegen;
+        break;
+    }
+    case AST_CAST: {
+        auto cast = (CastAST *)ast;        
+        if (cast->dstType->ast_type == AST_ARRAY_TYPE) {
+            auto dstType = (ArrayTypeAST *)cast->dstType;
+            if (!isSizedArray(dstType)) {
+                assert(!"Unsupported cast");
+                exit(-1);
+            }
+            assert(cast->srcType->ast_type == AST_ARRAY_TYPE);
+            // ensure the llvm type is there 
+            generateCode(cast->dstType);
+
+            auto srcType = (ArrayTypeAST *)cast->srcType;
+            switch (srcType->array_type) {
+            case ArrayTypeAST::SIZED_ARRAY: {
+                assert(!"We should never be here, no need to convert from sized to sized");
+                break;
+            }
+            case ArrayTypeAST::DYNAMIC_ARRAY: {
+                assert(!"Unimplemented in llvm");
+                break;
+            }
+            case ArrayTypeAST::STATIC_ARRAY: {
+                IRBuilder<> TmpB(&llvm_function->getEntryBlock(),
+                    llvm_function->getEntryBlock().begin());
+                auto local_array = TmpB.CreateAlloca(cast->dstType->llvm_type, nullptr, "Internal Array cast");
+                // first, assign the data pointer
+                // create a GEP for the data on the new Sized array
+                assert(cast->expr->ast_type == AST_IDENTIFIER);
+                auto id = (IdentifierAST *)cast->expr;
+                std::vector<Value *> idx;
+                auto decl = id->decl;
+                // This is a cop-out, code to handle arrays inside other arrays or structs not supported yet
+                assert(id->next == nullptr);
+                Value *val_zero = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, 0));
+                Value *val_one = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, 1));
+                idx.push_back(val_zero);
+                idx.push_back(val_zero);
+
+                generateCode(dstType->array_of_type);
+                // Get the address of the casted static array, do an llvm to pointer to element (from array)
+                Value *array_data_ptr = TmpB.CreatePointerCast(decl->codegen, 
+                    dstType->array_of_type->llvm_type->getPointerTo());
+                // And then do a store
+                Value *local_data = TmpB.CreateGEP(
+                    // decl->specified_type->llvm_type, 
+                    local_array, idx);
+                TmpB.CreateStore(array_data_ptr, local_data);
+                
+                // And now do the same for the count
+                Value *count = ConstantInt::get(Type::getInt64Ty(TheContext), APInt(64, srcType->num_elems));
+                idx.clear();
+                idx.push_back(val_zero);
+                idx.push_back(val_one);
+                Value *local_count = TmpB.CreateGEP(
+                    // decl->specified_type->llvm_type, 
+                    local_array, idx);
+                TmpB.CreateStore(count, local_count);
+                cast->codegen = local_array;
+                break;
+            }
+            default:
+                assert(!"We should never be here, unknown array type");
+            }
+        } else {
+            assert(!"Unsupported cast");
+        }
         break;
     }
     default:

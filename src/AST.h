@@ -257,6 +257,7 @@ struct VariableDeclarationAST : StatementAST
     TypeAST *specified_type = nullptr;
     DefinitionAST *definition = nullptr;
     u32 flags = 0;
+    u32 llvm_index = -1; // This is only used for llvm on structs, to know the order inside a struct for GEP
     u64 bc_offset = 0; // This can be memory offset for global variables or register offset for arguments
     interp_deps *deps = nullptr; // only applicable for global variables
 };
@@ -447,10 +448,28 @@ inline bool isVoidType(TypeAST *type)
 DirectTypeAST *findFinalDirectType(PointerTypeAST *pt);
 DirectTypeAST *findFinalDirectType(ArrayTypeAST *at);
 StructTypeAST *findStructType(TypeAST *type);
-bool isTypeStruct(TypeAST *type);
 bool isConstExpression(ExpressionAST *expr);
 bool isLValue(ExpressionAST *expr, bool allowStar = true);
 bool isDefinedExpression(ExpressionAST *expr);
+
+inline bool isTypeStruct(TypeAST *type)
+{
+    if (type->ast_type == AST_STRUCT_TYPE) {
+        return true;
+    } else if (type->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST *)type;
+        if (dt->basic_type != BASIC_TYPE_CUSTOM) {
+            return false; // normal direct types are not structs
+        }
+
+        // if we are here, we should have computed the custom type
+        assert(dt->custom_type);
+        // This allows for more than 1 level of indirection
+        return isTypeStruct(dt->custom_type);
+    } 
+    return false;
+}
+
 
 inline bool isDirectTypeVariation(TypeAST *type) {
     return (type->ast_type == AST_DIRECT_TYPE)

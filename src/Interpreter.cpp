@@ -303,8 +303,12 @@ StructTypeAST *findStructType(TypeAST *type)
     return nullptr;
 }
 
-bool isTypeStruct(TypeAST *type)
+bool isTypeStructOrPtr(TypeAST *type)
 {
+    if (type->ast_type == AST_POINTER_TYPE) {
+        auto pt = (PointerTypeAST *)type;
+        return isTypeStructOrPtr(pt->points_to_type);
+    }
     if (type->ast_type == AST_STRUCT_TYPE) {
         return true;
     } else if (type->ast_type == AST_DIRECT_TYPE) {
@@ -328,12 +332,8 @@ bool isTypeStruct(TypeAST *type)
         // if we are here, we should have computed the custom type
         assert(dt->custom_type);
         // This allows for more than 1 level of indirection
-        return isTypeStruct(dt->custom_type);
-    } if (type->ast_type == AST_POINTER_TYPE) {
-        auto pt = (PointerTypeAST *)type;
-        return isTypeStruct(pt->points_to_type);
+        return isTypeStructOrPtr(dt->custom_type);
     }
-    return false;
 }
 
 static void addTypeWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
@@ -1331,8 +1331,10 @@ bool Interpreter::doWorkAST(interp_work * work)
                     (struct_def->struct_type->size_in_bytes > 0));
                 // Go around all the members of the struct and assign relative bc_mem_offset (offset from struct parent)
                 u64 bc_offset = 0;
+                u32 llvm_index = 0;
                 for (auto member : struct_def->struct_type->struct_scope.decls) {
                     member->bc_offset = bc_offset;
+                    member->llvm_index = llvm_index++;
                     bc_offset += member->specified_type->size_in_bytes;
                 }
             } 
@@ -1449,7 +1451,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     break;
                 }
 
-                if (!isTypeStruct(enclosingType)) {
+                if (!isTypeStructOrPtr(enclosingType)) {
                     char ltype[64] = {};
                     printTypeToStr(ltype, enclosingType);
                     Error(sac, "Struct access with member %s cannot be done on this type: %s\n",
@@ -1860,8 +1862,10 @@ bool Interpreter::doWorkAST(interp_work * work)
                 }
             }
             u64 bc_offset = 0; // for all the cases that matter, we have .data
+            u32 llvm_index = 0;
             for(auto d: at->decls) {
                 d->bc_offset = bc_offset;
+                d->llvm_index = llvm_index++;
                 bc_offset += d->specified_type->size_in_bytes;
             }
         }

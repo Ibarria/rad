@@ -72,16 +72,15 @@ test_static_array :: ()
     print("inner values are %d %d %d %d %d\n", inner[0], inner[1], inner[2], inner[3], inner[4]);
 
     test_conversion_inner(inner);
-// This should be an error, only declare this as parameters
-// Maybe, for completeness, allow this (shoot yourself in the foot carefully)
-// err : [] int;
 }
+
 
 test_conversion_inner :: (a: [] u32)
 {
     print("Inside test conversion, we have an array with %d elements\n", a.count);
     print("Inside test conversion, values are %d %d %d %d %d\n", a[0], a[1], a[2], a[3], a[4]);
 }
+
 
 test_errors :: ()
 {
