@@ -285,6 +285,16 @@ DirectTypeAST *getTypeEx(DirectTypeAST *oldtype, u32 newbytes)
     return nullptr;
 }
 
+DirectTypeAST *getBuiltInType(TOKEN_TYPE tktype)
+{
+    if ((tktype >= TK_VOID) && (tktype <= TK_FLOAT)) {
+        return TypeHelper[tktype - TK_VOID].ast;
+    }
+
+    assert(false);
+    return nullptr;
+}
+
 void Parser::defineBuiltInTypes()
 {
     if (TypeHelper[0].ast != nullptr) return;
@@ -602,6 +612,103 @@ IfStatementAST * Parser::parseIfStatement()
     return ifst;
 }
 
+ForStatementAST * Parser::parseForStatement()
+{
+    ForStatementAST *forst = NEW_AST(ForStatementAST);
+    MustMatchToken(TK_FOR);
+    if (!success) {
+        return nullptr;
+    }
+    forst->is_array = true;
+    ExpressionAST *expr = parseExpression();
+    if (!success) {
+        return nullptr;
+    }
+
+    TOKEN_TYPE cur_type;
+    cur_type = lex->getTokenType();
+    if (cur_type == TK_DOUBLE_PERIOD) {
+        lex->consumeToken();
+        // this is the only case where we do not iterate on an array
+        forst->is_array = false;
+        forst->start = expr;
+        forst->end = parseExpression();
+        if (!success) {
+            return nullptr;
+        }
+    } else if (cur_type == TK_COMMA) {
+        lex->consumeToken();
+        if (expr->ast_type != AST_IDENTIFIER) {
+            Error("Iterator on the for loop has to be an identifier");
+            return nullptr;
+        }
+        forst->it = (IdentifierAST *)expr;
+        expr = parseExpression();
+        if (expr->ast_type != AST_IDENTIFIER) {
+            Error("Iterator index on the for loop has to be an identifier");
+            return nullptr;
+        }
+        forst->it_index = (IdentifierAST *)expr;
+        if (!success) {
+            return nullptr;
+        }
+        if (!lex->checkToken(TK_COLON)) {
+            Error("For loop with iterator and index needs to be followed by \": <array> ");
+            return nullptr;
+        }
+        lex->consumeToken();
+        expr = parseExpression();
+        if (expr->ast_type != AST_IDENTIFIER) {
+            Error("For array variable has to be an identifier");
+            return nullptr;
+        }
+        forst->arr = (IdentifierAST *)expr;
+        if (!success) {
+            return nullptr;
+        }
+    } else if (cur_type == TK_COLON) {
+        lex->consumeToken();
+        if (expr->ast_type != AST_IDENTIFIER) {
+            Error("Iterator on the for loop has to be an identifier");
+            return nullptr;
+        }
+        forst->it = (IdentifierAST *)expr;
+        expr = parseExpression();
+        if (expr->ast_type != AST_IDENTIFIER) {
+            Error("For array variable has to be an identifier");
+            return nullptr;
+        }
+        forst->arr = (IdentifierAST *)expr;
+        if (!success) {
+            return nullptr;
+        }
+    } else {
+        // We must have seen something that is the for block, so assume expr is the array
+        if (expr->ast_type != AST_IDENTIFIER) {
+            Error("For array variable has to be an identifier");
+            return nullptr;
+        }
+        forst->arr = (IdentifierAST *)expr;
+        if (!success) {
+            return nullptr;
+        }
+    }
+    
+    forst->for_scope.parent = current_scope;
+    current_scope = &forst->for_scope;
+
+    // Assume single array, time to parse a statement
+    forst->loop_block = parseStatement();
+
+    current_scope = current_scope->parent;
+
+    if (!success) {
+        return nullptr;
+    }
+
+    return forst;
+}
+
 StatementAST *Parser::parseStatement()
 {
     TOKEN_TYPE cur_type;
@@ -635,6 +742,8 @@ StatementAST *Parser::parseStatement()
         return parseReturnStatement();
     } else if (cur_type == TK_IF) {
         return parseIfStatement();
+    } else if (cur_type == TK_FOR) {
+        return parseForStatement();
     } else if (cur_type == TK_WHILE) {
         Error("The `while` statement is not yet supported.\n");
         return nullptr;

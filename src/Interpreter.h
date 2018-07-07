@@ -69,6 +69,9 @@ struct Interpreter
 
     bool compatibleTypes(TypeAST *lhs, TypeAST *rhs, bool &needs_cast);
     void addCast(ExpressionAST **expr, TypeAST *srcType, TypeAST *dstType);
+    VariableDeclarationAST *createDeclaration(const char *name, TypeAST *type, ExpressionAST *definition);
+    VariableDeclarationAST *createDeclarationSInt(const char *name, s64 start_value, BaseAST *ast);
+    VariableDeclarationAST *createDeclarationUInt(const char *name, u64 start_value, BaseAST *ast);
 
     void traversePostfixTopLevel(FileAST *root);
     void traversePostfixTopLevelDeclaration(VariableDeclarationAST **decl);

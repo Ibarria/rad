@@ -29,6 +29,7 @@ struct Parser {
     FunctionTypeAST *parseFunctionDeclaration();
     ReturnStatementAST *parseReturnStatement();
     IfStatementAST *parseIfStatement();
+    ForStatementAST *parseForStatement();
     StatementAST *parseStatement();
     StatementBlockAST *parseStatementBlock(FunctionDefinitionAST *fundef = nullptr);
     FunctionDefinitionAST *parseFunctionDefinition();

@@ -7,13 +7,15 @@
      This is not valid:
         var: **MyStruct;
         var.a = 3;
+* Modify compiler to ensure sequence_id is atomic (WinAPI or c++)
 * Pointers and Arrays to be able to do varargs, and an easy way to do printf
-* bytecode can call foreign functions (for printf)
 * write cast function (built in)
 * convert literal numbers to the right type (like v: float = 0;)
-* do conditionals
+* do conditionals (if done)
 * do for loop (with it)
 * enum support
+* test custom type (struct, array, basic)
+* define pointer arithmetic (a[10] for ptrs)
 * support return without type
 * support default initializers (implicit to 0)
 * support for explicit defaults
@@ -37,6 +39,8 @@
 * Future stuff: polymorphism, baking, inline, LLVM
 
 ---- DONE -----
+- do if statement
+- bytecode can call foreign functions (for printf)
 - Support pointers
 -- Have a dereference operator for pointers
 - ASSIGN is not an expression! 

@@ -14,6 +14,7 @@ struct VariableDeclarationAST;
 struct FunctionDefinitionAST;
 struct RunDirectiveAST;
 struct LiteralAST;
+struct IdentifierAST;
 struct bytecode_function;
 struct interp_deps;
 struct BCI;
@@ -45,6 +46,7 @@ enum AST_CLASS_TYPE {
     AST_STATEMENT_BLOCK,
     AST_RETURN_STATEMENT,
     AST_IF_STATEMENT,
+    AST_FOR_STATEMENT,
     AST_FUNCTION_DEFINITION,
     AST_FUNCTION_CALL,
     AST_DIRECT_TYPE,
@@ -134,6 +136,19 @@ struct IfStatementAST : StatementAST
     StatementAST *then_branch = nullptr;
     StatementAST *else_branch = nullptr;
     llvm::Value *codegen = nullptr;
+};
+
+struct ForStatementAST : StatementAST
+{
+    ForStatementAST() { ast_type = AST_FOR_STATEMENT; }
+    ExpressionAST *start = nullptr;
+    ExpressionAST *end   = nullptr;
+    IdentifierAST *arr   = nullptr;
+    IdentifierAST *it    = nullptr;
+    IdentifierAST *it_index = nullptr;
+    StatementAST *loop_block = nullptr;
+    Scope for_scope;
+    bool is_array = false;
 };
 
 struct FunctionDefinitionAST : DefinitionAST

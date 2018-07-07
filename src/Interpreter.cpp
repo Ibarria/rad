@@ -15,6 +15,7 @@ extern bool option_printBytecode;
 extern u64 sequence_id;
 
 bool isBoolOperator(TOKEN_TYPE type);
+DirectTypeAST *getBuiltInType(TOKEN_TYPE tktype);
 
 static void printTypeToStr(char *s, TypeAST *type)
 {
@@ -449,6 +450,64 @@ static bool literal_value_fits_in_bytes(LiteralAST *lit, DirectTypeAST *dt)
     }
 }
 
+static bool findAst(BaseAST *root, BaseAST *elem)
+{
+    if ((root == nullptr) || (elem == nullptr)) return false;
+    if (root == elem) return true;
+    
+    switch (root->ast_type) {
+    case AST_IDENTIFIER: {
+        auto id = (IdentifierAST *)root;
+        return findAst(id->next, elem);
+        break;
+    }
+    case AST_LITERAL: {
+        return false;
+        break;
+    }
+    case AST_BINARY_OPERATION: {
+        auto binop = (BinaryOperationAST *)root;
+        return (findAst(binop->lhs, elem) || findAst(binop->rhs, elem));
+        break;
+    }
+    case AST_UNARY_OPERATION: {
+        auto unop = (UnaryOperationAST *)root;
+        return findAst(unop->expr, elem);
+        break;
+    }
+    case AST_CAST: {
+        auto cast = (CastAST *)root;
+        return findAst(cast->expr, elem);
+        break;
+    }
+    case AST_FUNCTION_CALL: {
+        auto funcall = (FunctionCallAST *)root;
+        for (auto arg : funcall->args) {
+            if (findAst(arg, elem)) {
+                return true;
+            }
+        }
+        return false;
+        break;
+    }
+    case AST_ARRAY_ACCESS: {
+        auto acc = (ArrayAccessAST *)root;
+        if (findAst(acc->array_exp, elem)) return true;
+        return findAst(acc->next, elem);
+        break;
+    }
+    case AST_STRUCT_ACCESS: {
+        auto sac = (StructAccessAST *)root;
+        return findAst(sac->next, elem);
+        break;
+    }
+    default:
+        // This means we need to support more AST types
+        assert(false);
+        return false;
+    }
+}
+
 void Interpreter::Error(BaseAST *ast, const char *msg, ...)
 {
     va_list args;
@@ -575,8 +634,18 @@ VariableDeclarationAST *Interpreter::validateVariable(IdentifierAST *a)
         return nullptr;
     }
 
+    // This error is to prevent cases where a variable refers to itself on declaration:
+    // it: int = it;
+    // The check has to be careful, comparing only line numbers can find issue with:
+    // it : int; it = 3; (for example)
     if ((decl->line_num == a->line_num) && (decl->filename == a->filename)) {
-        Error(a, "Variable [%s] is declared in a recursive manner\n", a->name);
+        if (decl->definition != nullptr) {
+            // in this case, do a recursive search
+            if (findAst(decl->definition, a)) {
+                Error(a, "Variable [%s] is declared in a recursive manner\n", a->name);
+                return nullptr;
+            }
+        }
     }
 
     if ((decl->filename == a->filename) &&
@@ -729,6 +798,43 @@ void Interpreter::addCast(ExpressionAST ** expr, TypeAST * srcType, TypeAST * ds
     cast->srcType = srcType;
     cast->dstType = dstType;
     *expr = cast;
+}
+
+VariableDeclarationAST * Interpreter::createDeclaration(const char * name, TypeAST * type, ExpressionAST * definition)
+{
+    VariableDeclarationAST *decl = new (&pool) VariableDeclarationAST();
+    copyASTloc(definition, decl);
+    decl->s = sequence_id++;
+    decl->varname = CreateTextType(&pool, name);
+    decl->definition = definition;
+    decl->specified_type = type;
+    return decl;
+}
+
+VariableDeclarationAST * Interpreter::createDeclarationSInt(const char * name, s64 start_value, BaseAST * ast)
+{
+    DirectTypeAST *type = getBuiltInType(TK_S64);
+    LiteralAST *lit = new (&pool) LiteralAST();
+    copyASTloc(ast, lit);
+    lit->expr_type = type;
+    lit->s = sequence_id++;
+    lit->typeAST = type;
+    lit->_s64 = start_value;
+    // lit->scope (is this needed?)
+    return createDeclaration(name, type, lit);
+}
+
+VariableDeclarationAST * Interpreter::createDeclarationUInt(const char * name, u64 start_value, BaseAST * ast)
+{
+    DirectTypeAST *type = getBuiltInType(TK_U64);
+    LiteralAST *lit = new (&pool) LiteralAST();
+    copyASTloc(ast, lit);
+    lit->expr_type = type;
+    lit->s = sequence_id++;
+    lit->typeAST = type;
+    lit->_u64 = start_value;
+    // lit->scope (is this needed?)
+    return createDeclaration(name, type, lit);
 }
 
 static u32 overallRunItems(FileAST *root)
@@ -1160,6 +1266,25 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
 
 		break;
 	}
+    case AST_FOR_STATEMENT: {
+        auto forst = (ForStatementAST *)ast;
+        if (forst->is_array) {
+            traversePostfixAST(PPC(forst->it), deps);
+            traversePostfixAST(PPC(forst->it_index), deps);
+            traversePostfixAST(PPC(forst->arr), deps);
+        } else {
+            traversePostfixAST(PPC(forst->start), deps);
+            traversePostfixAST(PPC(forst->end), deps);
+        }
+
+        addTypeWork(&pool, astp, deps);
+        //        addSizeWork(&pool, astp, deps);
+        addCheckWork(&pool, astp, deps);
+
+        // traverse the block latest as we should know all on the loop
+        traversePostfixAST(PPC(forst->loop_block), deps);
+        break;
+    }
     default:
         assert(!"AST type not being handled on traversePostfixAST");
     }
@@ -2459,6 +2584,60 @@ bool Interpreter::doWorkAST(interp_work * work)
         } 
         break;
     }
+    case AST_FOR_STATEMENT: {
+        auto forst = (ForStatementAST *)ast;
+        if (forst->is_array) {
+            assert(!"Not implemented yet");
+            //traversePostfixAST(PPC(forst->it), deps);
+            //traversePostfixAST(PPC(forst->it_index), deps);
+            //traversePostfixAST(PPC(forst->arr), deps);
+        } else {
+            //traversePostfixAST(PPC(forst->start), deps);
+            //traversePostfixAST(PPC(forst->end), deps);
+        }
+
+        //addTypeWork(&pool, astp, deps);
+        //addCheckWork(&pool, astp, deps);
+
+        if (work->action == IA_RESOLVE_TYPE) {
+            // Maybe here add the extra it, it_index variables to the scope
+            // with the right typing, which we cannot know until later)
+            if (forst->is_array) {
+                // Here we should also create the two iterators, but being careful with type
+                // and maybe names (as they might come from the for)
+
+            } else {
+                auto decl = createDeclaration("it", forst->start->expr_type, forst->start);
+                decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
+                decl->scope = &forst->for_scope;
+                // There is no error check here in case the 'it' is overlapping some variable
+                // This is a minor improvement, likely a @TODO
+                forst->for_scope.decls.push_back(decl);
+
+                decl = createDeclarationUInt("it_index", 0, forst);
+                decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
+                decl->scope = &forst->for_scope;
+                // There is no error check here in case the 'it' is overlapping some variable
+                // This is a minor improvement, likely a @TODO
+                forst->for_scope.decls.push_back(decl);
+            }
+        } else if (work->action == IA_OPERATION_CHECK) {
+            bool needs_cast;
+            if (!compatibleTypes(forst->start->expr_type, forst->end->expr_type, needs_cast)) {
+                Error(forst, "Start and End expressions are not compatible");
+                return false;
+            }
+
+            // Possible improvement: if start and end are literals of known value, check that 
+            // their value is in increasing order
+
+        } else {
+            assert(!"Unimplemented");
+        }
+
+        break;
+    }
+
     default:
         assert(!"AST type not being handled on traversePostfixAST");
     }
