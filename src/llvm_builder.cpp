@@ -264,6 +264,57 @@ static void generateCode(BaseAST *ast)
 
         break;
     }
+    case AST_FOR_STATEMENT: {
+        auto forst = (ForStatementAST *)ast;
+
+        for (auto decl : forst->for_scope.decls) {
+            allocateVariable(decl);
+        }
+
+        Function *lfunc = Builder.GetInsertBlock()->getParent();
+        BasicBlock *for_entry = BasicBlock::Create(TheContext, "for_entry", lfunc);
+        BasicBlock *for_block = BasicBlock::Create(TheContext, "for_block", lfunc);
+        BasicBlock *for_after = BasicBlock::Create(TheContext, "for_after", lfunc);
+
+        if (forst->is_array) {
+            assert(false);
+        } else {
+            generateCode(forst->end);
+            Value *end_val = forst->end->codegen;
+
+            Builder.CreateBr(for_entry);
+            Builder.SetInsertPoint(for_entry);
+
+            Value *it_val = Builder.CreateLoad(generateIdentifierCode(forst->it), forst->it->name);
+            Value *for_check;
+            assert(forst->end->expr_type->ast_type == AST_DIRECT_TYPE);
+            auto dtype = (DirectTypeAST *)forst->end->expr_type;
+            if (dtype->isSigned) {
+                for_check = Builder.CreateICmpSGT(it_val, end_val);
+            } else {
+                for_check = Builder.CreateICmpUGT(it_val, end_val);
+            }
+
+            Builder.CreateCondBr(for_check, for_after, for_block);
+            Builder.SetInsertPoint(for_block);
+            // Do the actual loop code
+            generateCode(forst->loop_block);
+
+            // increment the it, it_index. It could have changed
+            it_val = Builder.CreateLoad(generateIdentifierCode(forst->it), forst->it->name);
+            Value *llvm_one = ConstantInt::getIntegerValue(Type::getInt64Ty(TheContext), APInt(64, 1));
+            Value *it_inc = Builder.CreateAdd(it_val, llvm_one);
+            Builder.CreateStore(it_inc, forst->it->decl->codegen);
+
+            Value *it_index_val = Builder.CreateLoad(generateIdentifierCode(forst->it_index), forst->it_index->name);
+            Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one);
+            Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
+
+            Builder.CreateBr(for_entry);
+            Builder.SetInsertPoint(for_after);
+        }
+        break;
+    }
     case AST_RETURN_STATEMENT: {
         auto ret_stmt = (ReturnStatementAST *)ast;
         if (ret_stmt->ret != nullptr) {
