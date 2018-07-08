@@ -38,6 +38,10 @@ static Module *TheModule = nullptr;
 
 static Function *llvm_function = nullptr;
 
+// Statics for the llvm type, to make code more readable
+static Type *llvm_u32;
+static Type *llvm_u64;
+
 static void generateCode(BaseAST *ast);
 
 static void printBasicBlock(BasicBlock *bb)
@@ -143,7 +147,7 @@ static Value *generateIdentifierCode(IdentifierAST *id)
         auto decl = id->decl;
         BaseAST *loop_ast = id->next;
         Value *variable = decl->codegen;
-        Value *val = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, 0));
+        Value *val = ConstantInt::get(Type::getInt32Ty(TheContext), 0);
         idx.push_back(val);
         
         while(loop_ast != nullptr) {
@@ -169,7 +173,7 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                 }
                 case AST_STRUCT_ACCESS: {
                     auto loop_sac = (StructAccessAST *)loop_ast;
-                    val = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, loop_sac->decl->llvm_index));
+                    val = ConstantInt::get(Type::getInt32Ty(TheContext),loop_sac->decl->llvm_index);
                     idx.push_back(val);
                     loop_ast = loop_sac->next;
                     break;
@@ -302,7 +306,7 @@ static void generateCode(BaseAST *ast)
 
             // increment the it, it_index. It could have changed
             it_val = Builder.CreateLoad(generateIdentifierCode(forst->it), forst->it->name);
-            Value *llvm_one = ConstantInt::getIntegerValue(Type::getInt64Ty(TheContext), APInt(64, 1));
+            Value *llvm_one = ConstantInt::get(llvm_u64, 1);
             Value *it_inc = Builder.CreateAdd(it_val, llvm_one);
             Builder.CreateStore(it_inc, forst->it->decl->codegen);
 
@@ -373,7 +377,7 @@ static void generateCode(BaseAST *ast)
         }
         case BASIC_TYPE_STRING: {
             auto llvm_str = (Constant *)Builder.CreateGlobalStringPtr(lit->str);
-            auto llvm_sz = ConstantInt::get(Type::getInt64Ty(TheContext), APInt(64, strlen(lit->str)));
+            auto llvm_sz = ConstantInt::get(llvm_u64, strlen(lit->str));
             std::vector<Constant *> members;
             members.push_back(llvm_str);
             members.push_back(llvm_sz);
@@ -632,15 +636,13 @@ static void generateCode(BaseAST *ast)
         break;
     }
     case AST_ARRAY_ACCESS: {
-        auto aa = (ArrayAccessAST *)ast;
-        generateCode(aa->array_exp);
-//        Builder.CreateGEP()
-        assert(!"Array access is not supported on llvm yet");
+        auto aa = (ArrayAccessAST *)ast;        
+        assert(!"Array access should never be processed like this, it comes from Identifier");
         break;
     }
     case AST_STRUCT_ACCESS: {
         auto sac = (StructAccessAST *)ast;
-        assert(!"Struct access is not supported on llvm yet");
+        assert(!"Struct access should never be processed like this, it comes from Identifier");
         break;
     }
     case AST_FUNCTION_TYPE: {
@@ -814,8 +816,8 @@ static void generateCode(BaseAST *ast)
                 auto decl = id->decl;
                 // This is a cop-out, code to handle arrays inside other arrays or structs not supported yet
                 assert(id->next == nullptr);
-                Value *val_zero = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, 0));
-                Value *val_one = ConstantInt::get(Type::getInt32Ty(TheContext), APInt(32, 1));
+                Value *val_zero = ConstantInt::get(llvm_u32, 0);
+                Value *val_one = ConstantInt::get(llvm_u32, 1);
                 idx.push_back(val_zero);
                 idx.push_back(val_zero);
 
@@ -830,7 +832,7 @@ static void generateCode(BaseAST *ast)
                 TmpB.CreateStore(array_data_ptr, local_data);
                 
                 // And now do the same for the count
-                Value *count = ConstantInt::get(Type::getInt64Ty(TheContext), APInt(64, srcType->num_elems));
+                Value *count = ConstantInt::get(llvm_u64, srcType->num_elems);
                 idx.clear();
                 idx.push_back(val_zero);
                 idx.push_back(val_one);
@@ -1073,6 +1075,8 @@ extern "C" DLLEXPORT void llvm_compile(FileAST *root, const char *obj_file, doub
         Target->createTargetMachine(TargetTriple, CPU, Features, opt, RM);
 
     TheModule->setDataLayout(TheTargetMachine->createDataLayout());
+    llvm_u32 = Type::getInt32Ty(TheContext);
+    llvm_u64 = Type::getInt64Ty(TheContext);
 
     // Do the actual compile
     generateCode(root);
