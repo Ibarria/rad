@@ -904,6 +904,80 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         }
         break;
     }
+    case AST_FOR_STATEMENT: {
+        auto forst = (ForStatementAST *)stmt;
+        // Allocate loop variables. This also initializes them
+        for (auto decl : forst->for_scope.decls) {
+            generate_statement(decl);
+        }
+
+        BCI *bci = create_instruction(BC_NOP, -1, -1, 0);
+        copyLoc(bci, forst);
+        issue_instruction(bci);
+        s32 loop_start = bci->inst_index;
+        // Next generate the loop itself
+        generate_statement(forst->loop_block);
+
+        s16 reg = reserveRegisters(current_function, 7);
+        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, 1);
+        bci->dst_type = REGTYPE_UINT;
+        bci->dst_type_bytes = 8;
+        copyLoc(bci, forst);
+        issue_instruction(bci);
+        s16 it_val_reg = -1, it_index_val_reg = -1;
+        // Now we need to increment the loop variables
+        if (forst->is_array) {
+            assert(!"not implemented yet");
+        } else {
+            // we have to increment it and it_index by one
+            computeExpressionIntoRegister(forst->it, reg + 1);
+            // increment it by one
+            bci = create_instruction(BC_BINARY_OPERATION, reg + 1, reg + 2, TK_PLUS);
+            bci->src2_reg = reg;
+            bci->dst_type = REGTYPE_SINT;
+            bci->dst_type_bytes = 8;
+            copyLoc(bci, forst);
+            issue_instruction(bci);
+            it_val_reg = reg + 2;
+            // save the value
+            createStoreInstruction(forst->it->decl, it_val_reg);
+
+            computeExpressionIntoRegister(forst->it_index, reg + 3);
+            // increment it by one
+            bci = create_instruction(BC_BINARY_OPERATION, reg + 3, reg + 4, TK_PLUS);
+            bci->src2_reg = reg;
+            bci->dst_type = REGTYPE_UINT;
+            bci->dst_type_bytes = 8;
+            copyLoc(bci, forst);
+            issue_instruction(bci);
+            it_index_val_reg = reg + 4;
+            // save the value
+            createStoreInstruction(forst->it_index->decl, it_index_val_reg);
+        }
+        // And then do the iteration check
+        // Assume we have it_val_reg setup
+        if (forst->is_array) {
+
+        } else {
+            computeExpressionIntoRegister(forst->end, reg + 5);
+
+            // The expression TK_GT here is so the start, end are inclusive
+            // There is a possible, remote problem: if the end is also the last
+            // representable number, we would never complete the loop. Given we use 64 bit
+            // integers, this is unlikely here
+            bci = create_instruction(BC_BINARY_OPERATION, it_val_reg, reg + 6, TK_GT);
+            bci->src2_reg = reg + 5;
+            bci->dst_type = REGTYPE_UINT;
+            bci->dst_type_bytes = 1;
+            copyLoc(bci, forst);
+            issue_instruction(bci);
+
+            bci = create_instruction(BC_GOTO_CONSTANT_IF_FALSE, reg + 6, -1, loop_start);
+            copyLoc(bci, forst);
+            issue_instruction(bci);
+        }
+        break;
+    }
     case AST_RUN_DIRECTIVE: {
         auto run = (RunDirectiveAST *)stmt;
         

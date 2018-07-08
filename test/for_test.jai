@@ -36,3 +36,5 @@ main :: ()
 {
 	for 1 .. 5 print("Iterating %d\n", it);
 }
+
+#run main();

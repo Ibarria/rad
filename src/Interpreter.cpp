@@ -800,6 +800,18 @@ void Interpreter::addCast(ExpressionAST ** expr, TypeAST * srcType, TypeAST * ds
     *expr = cast;
 }
 
+IdentifierAST * Interpreter::createIdentifier(const char * name, VariableDeclarationAST * decl)
+{
+    IdentifierAST *id = new (&pool) IdentifierAST();
+    copyASTloc(decl, id);
+    id->s = sequence_id++;
+    id->name = CreateTextType(&pool, name);
+    id->decl = decl;
+    id->size_in_bytes = decl->specified_type->size_in_bytes;
+    id->expr_type = decl->specified_type;
+    return id;
+}
+
 VariableDeclarationAST * Interpreter::createDeclaration(const char * name, TypeAST * type, ExpressionAST * definition)
 {
     VariableDeclarationAST *decl = new (&pool) VariableDeclarationAST();
@@ -2613,6 +2625,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 // There is no error check here in case the 'it' is overlapping some variable
                 // This is a minor improvement, likely a @TODO
                 forst->for_scope.decls.push_back(decl);
+                forst->it = createIdentifier("it", decl);
 
                 decl = createDeclarationUInt("it_index", 0, forst);
                 decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
@@ -2620,6 +2633,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 // There is no error check here in case the 'it' is overlapping some variable
                 // This is a minor improvement, likely a @TODO
                 forst->for_scope.decls.push_back(decl);
+                forst->it_index = createIdentifier("it_index", decl);
             }
         } else if (work->action == IA_OPERATION_CHECK) {
             bool needs_cast;
