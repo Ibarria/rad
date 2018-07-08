@@ -109,6 +109,7 @@ struct bytecode_generator
     void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
     void createAddressInstruction(VariableDeclarationAST *decl, s16 reg);
     void createLoadOffsetInstruction(ExpressionAST *expr, s16 reg);
+    BCI *createNopInstruction(BaseAST *ast);
     void issue_instruction(BCI *bci);
     void issueReserveStackSpace(u64 size);
 
@@ -129,6 +130,7 @@ struct bytecode_generator
 
     void computeAddressIntoRegister(ExpressionAST *expr, s16 reg);
     void computeExpressionIntoRegister(ExpressionAST *expr, s16 reg);
+    s16  computeExpressionIntoRegister(ExpressionAST *expr);
     void compute_function_call_into_register(FunctionCallAST *funcall, s16 reg);
 };
 

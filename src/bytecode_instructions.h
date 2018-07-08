@@ -21,6 +21,7 @@ enum BytecodeInstructionOpcode : u16 {
     BC_RETURN,
     BC_BINARY_OPERATION,       // big_const is the op
     BC_UNARY_OPERATION,        // big_const is the op
+    BC_INC_REG_CONST,          // increment a register by a constant, to reduce code complexity
     BC_RESERVE_STACK_SIZE,
     BC_COPY_REG,
     BC_CAST, 

@@ -330,6 +330,7 @@ const char *bc_opcode_to_str(BytecodeInstructionOpcode opcode)
         CASE_BC_OPCODE(BC_RETURN);
         CASE_BC_OPCODE(BC_BINARY_OPERATION);
         CASE_BC_OPCODE(BC_UNARY_OPERATION);
+        CASE_BC_OPCODE(BC_INC_REG_CONST);
         CASE_BC_OPCODE(BC_RESERVE_STACK_SIZE);
         CASE_BC_OPCODE(BC_CAST);
         CASE_BC_OPCODE(BC_GOTO_CONSTANT_IF_FALSE);
@@ -615,6 +616,14 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
     default:
         assert(!"This function can only be called with something that can yield a declaration");
     }
+}
+
+BCI * bytecode_generator::createNopInstruction(BaseAST *ast)
+{
+    BCI *bci = create_instruction(BC_NOP, -1, -1, 0);
+    copyLoc(bci, ast);
+    issue_instruction(bci);
+    return bci;
 }
 
 void bytecode_generator::createLoadInstruction(VariableDeclarationAST *decl, s16 reg)
@@ -911,71 +920,85 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
             generate_statement(decl);
         }
 
-        BCI *bci = create_instruction(BC_NOP, -1, -1, 0);
-        copyLoc(bci, forst);
-        issue_instruction(bci);
-        s32 loop_start = bci->inst_index;
-        // Next generate the loop itself
-        generate_statement(forst->loop_block);
+        s16 reg = reserveRegisters(current_function, 8);
+        s16 end_reg, it_val_reg, it_inc_val_reg, it_index_val_reg;
 
-        s16 reg = reserveRegisters(current_function, 7);
-        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, 1);
-        bci->dst_type = REGTYPE_UINT;
-        bci->dst_type_bytes = 8;
-        copyLoc(bci, forst);
-        issue_instruction(bci);
-        s16 it_val_reg = -1, it_index_val_reg = -1;
-        // Now we need to increment the loop variables
-        if (forst->is_array) {
-            assert(!"not implemented yet");
-        } else {
-            // we have to increment it and it_index by one
-            computeExpressionIntoRegister(forst->it, reg + 1);
-            // increment it by one
-            bci = create_instruction(BC_BINARY_OPERATION, reg + 1, reg + 2, TK_PLUS);
-            bci->src2_reg = reg;
-            bci->dst_type = REGTYPE_SINT;
-            bci->dst_type_bytes = 8;
-            copyLoc(bci, forst);
-            issue_instruction(bci);
-            it_val_reg = reg + 2;
-            // save the value
-            createStoreInstruction(forst->it->decl, it_val_reg);
-
-            computeExpressionIntoRegister(forst->it_index, reg + 3);
-            // increment it by one
-            bci = create_instruction(BC_BINARY_OPERATION, reg + 3, reg + 4, TK_PLUS);
-            bci->src2_reg = reg;
-            bci->dst_type = REGTYPE_UINT;
-            bci->dst_type_bytes = 8;
-            copyLoc(bci, forst);
-            issue_instruction(bci);
-            it_index_val_reg = reg + 4;
-            // save the value
-            createStoreInstruction(forst->it_index->decl, it_index_val_reg);
-        }
-        // And then do the iteration check
-        // Assume we have it_val_reg setup
+        BCI *bci = nullptr, *bci_loop_cond = nullptr;
+        s32 loop_start = -1, loop_end = -1;
+        // Work before the loop block
         if (forst->is_array) {
 
         } else {
-            computeExpressionIntoRegister(forst->end, reg + 5);
+            // Keep the end expression (should not change) loaded
+            end_reg = computeExpressionIntoRegister(forst->end);
+
+            bci = createNopInstruction(forst);
+            // the loop starts at this instruction
+            loop_start = bci->inst_index ;
+
+            // Now do the check if continue or not
+            // load it value
+            it_val_reg = computeExpressionIntoRegister(forst->it);
 
             // The expression TK_GT here is so the start, end are inclusive
             // There is a possible, remote problem: if the end is also the last
             // representable number, we would never complete the loop. Given we use 64 bit
             // integers, this is unlikely here
             bci = create_instruction(BC_BINARY_OPERATION, it_val_reg, reg + 6, TK_GT);
-            bci->src2_reg = reg + 5;
+            bci->src2_reg = end_reg;
             bci->dst_type = REGTYPE_UINT;
             bci->dst_type_bytes = 1;
             copyLoc(bci, forst);
             issue_instruction(bci);
 
-            bci = create_instruction(BC_GOTO_CONSTANT_IF_FALSE, reg + 6, -1, loop_start);
+            bci = create_instruction(BC_GOTO_CONSTANT_IF_TRUE, reg + 6, -1, loop_end);
             copyLoc(bci, forst);
             issue_instruction(bci);
+            // store this instruction, as we do not know the end yet
+            bci_loop_cond = bci;                 
         }
+
+        // Next generate the loop itself
+        generate_statement(forst->loop_block);
+
+        // Now we need to increment the loop variables
+        if (forst->is_array) {
+            assert(!"not implemented yet");
+        } else {
+
+            // load it again, in case the loop modified it (weird, but possible
+            it_val_reg = computeExpressionIntoRegister(forst->it);
+
+            // increment it by one
+            bci = create_instruction(BC_INC_REG_CONST, it_val_reg, reg + 2, 1);
+            copyLoc(bci, forst);
+            issue_instruction(bci);
+            it_inc_val_reg = reg + 2;
+            // save the value
+            createStoreInstruction(forst->it->decl, it_inc_val_reg);
+
+            it_index_val_reg = computeExpressionIntoRegister(forst->it_index);
+            // increment it by one
+            bci = create_instruction(BC_INC_REG_CONST, it_index_val_reg, reg + 4, 1);
+            copyLoc(bci, forst);
+            issue_instruction(bci);
+            it_index_val_reg = reg + 4;
+            // save the value
+            createStoreInstruction(forst->it_index->decl, it_index_val_reg);
+
+            // go back to the start of the loop, there we check the condition
+            bci = create_instruction(BC_GOTO_CONSTANT, -1, -1, loop_start);
+            copyLoc(bci, forst);
+            issue_instruction(bci);
+
+            // Add a nop sow e have a place to jump to, in case the loop is at the end of a function
+            bci = createNopInstruction(forst);
+
+            // now that we know where the loop ends, store the value in the jump instruction
+            loop_end = bci->inst_index;
+            bci_loop_cond->big_const = loop_end;
+        }
+
         break;
     }
     case AST_RUN_DIRECTIVE: {
@@ -1456,6 +1479,13 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     }
 }
 
+s16 bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr)
+{
+    s16 reg = reserveRegistersForSize(current_function, expr->expr_type->size_in_bytes);
+    computeExpressionIntoRegister(expr, reg);
+    return reg;
+}
+
 void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 reg)
 {
     switch (expr->ast_type) {
@@ -1754,6 +1784,37 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         case BC_RESERVE_STACK_SIZE: {
             program->bss.stack_pointer += bci->big_const;
             assert(program->bss.stack_pointer < program->bss.stack_start + program->bss.stack_size);
+            break;
+        }
+        case BC_INC_REG_CONST: {
+            assert(srcreg.type != REGTYPE_UNKNOWN);
+            if (srcreg.type == REGTYPE_UINT) {                          
+                if (srcreg.bytes == 1) {                               
+                    dstreg.data._u8 = srcreg.data._u8 +  (u8)bci->big_const;   
+                } else if (srcreg.bytes == 2) {                        
+                    dstreg.data._u16 = srcreg.data._u16 + (u16)bci->big_const;
+                } else if (srcreg.bytes == 4) {                        
+                    dstreg.data._u32 = srcreg.data._u32 + (u32)bci->big_const;
+                } else {                                            
+                    assert(srcreg.bytes == 8);                         
+                    dstreg.data._u64 = srcreg.data._u64 + (u64)bci->big_const;
+                }                                                   
+            } else if (srcreg.type == REGTYPE_SINT) {
+                if (srcreg.bytes == 1) {
+                    dstreg.data._s8 = srcreg.data._s8 + (s8)bci->big_const;
+                } else if (srcreg.bytes == 2) {
+                    dstreg.data._s16 = srcreg.data._s16 + (s16)bci->big_const;
+                } else if (srcreg.bytes == 4) {
+                    dstreg.data._s32 = srcreg.data._s32 + (s32)bci->big_const;
+                } else {
+                    assert(srcreg.bytes == 8);
+                    dstreg.data._s64 = srcreg.data._s64 + (s64)bci->big_const;
+                }
+            } else {
+                assert(!"Inrement not supported for pointers or floating point yet");
+            }
+            dstreg.type = srcreg.type;
+            dstreg.bytes = srcreg.bytes;
             break;
         }
         case BC_BINARY_OPERATION: {
