@@ -100,6 +100,9 @@ struct bytecode_generator
 
     external_library *findOrLoadLibrary(TextType filename);
 
+    inline s16 reserveRegister() { return reserveRegisters(1); }
+    s16 reserveRegisters(s16 num);
+
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 dst_reg, u64 big_const);
     BCI *create_load_literal_instruction(LiteralAST *lit, s16 reg, BCI **extra);
     void createStoreInstruction(VariableDeclarationAST *decl, s16 reg);
@@ -129,8 +132,11 @@ struct bytecode_generator
     void generate_statement_block(StatementBlockAST *block);
 
     void computeAddressIntoRegister(ExpressionAST *expr, s16 reg);
+    s16  computeAddressIntoRegister(ExpressionAST *expr);
     void computeExpressionIntoRegister(ExpressionAST *expr, s16 reg);
     s16  computeExpressionIntoRegister(ExpressionAST *expr);
+    s16  computeArrayDataPtrIntoRegister(IdentifierAST *array);
+    s16  computeArrayCountIntoRegister(IdentifierAST *array);
     void compute_function_call_into_register(FunctionCallAST *funcall, s16 reg);
 };
 

@@ -335,6 +335,7 @@ bool isTypeStructOrPtr(TypeAST *type)
         // This allows for more than 1 level of indirection
         return isTypeStructOrPtr(dt->custom_type);
     }
+    return false;
 }
 
 static void addTypeWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
@@ -815,7 +816,7 @@ IdentifierAST * Interpreter::createIdentifier(const char * name, VariableDeclara
 VariableDeclarationAST * Interpreter::createDeclaration(const char * name, TypeAST * type, ExpressionAST * definition)
 {
     VariableDeclarationAST *decl = new (&pool) VariableDeclarationAST();
-    copyASTloc(definition, decl);
+    if (definition != nullptr) copyASTloc(definition, decl);
     decl->s = sequence_id++;
     decl->varname = CreateTextType(&pool, name);
     decl->definition = definition;
@@ -2599,7 +2600,6 @@ bool Interpreter::doWorkAST(interp_work * work)
     case AST_FOR_STATEMENT: {
         auto forst = (ForStatementAST *)ast;
         if (forst->is_array) {
-            assert(!"Not implemented yet");
             //traversePostfixAST(PPC(forst->it), deps);
             //traversePostfixAST(PPC(forst->it_index), deps);
             //traversePostfixAST(PPC(forst->arr), deps);
@@ -2617,7 +2617,36 @@ bool Interpreter::doWorkAST(interp_work * work)
             if (forst->is_array) {
                 // Here we should also create the two iterators, but being careful with type
                 // and maybe names (as they might come from the for)
+                const char *it_name;
+                if (forst->it != nullptr) {
+                    it_name = forst->it->name;
+                } else {
+                    it_name = "it";
+                }
+                assert(forst->arr->decl->specified_type->ast_type == AST_ARRAY_TYPE);
+                auto arr_type = (ArrayTypeAST *)forst->arr->decl->specified_type;
+                auto decl = createDeclaration(it_name, arr_type->array_of_type, nullptr);
+                copyASTloc(forst, decl);
+                decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
+                decl->scope = &forst->for_scope;
+                // There is no error check here in case the 'it' is overlapping some variable
+                // This is a minor improvement, likely a @TODO
+                forst->for_scope.decls.push_back(decl);
+                if (forst->it == nullptr) forst->it = createIdentifier(it_name, decl);
 
+                const char *it_index_name;
+                if (forst->it_index != nullptr) {
+                    it_index_name = forst->it_index->name;
+                } else {
+                    it_index_name = "it_index";
+                }
+                decl = createDeclarationUInt(it_index_name, 0, forst);
+                decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
+                decl->scope = &forst->for_scope;
+                // There is no error check here in case the 'it' is overlapping some variable
+                // This is a minor improvement, likely a @TODO
+                forst->for_scope.decls.push_back(decl);
+                if (forst->it_index == nullptr) forst->it_index = createIdentifier(it_index_name, decl);
             } else {
                 auto decl = createDeclaration("it", forst->start->expr_type, forst->start);
                 decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
@@ -2637,9 +2666,20 @@ bool Interpreter::doWorkAST(interp_work * work)
             }
         } else if (work->action == IA_OPERATION_CHECK) {
             bool needs_cast;
-            if (!compatibleTypes(forst->start->expr_type, forst->end->expr_type, needs_cast)) {
-                Error(forst, "Start and End expressions are not compatible");
-                return false;
+
+            if (forst->is_array) {
+                if (!isTypeArray(forst->arr->decl->specified_type)) {
+                    char atype[64] = {};
+                    printTypeToStr(atype, forst->arr->decl->specified_type);
+                    Error(forst, "The for loop needs a variable of type array, but found variable %s of type %s\n",
+                        forst->arr->name, atype);
+                    return false;
+                }
+            } else {
+                if (!compatibleTypes(forst->start->expr_type, forst->end->expr_type, needs_cast)) {
+                    Error(forst, "Start and End expressions are not compatible");
+                    return false;
+                }
             }
 
             // Possible improvement: if start and end are literals of known value, check that 

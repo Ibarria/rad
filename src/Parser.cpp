@@ -643,13 +643,21 @@ ForStatementAST * Parser::parseForStatement()
             return nullptr;
         }
         forst->it = (IdentifierAST *)expr;
+        if (forst->it->next) {
+            Error("Iterator on the for loop has to be a simple identifier");
+            return nullptr;
+        }
         expr = parseExpression();
+        if (!success) {
+            return nullptr;
+        }
         if (expr->ast_type != AST_IDENTIFIER) {
             Error("Iterator index on the for loop has to be an identifier");
             return nullptr;
         }
         forst->it_index = (IdentifierAST *)expr;
-        if (!success) {
+        if (forst->it_index->next) {
+            Error("Iterator index on the for loop has to be a simple identifier");
             return nullptr;
         }
         if (!lex->checkToken(TK_COLON)) {
@@ -658,14 +666,14 @@ ForStatementAST * Parser::parseForStatement()
         }
         lex->consumeToken();
         expr = parseExpression();
+        if (!success) {
+            return nullptr;
+        }
         if (expr->ast_type != AST_IDENTIFIER) {
             Error("For array variable has to be an identifier");
             return nullptr;
         }
         forst->arr = (IdentifierAST *)expr;
-        if (!success) {
-            return nullptr;
-        }
     } else if (cur_type == TK_COLON) {
         lex->consumeToken();
         if (expr->ast_type != AST_IDENTIFIER) {
@@ -673,15 +681,19 @@ ForStatementAST * Parser::parseForStatement()
             return nullptr;
         }
         forst->it = (IdentifierAST *)expr;
+        if (forst->it->next) {
+            Error("Iterator on the for loop has to be a simple identifier");
+            return nullptr;
+        }
         expr = parseExpression();
+        if (!success) {
+            return nullptr;
+        }
         if (expr->ast_type != AST_IDENTIFIER) {
             Error("For array variable has to be an identifier");
             return nullptr;
         }
         forst->arr = (IdentifierAST *)expr;
-        if (!success) {
-            return nullptr;
-        }
     } else {
         // We must have seen something that is the for block, so assume expr is the array
         if (expr->ast_type != AST_IDENTIFIER) {
