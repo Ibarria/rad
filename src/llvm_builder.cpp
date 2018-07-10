@@ -134,7 +134,10 @@ static void allocateVariable(VariableDeclarationAST *decl)
             }
             TmpB.CreateStore(decl->codegen, AllocA);
         }
-
+        if ((decl->flags & DECL_FLAG_IS_LOCAL_VARIABLE) && (decl->definition)) {
+            generateCode(decl->definition);
+            TmpB.CreateStore(decl->definition->codegen, AllocA);
+        }
         decl->codegen = AllocA;
     }
 }
@@ -189,6 +192,51 @@ static Value *generateIdentifierCode(IdentifierAST *id)
     } else {
         return id->decl->codegen;
     }
+}
+
+static Value *computeArrayDataPtr(IdentifierAST * array)
+{
+    assert(array->expr_type->ast_type == AST_ARRAY_TYPE);
+    auto arType = (ArrayTypeAST *)array->expr_type;
+
+    Value *array_val = generateIdentifierCode(array);
+
+    if (isStaticArray(arType)) {
+        // The address of `id` is the first field, the .data pointer already
+        return array_val;
+    } else {
+        // For other array types, we need a dereference to get to .data
+        std::vector<Value *> idx;
+        Value *llvm_zero = ConstantInt::get(llvm_u32, 0);
+
+        // If array is a simple identifier, it is a pointer in llvm that needs an extra index for GEP
+        if (array->next == nullptr) idx.push_back(llvm_zero);
+        idx.push_back(llvm_zero);
+        Value *gep = Builder.CreateGEP(array_val, idx);
+        return gep;
+    }
+}
+
+static Value *computeArrayCount(IdentifierAST * array)
+{
+    assert(array->expr_type->ast_type == AST_ARRAY_TYPE);
+    auto arType = (ArrayTypeAST *)array->expr_type;
+
+    if (isStaticArray(arType)) {
+        return ConstantInt::get(llvm_u64, arType->num_elems);
+    }
+
+    Value *array_val = generateIdentifierCode(array);
+
+    std::vector<Value *> idx;
+    Value *llvm_zero = ConstantInt::get(llvm_u32, 0);
+
+    // If array is a simple identifier, it is a pointer in llvm that needs an extra index for GEP
+    if (array->next == nullptr) idx.push_back(llvm_zero);
+    Value *llvm_one = ConstantInt::get(llvm_u32, 1);
+    idx.push_back(llvm_one);
+    Value *gep = Builder.CreateGEP(array_val, idx);
+    return gep;
 }
 
 static void generateCode(BaseAST *ast)
@@ -281,7 +329,40 @@ static void generateCode(BaseAST *ast)
         BasicBlock *for_after = BasicBlock::Create(TheContext, "for_after", lfunc);
 
         if (forst->is_array) {
-            assert(false);
+            Builder.CreateBr(for_entry);
+            Builder.SetInsertPoint(for_entry);
+
+            Value *array_count = computeArrayCount(forst->arr);
+            Value *it_index = Builder.CreateLoad(forst->it_index->decl->codegen, forst->it_index->name);
+            Value *for_check = Builder.CreateICmpUGT(it_index, array_count);
+
+            Builder.CreateCondBr(for_check, for_after, for_block);
+            Builder.SetInsertPoint(for_block);
+
+            // load it with the correct value
+            Value *array_ptr = computeArrayDataPtr(forst->arr);
+            printf("DEBUG - Array ptr (llvm): "); array_ptr->print(outs(), true); printf("\n");
+            std::vector<Value *> idx;
+            Value *llvm_zero = ConstantInt::get(llvm_u64, 0);
+            idx.push_back(llvm_zero);
+            idx.push_back(it_index);
+            Value *it_ptr = Builder.CreateGEP(array_ptr, idx, forst->it->name);
+            printf("DEBUG - it ptr (llvm): "); it_ptr->print(outs(), true); printf("\n");
+            Value *it_val = Builder.CreateLoad(it_ptr);
+            printf("DEBUG - it_val (llvm): "); it_val->print(outs(), true); printf("\n");
+            Builder.CreateStore(it_val, forst->it->decl->codegen);
+
+            // Do the actual loop code
+            generateCode(forst->loop_block);
+
+            // Do the loop increment, and then inconditional jump
+            Value *llvm_one = ConstantInt::get(llvm_u64, 1);
+            Value *it_index_val = Builder.CreateLoad(generateIdentifierCode(forst->it_index), forst->it_index->name);
+            Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one);
+            Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
+
+            Builder.CreateBr(for_entry);
+            Builder.SetInsertPoint(for_after);
         } else {
             generateCode(forst->end);
             Value *end_val = forst->end->codegen;
