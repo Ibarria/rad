@@ -736,12 +736,18 @@ StatementAST *Parser::parseStatement()
         } else if (lex->checkAheadToken(TK_OPEN_PAREN, 1)) {
             // this is a function call, parse it as such
             statement = parseFunctionCall();
+            if (!success) {
+                return nullptr;
+            }
             MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");
             if (!success) {
                 return nullptr;
             }
         } else {
             statement = parseAssignmentOrExpression();
+            if (!success) {
+                return nullptr;
+            }
             MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");
             if (!success) {
                 return nullptr;
@@ -897,9 +903,14 @@ FunctionCallAST * Parser::parseFunctionCall()
             return nullptr;
         }
         funcall->args.push_back(expr);
-        if (lex->checkToken(TK_COMMA)) {
-            lex->consumeToken();
-        } 
+        if (!lex->checkToken(TK_CLOSE_PAREN)) {
+            if (lex->checkToken(TK_COMMA)) {
+                lex->consumeToken();
+            } else {
+                Error("Comma must be used to separate function arguments\n");
+                return nullptr;
+            }
+        }
     }
 
     MustMatchToken(TK_CLOSE_PAREN);
