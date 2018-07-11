@@ -341,15 +341,12 @@ static void generateCode(BaseAST *ast)
 
             // load it with the correct value
             Value *array_ptr = computeArrayDataPtr(forst->arr);
-            printf("DEBUG - Array ptr (llvm): "); array_ptr->print(outs(), true); printf("\n");
             std::vector<Value *> idx;
             Value *llvm_zero = ConstantInt::get(llvm_u64, 0);
             idx.push_back(llvm_zero);
             idx.push_back(it_index);
             Value *it_ptr = Builder.CreateGEP(array_ptr, idx, forst->it->name);
-            printf("DEBUG - it ptr (llvm): "); it_ptr->print(outs(), true); printf("\n");
             Value *it_val = Builder.CreateLoad(it_ptr);
-            printf("DEBUG - it_val (llvm): "); it_val->print(outs(), true); printf("\n");
             Builder.CreateStore(it_val, forst->it->decl->codegen);
 
             // Do the actual loop code

@@ -36,14 +36,35 @@ SIZE :: 10;
 
 main :: ()
 {
-	sa : [SIZE] u64;
 	print("For range iteration:\n");
 	for 1 .. 5 print("Iterating Range %d\n", it);
 
-	print("For basic array iteration:\n");
-	for sa sa[it_index] = it_index;
+	{
+		sa : [SIZE] u64;
 
-	for sa print("Iterating Basic Array %d\n" it);
+		print("For basic array iteration:\n");
+		for sa sa[it_index] = it_index;
+
+		for sa print("Iterating Basic Array %d\n", it);		
+	}
+
+	{
+		sa : [SIZE] u64;
+
+		print("For value array iteration:\n");
+		for myval : sa sa[it_index] = it_index;
+
+		for myval : sa print("Iterating Value Array %d\n", myval);		
+	}
+
+	{
+		sa : [SIZE] u64;
+
+		print("For value, index array iteration:\n");
+		for myval, myindex: sa sa[myindex] = myindex;
+
+		for myval, myindex: sa print("Iterating Value, Index Array %d\n", myval);		
+	}
 
 	// TODO: use/allow pointer syntax on the iterator
 }

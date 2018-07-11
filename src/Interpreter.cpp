@@ -810,6 +810,7 @@ IdentifierAST * Interpreter::createIdentifier(const char * name, VariableDeclara
     id->decl = decl;
     id->size_in_bytes = decl->specified_type->size_in_bytes;
     id->expr_type = decl->specified_type;
+    id->scope = decl->scope;
     return id;
 }
 
@@ -1282,8 +1283,6 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
     case AST_FOR_STATEMENT: {
         auto forst = (ForStatementAST *)ast;
         if (forst->is_array) {
-            traversePostfixAST(PPC(forst->it), deps);
-            traversePostfixAST(PPC(forst->it_index), deps);
             traversePostfixAST(PPC(forst->arr), deps);
         } else {
             traversePostfixAST(PPC(forst->start), deps);
@@ -1293,6 +1292,13 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         addTypeWork(&pool, astp, deps);
         //        addSizeWork(&pool, astp, deps);
         addCheckWork(&pool, astp, deps);
+
+        // We do this here so the iterators can find the declaration
+        // and get all the work setup
+        if (forst->is_array) {
+            traversePostfixAST(PPC(forst->it), deps);
+            traversePostfixAST(PPC(forst->it_index), deps);
+        }
 
         // traverse the block latest as we should know all on the loop
         traversePostfixAST(PPC(forst->loop_block), deps);
@@ -1687,6 +1693,7 @@ bool Interpreter::doWorkAST(interp_work * work)
 
                 assert(acc->array_exp);
                 TypeAST *atype = acc->array_exp->expr_type;
+                if (!atype) return false;
                 if (atype->ast_type != AST_DIRECT_TYPE) {
                     char ltype[64] = {};
                     printTypeToStr(ltype, atype);
@@ -2632,7 +2639,11 @@ bool Interpreter::doWorkAST(interp_work * work)
                 // There is no error check here in case the 'it' is overlapping some variable
                 // This is a minor improvement, likely a @TODO
                 forst->for_scope.decls.push_back(decl);
-                if (forst->it == nullptr) forst->it = createIdentifier(it_name, decl);
+                if (forst->it == nullptr) {
+                    forst->it = createIdentifier(it_name, decl);
+                } else {
+                    forst->it->scope = decl->scope;
+                }
 
                 const char *it_index_name;
                 if (forst->it_index != nullptr) {
@@ -2646,7 +2657,11 @@ bool Interpreter::doWorkAST(interp_work * work)
                 // There is no error check here in case the 'it' is overlapping some variable
                 // This is a minor improvement, likely a @TODO
                 forst->for_scope.decls.push_back(decl);
-                if (forst->it_index == nullptr) forst->it_index = createIdentifier(it_index_name, decl);
+                if (forst->it_index == nullptr) {
+                    forst->it_index = createIdentifier(it_index_name, decl);
+                } else {
+                    forst->it_index->scope = decl->scope;
+                }
             } else {
                 auto decl = createDeclaration("it", forst->start->expr_type, forst->start);
                 decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
