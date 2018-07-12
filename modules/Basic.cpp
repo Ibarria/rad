@@ -26,7 +26,7 @@ extern "C" DLLEXPORT void func()
 
 extern "C" DLLEXPORT void * _malloc(unsigned long size)
 {
-    return nullptr;
+    return 0;
 }
 
 extern "C" DLLEXPORT void _free(void *ptr)

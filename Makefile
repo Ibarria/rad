@@ -2,6 +2,8 @@
 OS = $(shell uname -s)
 
 target = bin/c2
+root_dir := ../
+root_dir := $(abspath $(root_dir))
 
 .PHONY: dlls
 
@@ -10,7 +12,7 @@ all: $(target)
 
 SOURCES += $(filter-out $(wildcard src/llvm*), $(wildcard src/*.cpp))
 LLVM_SOURCES += src/llvm_builder.cpp llvm_backend/llvm_backend.cpp src/Timer.cpp
-LLVM_INCLUDES += -I../llvm-build/include -I../llvm/include -Isrc
+LLVM_INCLUDES += -I$(root_dir)/llvm-build/include -I$(root_dir)/llvm/include -Isrc
 DYNCALL_INCLUDES += -Idyncall/include
 
 CFLAGS += -g -std=c++14 -arch x86_64 -Wno-switch -Wno-format-security
@@ -25,7 +27,7 @@ LLVM_LFLAGS += $(LIBS) $(LLVM_LIBS) $(LLVM_SYSTEM_LIBS)
 
 ifeq ($(OS), Darwin)
   LFLAGS += -Lbin -Ldyncall/lib/osx bin/$(LLVM_LIB)
-  LLVM_LFLAGS += -L/Users/libarria/code/llvm-build/lib -Wl,-search_paths_first -Wl,-headerpad_max_install_names
+  LLVM_LFLAGS += -L$(root_dir)/llvm-build/lib -Wl,-search_paths_first -Wl,-headerpad_max_install_names
   SOFLAGS += -dynamiclib
   SOEXT += dylib
 endif
