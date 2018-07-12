@@ -67,6 +67,16 @@ main :: ()
 	}
 
 	// TODO: use/allow pointer syntax on the iterator
+	{
+		sa : [SIZE] u64;
+
+		print("For value pointer array iteration:\n");
+		for *myval: sa <<myval = 523;
+
+		for *myval: sa print("Iterating Value pointer Array %d\n", <<myval);		
+	}
+
+
 }
 
 #run main();

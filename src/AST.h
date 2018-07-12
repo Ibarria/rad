@@ -149,6 +149,7 @@ struct ForStatementAST : StatementAST
     StatementAST *loop_block = nullptr;
     Scope for_scope;
     bool is_array = false;
+    bool is_it_ptr = false;
 };
 
 struct FunctionDefinitionAST : DefinitionAST

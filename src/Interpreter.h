@@ -71,6 +71,7 @@ struct Interpreter
     void addCast(ExpressionAST **expr, TypeAST *srcType, TypeAST *dstType);
     IdentifierAST *createIdentifier(const char *name, VariableDeclarationAST *decl);
     VariableDeclarationAST *createDeclaration(const char *name, TypeAST *type, ExpressionAST *definition);
+    VariableDeclarationAST *createDeclarationPtr(const char *name, TypeAST *type, ExpressionAST *definition);
     VariableDeclarationAST *createDeclarationSInt(const char *name, s64 start_value, BaseAST *ast);
     VariableDeclarationAST *createDeclarationUInt(const char *name, u64 start_value, BaseAST *ast);
 

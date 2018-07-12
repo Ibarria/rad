@@ -986,11 +986,15 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
                 copyLoc(bci, forst);
                 issue_instruction(bci);
 
-                bci = create_instruction(BC_UNARY_OPERATION, it_ptr, it_new_val, TK_LSHIFT);
-                bci->dst_type = get_regtype_from_type(forst->it->decl->specified_type);
-                bci->dst_type_bytes = forst->it->decl->specified_type->size_in_bytes;
-                copyLoc(bci, forst);
-                issue_instruction(bci);
+                if (forst->is_it_ptr) {
+                    it_new_val = it_ptr;
+                } else {
+                    bci = create_instruction(BC_UNARY_OPERATION, it_ptr, it_new_val, TK_LSHIFT);
+                    bci->dst_type = get_regtype_from_type(forst->it->decl->specified_type);
+                    bci->dst_type_bytes = forst->it->decl->specified_type->size_in_bytes;
+                    copyLoc(bci, forst);
+                    issue_instruction(bci);
+                }
 
                 createStoreInstruction(forst->it->decl, it_new_val);
             }

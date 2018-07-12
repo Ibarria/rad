@@ -612,6 +612,21 @@ IfStatementAST * Parser::parseIfStatement()
     return ifst;
 }
 
+static IdentifierAST *checkArrayIterator(ExpressionAST *expr, bool &isPtr)
+{
+    isPtr = false;
+    if (expr->ast_type == AST_IDENTIFIER) return (IdentifierAST *)expr;
+    if (expr->ast_type == AST_UNARY_OPERATION) {
+        auto unop = (UnaryOperationAST *)expr;
+        if (unop->op != TK_STAR) return nullptr;
+        if (unop->expr->ast_type == AST_IDENTIFIER) {
+            isPtr = true;
+            return (IdentifierAST *)unop->expr;
+        }
+    }
+    return nullptr;
+}
+
 ForStatementAST * Parser::parseForStatement()
 {
     ForStatementAST *forst = NEW_AST(ForStatementAST);
@@ -638,11 +653,11 @@ ForStatementAST * Parser::parseForStatement()
         }
     } else if (cur_type == TK_COMMA) {
         lex->consumeToken();
-        if (expr->ast_type != AST_IDENTIFIER) {
+        forst->it = checkArrayIterator(expr, forst->is_it_ptr);
+        if (forst->it == nullptr) {
             Error("Iterator on the for loop has to be an identifier");
             return nullptr;
         }
-        forst->it = (IdentifierAST *)expr;
         if (forst->it->next) {
             Error("Iterator on the for loop has to be a simple identifier");
             return nullptr;
@@ -676,11 +691,11 @@ ForStatementAST * Parser::parseForStatement()
         forst->arr = (IdentifierAST *)expr;
     } else if (cur_type == TK_COLON) {
         lex->consumeToken();
-        if (expr->ast_type != AST_IDENTIFIER) {
+        forst->it = checkArrayIterator(expr, forst->is_it_ptr);
+        if (forst->it == nullptr) {
             Error("Iterator on the for loop has to be an identifier");
             return nullptr;
         }
-        forst->it = (IdentifierAST *)expr;
         if (forst->it->next) {
             Error("Iterator on the for loop has to be a simple identifier");
             return nullptr;

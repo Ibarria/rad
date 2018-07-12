@@ -194,6 +194,19 @@ static Value *generateIdentifierCode(IdentifierAST *id)
     }
 }
 
+static Value *generateAssignLHSCode(ExpressionAST *expr)
+{
+    // Only unary operations can yield the correct type (and being a pointer)
+    assert(expr->ast_type = AST_UNARY_OPERATION);
+    auto unop = (UnaryOperationAST *)expr;
+    assert(unop->op == TK_LSHIFT);
+    // This should work, unop->expr has to be of pointer type 
+    // (otherwise this operator would have failed), so we can just generate code
+    // and return that. 
+    generateCode(unop->expr);
+    return unop->expr->codegen;
+}
+
 static Value *computeArrayDataPtr(IdentifierAST * array)
 {
     assert(array->expr_type->ast_type == AST_ARRAY_TYPE);
@@ -346,8 +359,12 @@ static void generateCode(BaseAST *ast)
             idx.push_back(llvm_zero);
             idx.push_back(it_index);
             Value *it_ptr = Builder.CreateGEP(array_ptr, idx, forst->it->name);
-            Value *it_val = Builder.CreateLoad(it_ptr);
-            Builder.CreateStore(it_val, forst->it->decl->codegen);
+            if (forst->is_it_ptr) {
+                Builder.CreateStore(it_ptr, forst->it->decl->codegen);
+            } else {
+                Value *it_val = Builder.CreateLoad(it_ptr);
+                Builder.CreateStore(it_val, forst->it->decl->codegen);
+            }
 
             // Do the actual loop code
             generateCode(forst->loop_block);
@@ -605,7 +622,19 @@ static void generateCode(BaseAST *ast)
     case AST_UNARY_OPERATION: {
         auto unop = (UnaryOperationAST *)ast;
         generateCode(unop->expr);
-        unop->codegen = Builder.CreateNot(unop->expr->codegen);
+        switch (unop->op) {
+        case TK_LSHIFT: {
+            unop->codegen = Builder.CreateLoad(unop->expr->codegen);
+            break;
+        }
+        case TK_BANG: {
+            unop->codegen = Builder.CreateNot(unop->expr->codegen);
+            break;
+        }
+        default:
+            assert(!"Unary operator not implemented in llvm");
+            exit(1);
+        }
         break;
     }
     case AST_ASSIGNMENT: {
@@ -616,7 +645,7 @@ static void generateCode(BaseAST *ast)
             auto id = (IdentifierAST *)assign->lhs;
             Builder.CreateStore(assign->rhs->codegen, generateIdentifierCode(id));
         } else {
-            assert(!"Not implemented complex assignment");
+            Builder.CreateStore(assign->rhs->codegen, generateAssignLHSCode(assign->lhs));
         }
         break;
     }

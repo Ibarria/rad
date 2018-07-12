@@ -825,6 +825,17 @@ VariableDeclarationAST * Interpreter::createDeclaration(const char * name, TypeA
     return decl;
 }
 
+VariableDeclarationAST * Interpreter::createDeclarationPtr(const char * name, TypeAST * type, ExpressionAST * definition)
+{
+    PointerTypeAST *ptype = new (&pool) PointerTypeAST();
+    copyASTloc(type, ptype);
+    ptype->s = sequence_id++;
+    ptype->points_to_type = type;
+    ptype->size_in_bytes = 8;
+    return createDeclaration(name, ptype, definition);
+}
+
+
 VariableDeclarationAST * Interpreter::createDeclarationSInt(const char * name, s64 start_value, BaseAST * ast)
 {
     DirectTypeAST *type = getBuiltInType(TK_S64);
@@ -2273,8 +2284,8 @@ bool Interpreter::doWorkAST(interp_work * work)
 
         if (work->action == IA_RESOLVE_TYPE) {
             TypeAST *type = unop->expr->expr_type;
-
-            assert(type);
+            // This could happen because there is a lingering error, stop here. 
+            if (type == nullptr) return false;
 
             if ((unop->op == TK_PLUS) || (unop->op == TK_MINUS)) {
                 // We only support number types
@@ -2632,7 +2643,14 @@ bool Interpreter::doWorkAST(interp_work * work)
                 }
                 assert(forst->arr->decl->specified_type->ast_type == AST_ARRAY_TYPE);
                 auto arr_type = (ArrayTypeAST *)forst->arr->decl->specified_type;
-                auto decl = createDeclaration(it_name, arr_type->array_of_type, nullptr);
+                TypeAST *decl_type = arr_type->array_of_type;
+                VariableDeclarationAST *decl = nullptr;
+                if (forst->is_it_ptr) {
+                    assert(forst->it != nullptr);
+                    decl = createDeclarationPtr(it_name, decl_type, nullptr);
+                } else {
+                    decl = createDeclaration(it_name, decl_type, nullptr);
+                }
                 copyASTloc(forst, decl);
                 decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
                 decl->scope = &forst->for_scope;
