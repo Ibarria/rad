@@ -18,3 +18,10 @@ free :: (ptr: * void)
 {
 	_free(ptr);
 }
+
+_abort :: () #foreign ;
+
+assert :: (var: bool)
+{
+	if (!var) _abort();
+}

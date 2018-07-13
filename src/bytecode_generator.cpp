@@ -2330,7 +2330,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
                     mask = (1ULL << (srcreg.bytes * 8)) - 1;
                 }
                 masked_bytes = srcreg.data._u64 & mask;
-                dstreg.data._u8 = (masked_bytes != 0) ? 1 : 0;
+                dstreg.data._u8 = (masked_bytes != 0) ? 0 : 1;
                 dstreg.bytes = 1;
                 dstreg.type = REGTYPE_UINT;
                 break;

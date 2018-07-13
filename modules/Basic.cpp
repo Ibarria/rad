@@ -118,3 +118,13 @@ extern "C" DLLEXPORT void end()
 	_exit(0);
 #endif	
 }
+
+extern "C" DLLEXPORT void _abort()
+{
+#if defined(_WIN32)
+    __debugbreak();
+    end();
+#else
+    abort(0);
+#endif  
+}

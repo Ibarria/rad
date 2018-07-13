@@ -76,7 +76,7 @@ main :: ()
 		for *myval: sa print("Iterating Value pointer Array %d\n", <<myval);		
 	}
 
-
+    assert(true);
 }
 
 #run main();
