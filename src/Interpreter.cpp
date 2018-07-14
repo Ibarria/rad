@@ -1306,10 +1306,8 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
 
         // We do this here so the iterators can find the declaration
         // and get all the work setup
-        if (forst->is_array) {
-            traversePostfixAST(PPC(forst->it), deps);
-            traversePostfixAST(PPC(forst->it_index), deps);
-        }
+        traversePostfixAST(PPC(forst->it), deps);
+        traversePostfixAST(PPC(forst->it_index), deps);
 
         // traverse the block latest as we should know all on the loop
         traversePostfixAST(PPC(forst->loop_block), deps);
@@ -2618,8 +2616,6 @@ bool Interpreter::doWorkAST(interp_work * work)
     case AST_FOR_STATEMENT: {
         auto forst = (ForStatementAST *)ast;
         if (forst->is_array) {
-            //traversePostfixAST(PPC(forst->it), deps);
-            //traversePostfixAST(PPC(forst->it_index), deps);
             //traversePostfixAST(PPC(forst->arr), deps);
         } else {
             //traversePostfixAST(PPC(forst->start), deps);
@@ -2629,91 +2625,95 @@ bool Interpreter::doWorkAST(interp_work * work)
         //addTypeWork(&pool, astp, deps);
         //addCheckWork(&pool, astp, deps);
 
+        //traversePostfixAST(PPC(forst->it), deps);
+        //traversePostfixAST(PPC(forst->it_index), deps);
+
+
         if (work->action == IA_RESOLVE_TYPE) {
-            // Maybe here add the extra it, it_index variables to the scope
-            // with the right typing, which we cannot know until later)
+            // Add the extra it, it_index variables to the scope
+            // with the right typing
+
+            bool needs_cast;
+
             if (forst->is_array) {
-                // Here we should also create the two iterators, but being careful with type
-                // and maybe names (as they might come from the for)
-                const char *it_name;
-                if (forst->it != nullptr) {
-                    it_name = forst->it->name;
-                } else {
-                    it_name = "it";
+                if (!isTypeArray(forst->arr->expr_type)) {
+                    char atype[64] = {};
+                    printTypeToStr(atype, forst->arr->expr_type);
+                    Error(forst, "The for loop needs a variable of type array, but found variable %s of type %s\n",
+                        forst->arr->name, atype);
+                    return false;
                 }
-                assert(forst->arr->decl->specified_type->ast_type == AST_ARRAY_TYPE);
-                auto arr_type = (ArrayTypeAST *)forst->arr->decl->specified_type;
-                TypeAST *decl_type = arr_type->array_of_type;
-                VariableDeclarationAST *decl = nullptr;
+            } else {
+                if (forst->is_it_ptr) {
+                    Error(forst, "Pointer iterator declaration (%s) is not allowed on range iterations\n", forst->it->name);
+                    return false;
+                }
+
+                if (!compatibleTypes(forst->start->expr_type, forst->end->expr_type, needs_cast)) {
+                    Error(forst, "Start and End expressions are not compatible");
+                    return false;
+                }
+            }
+
+
+            // Here we should also create the two iterators, but being careful with type
+            // and maybe names (as they might come from the for)
+            const char *it_name;
+            if (forst->it != nullptr) {
+                it_name = forst->it->name;
+            } else {
+                it_name = "it";
+            }
+
+            TypeAST *decl_type = nullptr;
+            VariableDeclarationAST *decl = nullptr;
+
+            if (forst->is_array) {
+                assert(isTypeArray(forst->arr->expr_type));
+                auto arr_type = (ArrayTypeAST *)forst->arr->expr_type;
+                decl_type = arr_type->array_of_type;
+
                 if (forst->is_it_ptr) {
                     assert(forst->it != nullptr);
                     decl = createDeclarationPtr(it_name, decl_type, nullptr);
                 } else {
                     decl = createDeclaration(it_name, decl_type, nullptr);
                 }
-                copyASTloc(forst, decl);
-                decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
-                decl->scope = &forst->for_scope;
-                // There is no error check here in case the 'it' is overlapping some variable
-                // This is a minor improvement, likely a @TODO
-                forst->for_scope.decls.push_back(decl);
-                if (forst->it == nullptr) {
-                    forst->it = createIdentifier(it_name, decl);
-                } else {
-                    forst->it->scope = decl->scope;
-                }
-
-                const char *it_index_name;
-                if (forst->it_index != nullptr) {
-                    it_index_name = forst->it_index->name;
-                } else {
-                    it_index_name = "it_index";
-                }
-                decl = createDeclarationUInt(it_index_name, 0, forst);
-                decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
-                decl->scope = &forst->for_scope;
-                // There is no error check here in case the 'it' is overlapping some variable
-                // This is a minor improvement, likely a @TODO
-                forst->for_scope.decls.push_back(decl);
-                if (forst->it_index == nullptr) {
-                    forst->it_index = createIdentifier(it_index_name, decl);
-                } else {
-                    forst->it_index->scope = decl->scope;
-                }
             } else {
-                auto decl = createDeclaration("it", forst->start->expr_type, forst->start);
-                decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
-                decl->scope = &forst->for_scope;
-                // There is no error check here in case the 'it' is overlapping some variable
-                // This is a minor improvement, likely a @TODO
-                forst->for_scope.decls.push_back(decl);
-                forst->it = createIdentifier("it", decl);
+                decl_type = forst->start->expr_type;
+                decl = createDeclaration(it_name, decl_type, forst->start);
+            }
 
-                decl = createDeclarationUInt("it_index", 0, forst);
-                decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
-                decl->scope = &forst->for_scope;
-                // There is no error check here in case the 'it' is overlapping some variable
-                // This is a minor improvement, likely a @TODO
-                forst->for_scope.decls.push_back(decl);
-                forst->it_index = createIdentifier("it_index", decl);
+            copyASTloc(forst, decl);
+            decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
+            decl->scope = &forst->for_scope;
+            // There is no error check here in case the 'it' is overlapping some variable
+            // This is a minor improvement, likely a @TODO
+            forst->for_scope.decls.push_back(decl);
+            if (forst->it == nullptr) {
+                forst->it = createIdentifier(it_name, decl);
+            } else {
+                forst->it->scope = decl->scope;
+            }
+
+
+            const char *it_index_name;
+            if (forst->it_index == nullptr) {
+                it_index_name = "it_index";
+            } else {
+                it_index_name = forst->it_index->name;
+            }
+            decl = createDeclarationUInt(it_index_name, 0, forst);
+            decl->flags |= DECL_FLAG_IS_LOCAL_VARIABLE;
+            decl->scope = &forst->for_scope;
+            forst->for_scope.decls.push_back(decl);
+
+            if (forst->it_index == nullptr) {
+                forst->it_index = createIdentifier(it_index_name, decl);
+            } else {
+                forst->it_index->scope = decl->scope;
             }
         } else if (work->action == IA_OPERATION_CHECK) {
-            bool needs_cast;
-
-            if (forst->is_array) {
-                if (!isTypeArray(forst->arr->decl->specified_type)) {
-                    char atype[64] = {};
-                    printTypeToStr(atype, forst->arr->decl->specified_type);
-                    Error(forst, "The for loop needs a variable of type array, but found variable %s of type %s\n",
-                        forst->arr->name, atype);
-                    return false;
-                }
-            } else {
-                if (!compatibleTypes(forst->start->expr_type, forst->end->expr_type, needs_cast)) {
-                    Error(forst, "Start and End expressions are not compatible");
-                    return false;
-                }
-            }
 
             // Possible improvement: if start and end are literals of known value, check that 
             // their value is in increasing order

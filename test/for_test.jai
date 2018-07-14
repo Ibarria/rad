@@ -39,6 +39,8 @@ main :: ()
 	print("For range iteration:\n");
 	for 1 .. 5 print("Iterating Range %d\n", it);
 
+	for val : 1 .. 5 print("Iterating Range by name %d\n", val);
+
 	{
 		sa : [SIZE] u64;
 
@@ -76,7 +78,18 @@ main :: ()
 		for *myval: sa print("Iterating Value pointer Array %d\n", <<myval);		
 	}
 
-    assert(true);
+	// @TODO: verify for loop works on arrays embedded in a struct
+	/*
+	{
+		mystruct :: struct {
+			arr : [10] u64;
+			v : u32;
+		}
+
+		svar : mystruct;
+		for *valp, ind : svar.arr <<valp = ind;
+	}
+	*/
 }
 
 #run main();

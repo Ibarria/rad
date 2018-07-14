@@ -642,17 +642,22 @@ ForStatementAST * Parser::parseForStatement()
 
     TOKEN_TYPE cur_type;
     cur_type = lex->getTokenType();
-    if (cur_type == TK_DOUBLE_PERIOD) {
+    switch (cur_type) {
+    case TK_DOUBLE_PERIOD: {
         lex->consumeToken();
-        // this is the only case where we do not iterate on an array
+        // this is the case where we iterate in a range
         forst->is_array = false;
         forst->start = expr;
         forst->end = parseExpression();
         if (!success) {
             return nullptr;
         }
-    } else if (cur_type == TK_COMMA) {
+        break;
+    } 
+    case TK_COLON:
+    case TK_COMMA: {
         lex->consumeToken();
+        // When we see a comma, means we are going to have named iterator and index
         forst->it = checkArrayIterator(expr, forst->is_it_ptr);
         if (forst->it == nullptr) {
             Error("Iterator on the for loop has to be an identifier");
@@ -662,54 +667,55 @@ ForStatementAST * Parser::parseForStatement()
             Error("Iterator on the for loop has to be a simple identifier");
             return nullptr;
         }
+
+        if (cur_type == TK_COMMA) {
+            expr = parseExpression();
+            if (!success) {
+                return nullptr;
+            }
+            if (expr->ast_type != AST_IDENTIFIER) {
+                Error("Iterator index on the for loop has to be an identifier");
+                return nullptr;
+            }
+            forst->it_index = (IdentifierAST *)expr;
+            if (forst->it_index->next) {
+                Error("Iterator index on the for loop has to be a simple identifier");
+                return nullptr;
+            }
+            if (!lex->checkToken(TK_COLON)) {
+                Error("For loop with iterator and index needs to be followed by \": <array> ");
+                return nullptr;
+            }
+            lex->consumeToken();
+        }
+
+        // Here we parse the range, which can be an array or start .. end
         expr = parseExpression();
         if (!success) {
             return nullptr;
         }
-        if (expr->ast_type != AST_IDENTIFIER) {
-            Error("Iterator index on the for loop has to be an identifier");
-            return nullptr;
+
+        if (lex->checkToken(TK_DOUBLE_PERIOD)) {
+            // we are in a range case
+            forst->is_array = false;
+            // first, store the previous expression in start
+            forst->start = expr;
+            lex->consumeToken();
+            forst->end = parseExpression();
+            if (!success) {
+                return nullptr;
+            }
+        } else {
+            // the current expression has to refer to an array
+            if (expr->ast_type != AST_IDENTIFIER) {
+                Error("For array variable has to be an identifier");
+                return nullptr;
+            }
+            forst->arr = (IdentifierAST *)expr;
         }
-        forst->it_index = (IdentifierAST *)expr;
-        if (forst->it_index->next) {
-            Error("Iterator index on the for loop has to be a simple identifier");
-            return nullptr;
-        }
-        if (!lex->checkToken(TK_COLON)) {
-            Error("For loop with iterator and index needs to be followed by \": <array> ");
-            return nullptr;
-        }
-        lex->consumeToken();
-        expr = parseExpression();
-        if (!success) {
-            return nullptr;
-        }
-        if (expr->ast_type != AST_IDENTIFIER) {
-            Error("For array variable has to be an identifier");
-            return nullptr;
-        }
-        forst->arr = (IdentifierAST *)expr;
-    } else if (cur_type == TK_COLON) {
-        lex->consumeToken();
-        forst->it = checkArrayIterator(expr, forst->is_it_ptr);
-        if (forst->it == nullptr) {
-            Error("Iterator on the for loop has to be an identifier");
-            return nullptr;
-        }
-        if (forst->it->next) {
-            Error("Iterator on the for loop has to be a simple identifier");
-            return nullptr;
-        }
-        expr = parseExpression();
-        if (!success) {
-            return nullptr;
-        }
-        if (expr->ast_type != AST_IDENTIFIER) {
-            Error("For array variable has to be an identifier");
-            return nullptr;
-        }
-        forst->arr = (IdentifierAST *)expr;
-    } else {
+        break;
+    } 
+    default: {
         // We must have seen something that is the for block, so assume expr is the array
         if (expr->ast_type != AST_IDENTIFIER) {
             Error("For array variable has to be an identifier");
@@ -719,6 +725,7 @@ ForStatementAST * Parser::parseForStatement()
         if (!success) {
             return nullptr;
         }
+    }
     }
     
     forst->for_scope.parent = current_scope;

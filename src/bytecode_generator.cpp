@@ -932,7 +932,7 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         s32 loop_start = -1, loop_end = -1;
         // Work before the loop block
         if (forst->is_array) {
-            auto atype = (ArrayTypeAST *)forst->arr->decl->specified_type;
+            auto atype = (ArrayTypeAST *)forst->arr->expr_type;
             array_count = reg;
 
             bci = createNopInstruction(forst);
