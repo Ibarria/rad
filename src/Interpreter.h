@@ -85,6 +85,7 @@ struct Interpreter
     void processAllDependencies();
     void processDependencies(interp_deps *deps); 
     u64 overallDepsItems();
+    void printRemainingDependencies();
     bool doWorkAST(interp_work *work);
 
     void perform_bytecode(FileAST *root);

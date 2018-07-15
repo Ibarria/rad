@@ -1340,7 +1340,8 @@ void Interpreter::processAllDependencies()
     } while (current_remain < old_remain);
 
     if (current_remain > 0) {
-        Error(nullptr, "Could not process all dependencies");
+        Error(nullptr, "Could not process all dependencies, remaining are: \n");
+        printRemainingDependencies();
         success = false;
     }
 }
@@ -1408,6 +1409,34 @@ void Interpreter::processDependencies(interp_deps * deps)
             } else {
                 work->action = IA_NOP;
                 deps->operation_check.active_item++;
+            }
+        }
+    }
+
+}
+
+void Interpreter::printRemainingDependencies()
+{
+    for (auto dep : overall_deps) {
+        for (auto work : dep->resolve_type.work)
+        {
+            if (work->action != IA_NOP) {
+                Error(*work->ast, "%s Unresolved type dependency\n",
+                    AstClassTypeToStr((*work->ast)->ast_type));
+            }
+        }
+        for (auto work : dep->compute_size.work)
+        {
+            if (work->action != IA_NOP) {
+                Error(*work->ast, "%s Unresolved size dependency\n",
+                    AstClassTypeToStr((*work->ast)->ast_type));
+            }
+        }
+        for (auto work : dep->operation_check.work)
+        {
+            if (work->action != IA_NOP) {
+                Error(*work->ast, "%s Unresolved check dependency\n",
+                    AstClassTypeToStr((*work->ast)->ast_type));
             }
         }
     }
@@ -1955,6 +1984,10 @@ bool Interpreter::doWorkAST(interp_work * work)
         } else if (work->action == IA_COMPUTE_SIZE) {
             if (dt->basic_type == BASIC_TYPE_CUSTOM) {
                 assert(dt->custom_type);
+                if (dt->custom_type->size_in_bytes == 0) {
+                    // The custom type has not been processed yet and we need to wait
+                    return false;
+                }
                 dt->size_in_bytes = dt->custom_type->size_in_bytes;
             }
         }

@@ -326,3 +326,39 @@ DirectTypeAST *findFinalDirectType(ArrayTypeAST *at)
         return nullptr;
     }
 }
+
+const char *AstClassTypeToStr(AST_CLASS_TYPE atype)
+{
+#define AST_CASE(t) case t: return #t
+    switch (atype) {
+        AST_CASE(AST_UNKNOWN);
+        AST_CASE(AST_FILE);
+        AST_CASE(AST_FUNCTION_TYPE);
+        AST_CASE(AST_STATEMENT_BLOCK);
+        AST_CASE(AST_RETURN_STATEMENT);
+        AST_CASE(AST_IF_STATEMENT);
+        AST_CASE(AST_FOR_STATEMENT);
+        AST_CASE(AST_FUNCTION_DEFINITION);
+        AST_CASE(AST_FUNCTION_CALL);
+        AST_CASE(AST_DIRECT_TYPE);
+        AST_CASE(AST_POINTER_TYPE);
+        AST_CASE(AST_ARRAY_TYPE);
+        AST_CASE(AST_IDENTIFIER);
+        AST_CASE(AST_LITERAL);
+        AST_CASE(AST_BINARY_OPERATION);
+        AST_CASE(AST_UNARY_OPERATION);
+        AST_CASE(AST_ASSIGNMENT);
+        AST_CASE(AST_NEW);
+        AST_CASE(AST_DELETE);
+        AST_CASE(AST_CAST);
+        AST_CASE(AST_VARIABLE_DECLARATION);
+        AST_CASE(AST_RUN_DIRECTIVE);
+        AST_CASE(AST_STRUCT_TYPE);
+        AST_CASE(AST_STRUCT_DEFINITION);      
+        AST_CASE(AST_ARRAY_ACCESS);
+        AST_CASE(AST_STRUCT_ACCESS);
+    }
+    assert(false);
+    return "";
+#undef AST_CASE
+}
