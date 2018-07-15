@@ -278,6 +278,16 @@ struct VariableDeclarationAST : StatementAST
     interp_deps *deps = nullptr; // only applicable for global variables
 };
 
+// Which declarations are types and not actual values?
+inline bool isTypeDeclaration(VariableDeclarationAST *decl)
+{
+    if (decl->definition) {
+        return (decl->definition->ast_type == AST_FUNCTION_DEFINITION) ||
+            (decl->definition->ast_type == AST_STRUCT_DEFINITION);
+    }
+    return false;
+}
+
 struct VarReferenceAST : ExpressionAST
 {
     VarReferenceAST *next = nullptr;

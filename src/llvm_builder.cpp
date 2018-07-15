@@ -71,9 +71,10 @@ static void generateFunctionPrototype(VariableDeclarationAST *decl)
 {
     if (decl->codegen) return;
 
+    // I am not sure this is needed
+    // This could be just a function pointer
     assert(isFunctionDeclaration(decl));
 
-    auto func_decl = (FunctionDefinitionAST *)decl->definition;
     auto ft = (FunctionTypeAST *)decl->specified_type;
     // we need to define the function prototype here first
     // and then proceed with the body if we have it
@@ -104,6 +105,9 @@ static void allocateVariable(VariableDeclarationAST *decl)
 
     // we need the type of the variable to be part of llvm
     generateCode(decl->specified_type);
+
+    // This catches structs and functions, might be redundant with the above
+    if (isTypeDeclaration(decl)) return;
 
     if (isGlobalDeclaration(decl)) {
         bool isConstant = isConstantDeclaration(decl);
@@ -652,6 +656,8 @@ static void generateCode(BaseAST *ast)
     case AST_VARIABLE_DECLARATION: {
         auto decl = (VariableDeclarationAST *)ast;
 
+        // Type variables do not need any further work
+        if (decl->definition && decl->definition->ast_type == AST_STRUCT_DEFINITION) return;
         // all variables should have their alloc (or prototype) done already
         assert(decl->codegen);
 
@@ -782,7 +788,9 @@ static void generateCode(BaseAST *ast)
             break;
         }
         case BASIC_TYPE_CUSTOM: {
-            assert(!"Custom types not supported on llvm yet");
+            assert(dtype->custom_type != nullptr);
+            if (dtype->custom_type->llvm_type == nullptr) generateCode(dtype->custom_type);
+            dtype->llvm_type = dtype->custom_type->llvm_type;
             break;
         }
         case BASIC_TYPE_FLOATING: {
@@ -875,7 +883,12 @@ static void generateCode(BaseAST *ast)
     }
     case AST_STRUCT_TYPE: {
         auto stype = (StructTypeAST *)ast;
-        assert(!"Structure type is not supported on llvm yet");
+        std::vector<Type *> struct_members;
+        for (auto decl : stype->struct_scope.decls) {
+            generateCode(decl->specified_type);
+            struct_members.push_back(decl->specified_type->llvm_type);
+        }
+        stype->llvm_type = StructType::create(TheContext, struct_members, stype->decl->varname);
         break;
     }
     case AST_RUN_DIRECTIVE: {

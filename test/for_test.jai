@@ -67,7 +67,7 @@ main :: ()
 
 		for myval, myindex: sa print("Iterating Value, Index Array %d\n", myval);		
 	}
-
+	
 	// TODO: use/allow pointer syntax on the iterator
 	{
 		sa : [SIZE] u64;
