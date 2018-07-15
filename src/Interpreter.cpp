@@ -1341,7 +1341,8 @@ void Interpreter::processAllDependencies()
 
     if (current_remain > 0) {
         Error(nullptr, "Could not process all dependencies, remaining are: \n");
-        printRemainingDependencies();
+        // This is for debugging, ideally we have errors already
+        // printRemainingDependencies();
         success = false;
     }
 }
@@ -1605,6 +1606,8 @@ bool Interpreter::doWorkAST(interp_work * work)
         struct_type->size_in_bytes = 0;
         for (auto var : struct_type->struct_scope.decls) {
             if (var->specified_type->size_in_bytes == 0) {
+                Error(ast, "Struct %s could not compute size due to member %s\n",
+                    struct_type->decl->varname, var->varname);
                 return false;
             }
             assert(var->specified_type->size_in_bytes > 0);
