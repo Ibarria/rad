@@ -33,12 +33,13 @@ main :: ()
 {
     so: u32;
     a : Out1;
+    mt : MyType;
     a.b.e.a2 = 3;
-
+    mt.x = 237;
 
     x1 := 1;
     x1 = add(3, 0);
-    print("a.b.e.a2 is %u, add 3+2 = %llu\n", a.b.e.a2, add(3, 2));
+    print("a.b.e.a2 is %u, mt.x: %d, add 3+2 = %lu\n", a.b.e.a2, mt.x, add(3, 2));
 }
 
 add := (x: u64, y: u64) -> u64 
@@ -46,4 +47,4 @@ add := (x: u64, y: u64) -> u64
     return x + y;
 }
 
-// #run main()
+#run main()
