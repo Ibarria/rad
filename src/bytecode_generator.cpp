@@ -846,9 +846,10 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         else if (assign->lhs->ast_type == AST_UNARY_OPERATION) {
             auto unop = (UnaryOperationAST *)assign->lhs;
             assert(unop->op == TK_LSHIFT);
-            s16 nreg = reserveRegistersForSize(current_function, 8);
-            computeAddressIntoRegister(unop->expr, nreg);
-            createStoreInstruction(BC_STORE_TO_MEM_PTR, nreg, reg, unop->expr_type->size_in_bytes);
+            // LHS LSHIFT is always a pointer, load the pointer (which is the address where)
+            // we want to store later
+            s16 ptr_reg = computeExpressionIntoRegister(unop->expr);            
+            createStoreInstruction(BC_STORE_TO_MEM_PTR, ptr_reg, reg, unop->expr_type->size_in_bytes);
         }
         else {
             assert(!"We do not support anything else for an lvalue");
@@ -959,7 +960,6 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
 
             // Load the correct value for it, before we go into the main loop
             {
-                it_val_reg = computeExpressionIntoRegister(forst->it);
                 s16 array_data_ptr = computeArrayDataPtrIntoRegister(forst->arr);
 
                 s16 array_elem_size = reserveRegister();
@@ -1303,10 +1303,15 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
             computeAddressIntoRegister(unop->expr, reg);
             // There is nothing else to be done, * expr is just the address of expression
             return;
-            break;
         }
         case TK_LSHIFT: {
-            computeAddressIntoRegister(unop->expr, regexp);
+            // For pointer types, the right answer is just the pointer
+            if (isTypePointer(unop->expr->expr_type)) {
+                computeExpressionIntoRegister(unop->expr, regexp);
+            } else {
+                assert(!"I am not sure we should ever be here...");
+                computeAddressIntoRegister(unop->expr, regexp);
+            }
             break;
         }
         }
@@ -1369,9 +1374,8 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         assert(id->decl);
         BCI *bci = nullptr;
 
-        if (id->expr_type->ast_type == AST_DIRECT_TYPE) {
-            s16 pointer_reg = reserveRegistersForSize(current_function, 8);
-            computeAddressIntoRegister(id, pointer_reg);
+        if (isTypePointer(id->expr_type) || (id->expr_type->ast_type == AST_DIRECT_TYPE)) {
+            s16 pointer_reg = computeAddressIntoRegister(id);
 
             // dereference the pointer to get the expression value
             bci = create_instruction(BC_UNARY_OPERATION, pointer_reg, reg, TK_LSHIFT);
@@ -1450,6 +1454,8 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
                 issue_instruction(bci);
                 // now reg+2 contains the array.reserved_size pointer
             }
+        } else {
+            assert(!"We should never be here, we better handle all cases!");
         }
 
         break;
