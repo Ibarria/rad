@@ -56,6 +56,7 @@ public:
     }
     u32 size() const { return used_elems; }
     void reset() { used_elems = 0; }
+    void reset(u32 new_used) { assert(new_used <= used_elems); used_elems = new_used; }
     u32 total_size() const { return num_elems; }
 
     T& getNextFree() {
