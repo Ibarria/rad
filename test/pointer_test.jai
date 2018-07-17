@@ -28,7 +28,8 @@ test_pointer :: ()
 }
 
 
-global_x1 := #run add(3, 0);
+// global_x1 := #run add(3, 0);
+global_x1 := 3;
 
 main :: ()
 {
@@ -39,8 +40,9 @@ main :: ()
     a.b.d = 3;
     mt.x = 237;
     
+    print("Global_x1 should be 3 and it is: %I64u\n", global_x1);
     // x1 := add(3, 0);
-    print("a.b.d is %u, mt.x: %d, add 3+2 = %lu\n", a.b.d, mt.x, add(3, 2));
+    print("a.b.d is %u, mt.x: %d, add 3+2 = %I64u\n", a.b.d, mt.x, add(3, 2));
     
 }
 
@@ -49,3 +51,4 @@ add := (x: u64, y: u64) -> u64
     return x + y;
 }
 
+#run main();

@@ -119,7 +119,7 @@ static void allocateVariable(VariableDeclarationAST *decl)
             initializer = ConstantAggregateZero::get(decl->specified_type->llvm_type);
         }
         auto gv = new GlobalVariable(*TheModule, decl->specified_type->llvm_type, isConstant, 
-            GlobalValue::CommonLinkage, initializer, decl->varname);
+            GlobalValue::LinkOnceAnyLinkage, initializer, decl->varname);
         decl->codegen = gv;
     } else {
         IRBuilder<> TmpB(&llvm_function->getEntryBlock(),
