@@ -1325,7 +1325,7 @@ RunDirectiveAST* Parser::parseRunDirective()
     run->expr = expr;
 
     // have a list of all run directives to process them later on
-    top_level_ast->run_items.push_back(run);
+//    top_level_ast->run_items.push_back(run);
     return run;
 }
 

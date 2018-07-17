@@ -1,12 +1,16 @@
 #pragma once
 #include "AST.h"
 
+struct bytecode_generator;
+
 enum InterpAction {
     IA_NOP,
     IA_RESOLVE_TYPE,
     IA_RESOLVE_TYPE_POST,
     IA_COMPUTE_SIZE,
     IA_OPERATION_CHECK,
+    IA_BYTECODE,
+    IA_RUN
 };
 
 struct interp_work {
@@ -36,17 +40,29 @@ struct interp_deps {
     interp_list resolve_type;
     interp_list compute_size;
     interp_list operation_check;
+    interp_list bytecode_generation;
+    interp_list run_directives;
 
-    bool empty() { 
+    bool emptySemantic() { 
         return resolve_type.empty()
             && compute_size.empty()
             && operation_check.empty();
     }
-    u64 remaining_items() { 
+    bool emptyRun() {
+        return bytecode_generation.empty()
+            && run_directives.empty();
+    }
+    bool empty() { return emptySemantic() && emptyRun(); }
+    u64 remaining_items_semantic() {
         u64 ritype  = resolve_type.remaining_items();
         u64 risize  = compute_size.remaining_items();
         u64 richeck = operation_check.remaining_items();
         return ritype + risize + richeck;
+    }
+    u64 remaining_items_run() {
+        u64 ribyte = bytecode_generation.remaining_items();
+        u64 rirun = run_directives.remaining_items();
+        return ribyte + rirun;
     }
 };
 
@@ -55,6 +71,7 @@ struct Interpreter
     PoolAllocator pool;
     bool success = true;
     Array<interp_deps *> overall_deps;
+    bytecode_generator *bcgen = nullptr;
 
     Array<TextType> errors;
     char errorString[512];
@@ -82,13 +99,14 @@ struct Interpreter
 
     void traversePostfixAST(BaseAST **ast, interp_deps &deps);
 
-    void processAllDependencies();
-    void processDependencies(interp_deps *deps); 
-    u64 overallDepsItems();
+    void processAllDependencies(FileAST *root);
+    void processDependencies(interp_deps *deps);
+    void processDependenciesRun(FileAST *root, interp_deps *deps);
+    u64 overallDepsItemsSemantic();
+    u64 overallDepsItemsRun();
     void printRemainingDependencies();
     bool doWorkAST(interp_work *work);
-
-    void perform_bytecode(FileAST *root);
+    bool doBytecode(interp_work *work);
 
     void printErrors();
 

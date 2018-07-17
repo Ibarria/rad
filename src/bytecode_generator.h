@@ -90,6 +90,13 @@ struct bytecode_program
     Array<external_library *>external_libs;
 };
 
+struct watermark
+{
+    bytecode_function *func = nullptr;
+    u32 inst_index = -1;
+    u32 regs = -1;
+};
+
 struct bytecode_generator
 {
     PoolAllocator *pool = nullptr;
@@ -115,14 +122,18 @@ struct bytecode_generator
     BCI *createNopInstruction(BaseAST *ast);
     void issue_instruction(BCI *bci);
     void issueReserveStackSpace(u64 size);
+    // These functions are to roll back bytecode generation in case of error
+    watermark getWatermark();
+    void resetWatermark(watermark wm);
 
     void setPool(PoolAllocator *p) { pool = p; }
     void setInterpreter(Interpreter *i) { interp = i; }
-    bytecode_program *compileToBytecode(FileAST *root);
+    void startGlobalCompile(FileAST *root);
     void compileAllFunctions(FileAST *root);
     bool validateAllFunctions();
 
     void initializeGlobalVariables(Scope *scope);
+    void initializeGlobalVariable(VariableDeclarationAST *decl);
     void initializeGlobalFunctions(Scope *scope);
     void initializeVariablesInScope(Scope *scope);
     void initializeVariable(VariableDeclarationAST *decl);

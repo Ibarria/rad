@@ -370,6 +370,22 @@ static void addCheckWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
     deps.operation_check.work.push_back(res_work);
 }
 
+static void addBytecodeWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
+{
+    interp_work *res_work = new (pool) interp_work;
+    res_work->action = IA_BYTECODE;
+    res_work->ast = ast;
+    deps.bytecode_generation.work.push_back(res_work);
+}
+
+static void addRunWork(PoolAllocator *pool, BaseAST **ast, interp_deps &deps)
+{
+    interp_work *res_work = new (pool) interp_work;
+    res_work->action = IA_RUN;
+    res_work->ast = ast;
+    deps.run_directives.work.push_back(res_work);
+}
+
 // From Parser.cpp
 DirectTypeAST *getTypeEx(DirectTypeAST *oldtype, u32 newbytes);
 
@@ -862,15 +878,6 @@ VariableDeclarationAST * Interpreter::createDeclarationUInt(const char * name, u
     return createDeclaration(name, type, lit);
 }
 
-static u32 overallRunItems(FileAST *root)
-{
-    u32 num_runs = 0;
-    for (auto run : root->run_items) {
-        if (run->bc_function == nullptr) num_runs++;
-    }
-    return num_runs;
-}
-
 static u32 overallRunDependencies(RunDirectiveAST *run)
 {
     u32 num_deps = 0;
@@ -878,94 +885,6 @@ static u32 overallRunDependencies(RunDirectiveAST *run)
         if (!dep->computed) num_deps++;
     }
     return num_deps;
-}
-
-static u32 totalRunsWithDeps(FileAST *root)
-{
-    u32 run_deps = 0;
-    for (auto run : root->run_items) {
-        if (overallRunDependencies(run) > 0) run_deps++;
-    }
-    return run_deps;
-}
-
-void Interpreter::perform_bytecode(FileAST * root)
-{
-    bytecode_generator bcgen;
-    // @TODO : should the bytecode have its own pool? 
-    // makes sense since it is emphymeral, but we need to be able to
-    // get its output too...
-    // Should we bytecode the whole program, or only what needs to run?
-    // finding the dependencies can be tricky... 
-    PoolAllocator bc_pool;   
-    bcgen.setPool(&bc_pool);
-    bcgen.setInterpreter(this);
-
-    CPU_SAMPLE("run bytecode");
-
-    bytecode_program *bp = bcgen.compileToBytecode(root);
-
-    if (!success) return;
-    
-    // Find and run the #run directives now that we have a program compiled
-    bytecode_runner runner;
-    runner.program = bp;
-
-    assert(success);
-
-    runner.run_preamble();
-    u32 old_remain = overallRunItems(root);
-    u32 current_remain = old_remain;
-    do {
-        for (auto run : root->run_items) {
-            if (run->bc_function == nullptr) bcgen.generate_run_directive(run);
-        }
-        old_remain = current_remain;
-        current_remain = overallRunItems(root);
-        if (current_remain == 0) {
-            break;
-        } else if (current_remain < old_remain) {
-            // if we made progress, clear up errors as they are transient
-            reset_errors();
-        }
-    } while (current_remain < old_remain);
-
-    if (current_remain > 0) {
-        Error(nullptr, "Could not process all run directives");
-        success = false;
-        return;
-    }
-
-    do {
-        for (auto run : root->run_items) {
-            if (overallRunDependencies(run) == 0)
-                runner.run_directive(run);
-        }
-        old_remain = current_remain;
-        current_remain = totalRunsWithDeps(root);
-        if (current_remain == 0) {
-            break;
-        } else if (current_remain < old_remain) {
-            // if we made progress, clear up errors as they are transient
-            reset_errors();
-        }
-    } while (current_remain < old_remain);
-
-    if (current_remain > 0) {
-        Error(nullptr, "Could not process all run directives");
-        success = false;
-        return;
-    }
-
-
-    // Now, all #run directives should have been processed and we can generate all the code
-    bcgen.compileAllFunctions(root);
-    if (!success) return;
-
-    bcgen.validateAllFunctions();
-    if (!success) return;
-
-    if (option_printBytecode) print_bc_program(bp);
 }
 
 void Interpreter::printErrors()
@@ -979,11 +898,9 @@ void Interpreter::semanticProcess(FileAST *root)
 {
     traversePostfixTopLevel(root);
 
-    processAllDependencies();
+    processAllDependencies(root);
 
     if (!success) return;
-
-    perform_bytecode(root);
 }
 
 #define PPC(ast) (BaseAST **)(&ast)
@@ -1100,6 +1017,10 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         addTypeWork(&pool, astp, deps);
         addSizeWork(&pool, astp, deps);
         addCheckWork(&pool, astp, deps);
+
+        // only global declarations need bytecode work, the rest
+        // are handled when we bytecode a function
+        if (isGlobalDeclaration(decl)) addBytecodeWork(&pool, astp, deps);
         break;
     }
     case AST_FUNCTION_TYPE: {
@@ -1289,6 +1210,8 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
 //        addSizeWork(&pool, astp, deps);
         addCheckWork(&pool, astp, deps);
 
+        addBytecodeWork(&pool, astp, deps);
+        addRunWork(&pool, astp, deps);
 		break;
 	}
     case AST_FOR_STATEMENT: {
@@ -1318,19 +1241,31 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
     }
 }
 
-void Interpreter::processAllDependencies()
+void Interpreter::processAllDependencies(FileAST *root)
 {
-    u64 old_remain = overallDepsItems();
+    u64 old_remain = overallDepsItemsSemantic();
     u64 current_remain = old_remain;
 
     CPU_SAMPLE("processAllDependencies");
+
+    bytecode_generator bcgen;
+    // @TODO : should the bytecode have its own pool? 
+    // makes sense since it is emphymeral, but we need to be able to
+    // get its output too...
+    // Should we bytecode the whole program, or only what needs to run?
+    // finding the dependencies can be tricky... 
+    PoolAllocator bc_pool;
+    bcgen.setPool(&bc_pool);
+    bcgen.setInterpreter(this);
+
+    this->bcgen = &bcgen;
 
     do {
         for (auto dep : overall_deps) {
             processDependencies(dep);
         }
         old_remain = current_remain;
-        current_remain = overallDepsItems();
+        current_remain = overallDepsItemsSemantic();
         if (current_remain == 0) {
             break;
         } else if (current_remain < old_remain) {
@@ -1340,11 +1275,44 @@ void Interpreter::processAllDependencies()
     } while (current_remain < old_remain);
 
     if (current_remain > 0) {
-        Error(nullptr, "Could not process all dependencies, remaining are: \n");
+        Error(nullptr, "Could not process all dependencies\n");
         // This is for debugging, ideally we have errors already
         // printRemainingDependencies();
         success = false;
+        return;
     }
+
+    old_remain = overallDepsItemsRun();
+    current_remain = old_remain;
+    do {
+        for (auto dep : overall_deps) {
+            processDependenciesRun(root, dep);
+        }
+        old_remain = current_remain;
+        current_remain = overallDepsItemsRun();
+        if (current_remain == 0) {
+            break;
+        } else if (current_remain < old_remain) {
+            // if we made progress, clear up errors as they are transient
+            reset_errors();
+        }
+    } while (current_remain < old_remain);
+
+    if (current_remain > 0) {
+        Error(nullptr, "Could not process all dependencies related to bytecode\n");
+        // This is for debugging, ideally we have errors already
+        // printRemainingDependencies();
+        success = false;
+        return;
+    }
+
+
+    // final validation
+    bcgen.validateAllFunctions();
+    if (!success) return;
+
+    if (option_printBytecode && success) print_bc_program(bcgen.program);
+    this->bcgen = nullptr;
 }
 
 void Interpreter::processDependencies(interp_deps * deps)
@@ -1413,8 +1381,60 @@ void Interpreter::processDependencies(interp_deps * deps)
             }
         }
     }
-
 }
+
+void Interpreter::processDependenciesRun(FileAST *root, interp_deps * deps)
+{
+    CPU_SAMPLE("processDependenciesRun");
+
+    bcgen->startGlobalCompile(root);
+
+    // Bytecode and run stages go hand in hand, we try to process them all
+    // start by trying to process bytecode, then run, and repeat
+    if (!deps->bytecode_generation.empty()) {
+        CPU_SAMPLE("Generate Bytecode");
+
+        u32 index = deps->bytecode_generation.active_item;
+        bool firstFailure = false;
+        for (; index < deps->bytecode_generation.work.size(); index++) {
+            auto work = deps->bytecode_generation.work[index];
+            bool r = doBytecode(work);
+            if (!r) {
+                firstFailure = true;
+                success = true;
+            } else {
+                work->action = IA_NOP;
+                if (!firstFailure) deps->bytecode_generation.active_item++;
+            }
+        }
+    }
+
+    if (!deps->run_directives.empty()) {
+        CPU_SAMPLE("Process Run Directives");
+
+        bytecode_runner runner;
+        runner.program = bcgen->program;
+
+        runner.run_preamble();
+
+        u32 index = deps->run_directives.active_item;
+        bool firstFailure = false;
+        for (; index < deps->run_directives.work.size(); index++) {
+            auto work = deps->run_directives.work[index];
+            if (work->action != IA_NOP) {
+                auto run = (RunDirectiveAST *)*work->ast;
+                if (overallRunDependencies(run) == 0) {
+                    runner.run_directive(run);
+                    work->action = IA_NOP;
+                    if (!firstFailure) deps->run_directives.active_item++;
+                } else {
+                    firstFailure = true;
+                }
+            }
+        }
+    }
+}
+
 
 void Interpreter::printRemainingDependencies()
 {
@@ -1440,15 +1460,38 @@ void Interpreter::printRemainingDependencies()
                     AstClassTypeToStr((*work->ast)->ast_type));
             }
         }
+        for (auto work : dep->bytecode_generation.work)
+        {
+            if (work->action != IA_NOP) {
+                Error(*work->ast, "%s Unresolved bytecode generation\n",
+                    AstClassTypeToStr((*work->ast)->ast_type));
+            }
+        }
+        for (auto work : dep->run_directives.work)
+        {
+            if (work->action != IA_NOP) {
+                Error(*work->ast, "%s Unresolved Run Directive\n",
+                    AstClassTypeToStr((*work->ast)->ast_type));
+            }
+        }
     }
 
 }
 
-u64 Interpreter::overallDepsItems()
+u64 Interpreter::overallDepsItemsSemantic()
 {
     u64 total = 0;
     for (auto dep : overall_deps) {
-        total += dep->remaining_items();
+        total += dep->remaining_items_semantic();
+    }
+    return total;
+}
+
+u64 Interpreter::overallDepsItemsRun()
+{
+    u64 total = 0;
+    for (auto dep : overall_deps) {
+        total += dep->remaining_items_run();
     }
     return total;
 }
@@ -2640,6 +2683,21 @@ bool Interpreter::doWorkAST(interp_work * work)
             assert(type);
 
             run->expr_type = type;
+
+            if (!isVoidType(run->expr_type)) {
+                if (!isTypeRunSupported(run->expr_type)) {
+                    assert(!"Run directive with non void type return not supported yet");
+                }
+                // Allocate a new AST for the run expression, assume it is a literal for now
+                LiteralAST *lit = new (&pool) LiteralAST();
+                run->new_ast = lit;
+                copyASTloc(run, lit);
+                lit->s = sequence_id++;
+
+                assert(run->expr_type->ast_type == AST_DIRECT_TYPE);
+                lit->typeAST = (DirectTypeAST *)run->expr_type;
+                lit->_u64 = 0;
+            }
         } else if (work->action == IA_OPERATION_CHECK) {
             // Run directives can only depend on constants/literals
             auto res = enforceRunDirectiveConstraints(run->expr);
@@ -2765,5 +2823,34 @@ bool Interpreter::doWorkAST(interp_work * work)
         assert(!"AST type not being handled on traversePostfixAST");
     }
 
+    return true;
+}
+
+bool Interpreter::doBytecode(interp_work * work)
+{
+    // null pointer is valid, like if a type does not exist 
+    if (work->action == IA_NOP) return true;
+    BaseAST *ast = *(work->ast);
+
+    switch (ast->ast_type) {
+    case AST_VARIABLE_DECLARATION: {
+        auto decl = (VariableDeclarationAST *)ast;
+        assert(decl->flags & DECL_FLAG_IS_GLOBAL_VARIABLE);
+        // Check for any errors and thus skip
+        // The function owns restoring the watermark
+        bcgen->initializeGlobalVariable(decl);
+        if (!success) return false;
+        break;
+    }
+    case AST_RUN_DIRECTIVE: {
+        auto run = (RunDirectiveAST *)ast;
+        if (!run->generated) bcgen->generate_run_directive(run);
+        if (!success) return false;
+        break;
+    }
+    default:
+        assert(false);
+        break;
+    }
     return true;
 }

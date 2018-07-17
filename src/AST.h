@@ -83,7 +83,7 @@ struct FileAST : BaseAST
 {
     FileAST() { ast_type = AST_FILE; }
     Array<BaseAST *>items;
-    Array<RunDirectiveAST *>run_items;
+//    Array<RunDirectiveAST *>run_items;
     Scope global_scope;
     ImportsHash imports;
 };
@@ -178,9 +178,10 @@ struct RunDirectiveAST : ExpressionAST
     bytecode_function *bc_function = nullptr;
     bytecode_function *enclosing_func = nullptr;
     Array<RunDirectiveAST *> run_deps;
+    BCI *bci = nullptr;
     bool being_generated = false;
     bool computed = false;
-    BCI *bci = nullptr;
+    bool generated = false;
 };
 
 struct FunctionCallAST : ExpressionAST

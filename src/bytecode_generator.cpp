@@ -249,14 +249,15 @@ static u64 getScopeVariablesSize(Scope *scope)
             // Possible optimization, same for const variables
             continue;
         }
-        assert(decl->specified_type);
-        assert(decl->specified_type->size_in_bytes > 0);
-        // It cannot be a function argument because those are stored in registers
-        assert(!(decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT));
 
         u64 var_size = getVariableSize(decl);
 
         if (var_size > 0) {
+            assert(decl->specified_type);
+            assert(decl->specified_type->size_in_bytes > 0);
+            // It cannot be a function argument because those are stored in registers
+            assert(!(decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT));
+
             // the offset for global variables is the accumulated size in bytes
             decl->bc_offset = total_size;
             
@@ -702,11 +703,29 @@ void bytecode_generator::issueReserveStackSpace(u64 size)
     issue_instruction(bci);
 }
 
-bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
+watermark bytecode_generator::getWatermark()
 {
+    watermark wm;
+    assert(current_function);
+    wm.func = current_function;
+    wm.inst_index = current_function->instructions.size();
+    wm.regs = current_function->num_regs;
+    return wm;
+}
+
+void bytecode_generator::resetWatermark(watermark wm)
+{
+    assert(current_function == wm.func);
+    current_function->instructions.reset(wm.inst_index);
+    current_function->num_regs = wm.regs;
+}
+
+void bytecode_generator::startGlobalCompile(FileAST * root)
+{
+    if (this->program != nullptr) return;
+
     bytecode_program *bp = new (pool) bytecode_program;
     this->program = bp;
-    CPU_SAMPLE("compile bytecode");
 
     // First step, have space in the bss for the global variables (non functions)
     u64 bss_size = getScopeVariablesSize(&root->global_scope);
@@ -715,15 +734,6 @@ bytecode_program * bytecode_generator::compileToBytecode(FileAST * root)
 
     bp->bss.initMem((u8 *)pool->alloc(bss_size + stack_size),
         bss_size, stack_size);
-    
-    // set the correct value in the bss area for vars (bytecode instruction)
-    current_function = &program->preamble_function;
-    initializeGlobalVariables(&root->global_scope);
-    current_function = nullptr;
-    
-    // Update function variable addresses?
-    
-    return bp;
 }
 
 void bytecode_generator::compileAllFunctions(FileAST * root)
@@ -1144,6 +1154,15 @@ void bytecode_generator::initializeGlobalVariables(Scope * scope)
     }
 }
 
+void bytecode_generator::initializeGlobalVariable(VariableDeclarationAST * decl)
+{
+    assert(decl->flags & DECL_FLAG_IS_GLOBAL_VARIABLE);
+
+    current_function = &program->preamble_function;
+    initializeVariable(decl);
+    current_function = nullptr;
+}
+
 void bytecode_generator::initializeGlobalFunctions(Scope * scope)
 {
     for (auto decl : scope->decls) {
@@ -1193,13 +1212,15 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
 
     // ok, it is an expression (operation, literal (num, string) )
     // or god forbid, another variable (which means load its value
-//    s16 mark = program->machine.reg_mark();
-    s16 reg = reserveRegistersForSize(current_function, decl->specified_type->size_in_bytes);
-    
-    computeExpressionIntoRegister((ExpressionAST *)decl->definition, reg);
+    watermark wm = getWatermark();    
+    s16 reg = computeExpressionIntoRegister((ExpressionAST *)decl->definition);
+    if (!interp->success) {
+        // in case of error, clean up
+        resetWatermark(wm);
+        return;
+    }
     createStoreInstruction(decl, reg);
     
-//    program->machine.pop_mark(mark);
     decl->flags |= DECL_FLAG_HAS_BEEN_BT_GEN;
 }
 
@@ -1468,11 +1489,6 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         auto run = (RunDirectiveAST *)expr;
         run->enclosing_func = current_function;
 
-        if (run->new_ast == nullptr) {
-            interp->Error(expr, "Run directive recursive call not allowed\n");
-            return;
-        }
-
         assert(run->new_ast->ast_type == AST_LITERAL);
         assert(run->new_ast);
         auto lit = (LiteralAST *)run->new_ast;
@@ -1492,7 +1508,7 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         if (!run->computed) {
             current_function->missing_run_directives++;
             assert(current_run != run);
-            current_run->run_deps.push_back(run);
+            if (current_run) current_run->run_deps.push_back(run);
         }
 
         break;
@@ -2595,15 +2611,23 @@ void bytecode_generator::generate_run_directive(RunDirectiveAST *run)
     // TODO: we need to run the code attached to the run directive and likely create a new AST
     // or bytecode with the final result
     bytecode_function *old_current = current_function;
-    bytecode_function *func = new (pool) bytecode_function;
     RunDirectiveAST *old_run = current_run;
 
-    func->function_name = CreateTextType(pool, "Run Directive");
-    func->function_id = run->s;
-    current_function = func;
+    if (run->bc_function == nullptr) {
+        bytecode_function *func = new (pool) bytecode_function;
+
+        func->function_name = CreateTextType(pool, "Run Directive");
+        func->function_id = run->s;
+        run->bc_function = func;
+    } else {
+        // Mini optimization, reset the function here
+        auto func = run->bc_function;
+        func->instructions.reset();
+        func->num_regs = 0;
+    }
+    current_function = run->bc_function;
     current_run = run;
 
-//    s16 mark = program->machine.reg_mark();
     s16 reg = -1;
 
     if (!isVoidType(run->expr_type)) {
@@ -2618,43 +2642,21 @@ void bytecode_generator::generate_run_directive(RunDirectiveAST *run)
             reg, get_regtype_from_type(run->expr_type));
     }
 
-    //    program->machine.pop_mark(mark);
-
     current_function = old_current;
     current_run = old_run;
 
     // do an early exit in case of any errors, such as those by recursive #run calls
     if (!interp->success) return;
 
-    assert(run->bc_function == nullptr);
-    run->bc_function = func;
-
-    if (!isVoidType(run->expr_type)) {
-        if (!isTypeRunSupported(run->expr_type)) {
-            assert(!"Run directive with non void type return not supported yet");
-        }
-        // Allocate a new AST for the run expression
-        LiteralAST *lit = new (&interp->pool) LiteralAST();
-        run->new_ast = lit;
-        copyASTinfo(run, lit);
-
-        assert(run->expr_type->ast_type == AST_DIRECT_TYPE);
-        lit->typeAST = (DirectTypeAST *)run->expr_type;
-        lit->_u64 = 0;
-
-        if (run->bci == nullptr) {
-            BCI *extra = nullptr;
-            BCI *bci = create_load_literal_instruction(lit, -1, &extra);
-            assert(extra == nullptr);
-            run->bci = bci;
-        }
-    }
+    run->generated = true;
 }
 
 void bytecode_runner::run_directive(RunDirectiveAST * run)
 {
     // Do not support returning more than 1 register
     assert(run->expr_type->size_in_bytes <= 8);
+
+    if (run->computed) return;
 
     bc_register ret_val = {};
     bc_call_register ret_cr = {};
@@ -2675,6 +2677,7 @@ void bytecode_runner::run_directive(RunDirectiveAST * run)
             assert(!"Run directive with non void type return not supported yet");
         }
         LiteralAST *lit = (LiteralAST *)run->new_ast;
+        assert(lit);
 
         // This should work for all types because it is a union underneath... 
         lit->_u64 = ret_val.data._u64;
@@ -2684,7 +2687,6 @@ void bytecode_runner::run_directive(RunDirectiveAST * run)
             run->enclosing_func->missing_run_directives--;
         }
     }
-    return;
 }
 
 void bytecode_runner::callExternalFunction(FunctionDefinitionAST * fundef, BCI * bci)
