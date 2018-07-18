@@ -551,85 +551,101 @@ void Interpreter::reset_errors()
     errors.reset();
 }
 
-bool Interpreter::checkTypesInDeclaration(VariableDeclarationAST * decl, ExpressionAST *expr, TypeAST * lhsType, TypeAST * rhsType)
+TypeCheckError Interpreter::checkTypesAllowLiteralAndCast(ExpressionAST **expr, TypeAST * lhsType, TypeAST * rhsType)
 {
+    char ltype[64] = {}, rtype[64] = {};
+    printTypeToStr(ltype, rhsType);
+    printTypeToStr(rtype, lhsType);
+    bool needs_cast = false;
+    bool ret;
+
     if (rhsType->ast_type != lhsType->ast_type) {
-        char ltype[64] = {}, rtype[64] = {};
-        printTypeToStr(ltype, rhsType);
-        printTypeToStr(rtype, lhsType);
-        Error(decl, "Incompatible types on this variable declaration. Type: %s and the declared type %s for variable %s\n",
-            ltype, rtype, decl->varname);
-        return false;
+        return TCH_INCOMPATIBLE_TYPE;
     }
 
     if (rhsType->ast_type == AST_POINTER_TYPE) {
-        // We have two type of pointers, recurse
-        auto lhsPt = (PointerTypeAST *)lhsType;
-        auto rhsPt = (PointerTypeAST *)rhsType;
-        return checkTypesInDeclaration(decl, expr, lhsPt->points_to_type, rhsPt->points_to_type);
-    }
-    // Nothing else supported for now, arrays in the future
-    assert(rhsType->ast_type == AST_DIRECT_TYPE);
-    DirectTypeAST *rhsDType = (DirectTypeAST *)rhsType;
-    DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
-
-    if (lhsDType->basic_type != rhsDType->basic_type) {
-        if (rhsType->ast_type != lhsType->ast_type) {
-            char ltype[64] = {}, rtype[64] = {};
-            printTypeToStr(ltype, rhsType);
-            printTypeToStr(rtype, lhsType);
-            Error(decl, "Incompatible types on this variable declaration. Type: %s and the declared type %s for variable %s\n",
-                ltype, rtype, decl->varname);
-            return false;
+        // Just use the code in compatibleTypes
+        ret = compatibleTypes(lhsType, rhsType, needs_cast);
+        if (!ret) {
+            return TCH_INCOMPATIBLE_TYPE;
         }
-    }
+    } else if (rhsType->ast_type == AST_ARRAY_TYPE) {
+        bool ret = compatibleTypes(lhsType, rhsType, needs_cast);
+        if (!ret) {
+            return TCH_INCOMPATIBLE_TYPE;
+        }
+    } else if (rhsType->ast_type == AST_DIRECT_TYPE) {
+        DirectTypeAST *rhsDType = (DirectTypeAST *)rhsType;
+        DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
 
-    if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
-        if (isLiteral(expr)) {
-            auto lit = (LiteralAST *)expr;
-
-            if (!lhsDType->isSigned && rhsDType->isSigned) {
-                Error(decl, "The variable %s is unsigned but a signed value is being assigned to it.\n",
-                    decl->varname);
-                return false;
+        if (lhsDType->basic_type != rhsDType->basic_type) {
+            if (rhsType->ast_type != lhsType->ast_type) {
+                return TCH_INCOMPATIBLE_TYPE;
             }
+        }
 
-            // If the RHS is a literal, try to see if it can fit in less bytes
-            if (literal_value_fits_in_bytes(lit, lhsDType)) {
-                change_type_bytes(lit, lhsDType);
+        if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
+            if (isLiteral(*expr)) {
+                auto lit = (LiteralAST *)*expr;
+
+                if (!lhsDType->isSigned && rhsDType->isSigned) {
+                    return TCH_SIGN_MISMATCH;
+                }
+
+                // If the RHS is a literal, try to see if it can fit in less bytes
+                if (literal_value_fits_in_bytes(lit, lhsDType)) {
+                    change_type_bytes(lit, lhsDType);
+                } else {
+                    return TCH_LITERAL_NOT_FIT;
+                }
             } else {
-                Error(decl, "Initial value for variable %s is too large for its type\n", decl->varname);
-                return false;
+                return TCH_TYPE_NOT_FIT;
             }
         } else {
-            Error(decl, "The start value for this variable %s uses %d bytes, while the expression type can only hold %d bytes\n",
-                decl->varname, rhsDType->size_in_bytes, lhsDType->size_in_bytes);
-            return false;
+            if (!lhsDType->isSigned && rhsDType->isSigned) {
+                return TCH_SIGN_MISMATCH;
+            }
+
+            if (isLiteral(*expr)) {
+                auto lit = (LiteralAST *)*expr;
+
+                if (lhsDType->isSigned && !rhsDType->isSigned &&
+                    (rhsDType->size_in_bytes == lhsDType->size_in_bytes)) {
+                    // there is a possible overflow here
+                    if (!literal_value_fits_in_bytes(lit, lhsDType)) {
+                        return TCH_LITERAL_NOT_FIT;
+                    }
+                }
+            } else {
+
+                // I am not sure about this one... 
+                if (rhsDType->size_in_bytes == lhsDType->size_in_bytes) {
+                    return TCH_OK;
+                }
+
+                // Should we automatically upconvert?
+                return TCH_TYPE_NOT_FIT;
+            }
+        }
+
+        return TCH_OK;
+    } else if (rhsType->ast_type == AST_FUNCTION_TYPE) {
+        bool ret = compatibleTypes(lhsType, rhsType, needs_cast);
+        if (!ret || needs_cast) {
+            return TCH_INCOMPATIBLE_TYPE;
+        }
+        
+    } else if (rhsType->ast_type == AST_STRUCT_TYPE) {
+        bool ret = compatibleTypes(lhsType, rhsType, needs_cast);
+        if (!ret || needs_cast) {
+            return TCH_INCOMPATIBLE_TYPE;
         }
     } else {
-        if (isLiteral(expr)) {
-            auto lit = (LiteralAST *)expr;
-
-            if (!lhsDType->isSigned && rhsDType->isSigned) {
-                Error(decl, "The variable %s is unsigned but a signed value is being assigned to it.\n",
-                    decl->varname);
-                return false;
-            } else if (lhsDType->isSigned && !rhsDType->isSigned &&
-                (rhsDType->size_in_bytes == lhsDType->size_in_bytes)) {
-                // there is a possible overflow here
-                if (!literal_value_fits_in_bytes(lit, lhsDType)) {
-                    Error(decl, "Initial value for variable %s is too large for its type\n", decl->varname);
-                    return false;
-                }
-            }
-        } else {
-            Error(decl, "The start value for this variable %s uses %d bytes, while the expression type can only hold %d bytes\n",
-                decl->varname, rhsDType->size_in_bytes, lhsDType->size_in_bytes);
-            return false;
-        }
+        assert(!"Unsupported conversion type");
     }
 
-    return true;
+    if (needs_cast) addCast(expr, rhsType, lhsType);
+    return TCH_OK;
 }
 
 static FunctionDefinitionAST * findEnclosingFunction(StatementAST * stmt)
@@ -1277,7 +1293,7 @@ void Interpreter::processAllDependencies(FileAST *root)
     if (current_remain > 0) {
         Error(nullptr, "Could not process all dependencies\n");
         // This is for debugging, ideally we have errors already
-        // printRemainingDependencies();
+        printRemainingDependencies();
         success = false;
         return;
     }
@@ -1301,7 +1317,7 @@ void Interpreter::processAllDependencies(FileAST *root)
     if (current_remain > 0) {
         Error(nullptr, "Could not process all dependencies related to bytecode\n");
         // This is for debugging, ideally we have errors already
-        // printRemainingDependencies();
+        // printRemainingDependenciesRun();
         success = false;
         return;
     }
@@ -1460,6 +1476,12 @@ void Interpreter::printRemainingDependencies()
                     AstClassTypeToStr((*work->ast)->ast_type));
             }
         }
+    }
+}
+
+void Interpreter::printRemainingDependenciesRun()
+{
+    for (auto dep : overall_deps) {
         for (auto work : dep->bytecode_generation.work)
         {
             if (work->action != IA_NOP) {
@@ -1475,7 +1497,6 @@ void Interpreter::printRemainingDependencies()
             }
         }
     }
-
 }
 
 u64 Interpreter::overallDepsItemsSemantic()
@@ -1581,7 +1602,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     TypeAST *dtype = fundef->declaration;
                     TypeAST *stype = decl->specified_type; 
                     
-                    if (!compatibleTypes(stype, stype, needs_cast) || needs_cast) {
+                    if (!compatibleTypes(stype, dtype, needs_cast) || needs_cast) {
                         char ltype[64] = {}, rtype[64] = {};
                         printTypeToStr(ltype, stype);
                         printTypeToStr(rtype, dtype);
@@ -1595,7 +1616,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     auto struct_def = (StructDefinitionAST *)decl->definition;
                     TypeAST *dtype = struct_def->struct_type;
                     TypeAST *stype = decl->specified_type;
-                    if (!compatibleTypes(stype, stype, needs_cast) || needs_cast) {
+                    if (!compatibleTypes(stype, dtype, needs_cast) || needs_cast) {
                         char ltype[64] = {}, rtype[64] = {};
                         printTypeToStr(ltype, stype);
                         printTypeToStr(rtype, dtype);
@@ -1611,9 +1632,42 @@ bool Interpreter::doWorkAST(interp_work * work)
                     TypeAST *lhsType = decl->specified_type;
                     assert(rhsType);
 
-                    return checkTypesInDeclaration(decl, expr, lhsType, rhsType);
+                    TypeCheckError err = checkTypesAllowLiteralAndCast(&expr, lhsType, rhsType);
+                    if (err != TCH_OK) {
+                        char ltype[64] = {}, rtype[64] = {};
+                        printTypeToStr(rtype, lhsType);
+                        printTypeToStr(ltype, rhsType);
+
+                        switch (err) {
+                        case TCH_INCOMPATIBLE_TYPE: {
+                            Error(expr, "Incompatible types between defined value type: %s and declared type %s for variable %s\n",
+                                rtype, ltype, decl->varname);
+                            break;
+                        }
+                        case TCH_SIGN_MISMATCH: {
+                            Error(expr, "Sign mismatch between defined value type: %s and declared type %s for variable %s\n",
+                                rtype, ltype, decl->varname);
+                            break;
+                        }
+                        case TCH_LITERAL_NOT_FIT: {
+                            Error(expr, "Literal with type: %s could not fit in type %s for variable %s\n",
+                                rtype, ltype, decl->varname);
+                            break;
+                        }
+                        case TCH_TYPE_NOT_FIT: {
+                            Error(expr, "Initial value type: %s could not fit in declared type %s for variable %s\n",
+                                rtype, ltype, decl->varname);
+                            break;
+                        }
+                        default:
+                            assert(!"Missing type in error check");
+                        }
+                        return false;
+                    }
+                    return true;
                 }
                 }
+
             }
         } else {
             assert(!"Unknown dependency work type");
@@ -1855,16 +1909,37 @@ bool Interpreter::doWorkAST(interp_work * work)
                 return false;
             }
             TypeAST *func_ret_type = fundef->declaration->return_type;
-            if (!compatibleTypes(ret_type, func_ret_type, needs_cast)) {
+            TypeCheckError err = checkTypesAllowLiteralAndCast(&ret_stmt->ret, func_ret_type, ret_type);
+            if (err != TCH_OK) {
                 char ltype[64] = {}, rtype[64] = {};
-                printTypeToStr(ltype, ret_type);
-                printTypeToStr(rtype, func_ret_type);
-                Error(ret_stmt, "Incompatible types between the return statement: %s and the return type %s for function %s\n",
-                    ltype, rtype, fundef->var_decl->varname);
-            }
-            // If we needed a cast, ensure we add it here
-            if (needs_cast) {
-                addCast(&ret_stmt->ret, ret_type, func_ret_type);
+                printTypeToStr(rtype, ret_type);
+                printTypeToStr(ltype, func_ret_type);
+
+                switch (err) {
+                case TCH_INCOMPATIBLE_TYPE: {
+                    Error(ret_stmt, "Incompatible types between the return statement: %s and the return type %s for function %s\n",
+                        rtype, ltype, fundef->var_decl->varname);
+                    break;
+                }
+                case TCH_SIGN_MISMATCH: {
+                    Error(ret_stmt, "Sign mismatch between the return statement: %s and the return type %s for function %s\n",
+                        rtype, ltype, fundef->var_decl->varname);
+                    break;
+                }
+                case TCH_LITERAL_NOT_FIT: {
+                    Error(ret_stmt, "Literal on the return statement: %s could not fit in the return type %s for function %s\n",
+                        rtype, ltype, fundef->var_decl->varname);
+                    break;
+                }
+                case TCH_TYPE_NOT_FIT: {
+                    Error(ret_stmt, "Incompatible types due to size between the return statement: %s and the return type %s for function %s\n",
+                        rtype, ltype, fundef->var_decl->varname);
+                    break;
+                }
+                default:
+                    assert(!"Missing type in error check");
+                }
+                return false;
             }
 
         } else {
@@ -1977,22 +2052,41 @@ bool Interpreter::doWorkAST(interp_work * work)
 
             for (u32 i = 0; i < fundecl->arguments.size(); i++) {
                 TypeAST *lhsType, *rhsType;
-                bool needs_cast = false;
                 // Function calls are like assignments to new vars, the function arguments are the lhs
                 lhsType = fundecl->arguments[i]->specified_type;
                 rhsType = funcall->args[i]->expr_type;
                 assert(lhsType); assert(rhsType);
-                if (!compatibleTypes(lhsType, rhsType, needs_cast)) {
+                TypeCheckError err = checkTypesAllowLiteralAndCast(&funcall->args[i], lhsType, rhsType);
+                if (err != TCH_OK) {
                     char ltype[64] = {}, rtype[64] = {};
-                    printTypeToStr(ltype, lhsType);
-                    printTypeToStr(rtype, rhsType);
-                    Error(funcall, "Incompatible types during function call: provided: %s and expected: %s\n",
-                        rtype, ltype);
+                    printTypeToStr(rtype, lhsType);
+                    printTypeToStr(ltype, rhsType);
+
+                    switch (err) {
+                    case TCH_INCOMPATIBLE_TYPE: {
+                        Error(funcall->args[i], "Incompatible types between the provided argument: %s and the function argument type %s for function %s, argument %d\n",
+                            rtype, ltype, funcall->function_name, i);
+                        break;
+                    }
+                    case TCH_SIGN_MISMATCH: {
+                        Error(funcall->args[i], "Sign mismatch between the provided argument: %s and the function argument type %s for function %s, argument %d\n",
+                            rtype, ltype, funcall->function_name, i);
+                        break;
+                    }
+                    case TCH_LITERAL_NOT_FIT: {
+                        Error(funcall->args[i], "Literal on the provided argument: %s and the function argument type %s for function %s, argument %d\n",
+                            rtype, ltype, funcall->function_name, i);
+                        break;
+                    }
+                    case TCH_TYPE_NOT_FIT: {
+                        Error(funcall->args[i], "Incompatible types due to size between the provided argument: %s and the function argument type %s for function %s, argument %d\n",
+                            rtype, ltype, funcall->function_name, i);
+                        break;
+                    }
+                    default:
+                        assert(!"Missing type in error check");
+                    }
                     return false;
-                }
-                // If we needed a cast, ensure we add it here
-                if (needs_cast) {
-                    addCast(&funcall->args[i], rhsType, lhsType);
                 }
 
             }
@@ -2286,6 +2380,10 @@ bool Interpreter::doWorkAST(interp_work * work)
                 }
             }
 
+            
+            // TODO: extend this to compare function pointers (should be valid)
+            // I am not sure on comparing arrays or structs, in general that should not be allowed
+
             // we better be a direct type if we get to this point
             assert(lhsType->ast_type == AST_DIRECT_TYPE);
 
@@ -2522,131 +2620,40 @@ bool Interpreter::doWorkAST(interp_work * work)
             lhsType = assign->lhs->expr_type;
             rhsType = assign->rhs->expr_type;
 
-            if (rhsType->ast_type != lhsType->ast_type) {
+            TypeCheckError err = checkTypesAllowLiteralAndCast(&assign->rhs, lhsType, rhsType);
+            if (err != TCH_OK) {
                 char ltype[64] = {}, rtype[64] = {};
-                printTypeToStr(ltype, rhsType);
                 printTypeToStr(rtype, lhsType);
-                Error(assign, "Incompatible types on this assignment. Type: %s and the declared type %s\n",
-                    ltype, rtype);
+                printTypeToStr(ltype, rhsType);
+
+                switch (err) {
+                case TCH_INCOMPATIBLE_TYPE: {
+                    Error(assign, "Incompatible types on assignment between the righ hand side: %s and left hand side type %s\n",
+                        rtype, ltype);
+                    break;
+                }
+                case TCH_SIGN_MISMATCH: {
+                    Error(assign, "Sign mismatch  on assignment between the righ hand side: %s and left hand side type %s\n",
+                        rtype, ltype);
+                    break;
+                }
+                case TCH_LITERAL_NOT_FIT: {
+                    Error(assign, "Literal does not fit on assignment: %s (%d bytes) and left hand side type %s (%d bytes)\n",
+                        rtype, rhsType->size_in_bytes, ltype, lhsType->size_in_bytes);
+                    break;
+                }
+                case TCH_TYPE_NOT_FIT: {
+                    Error(assign, "Right hand side does not fit on assignment: %s (%d bytes) and left hand side type %s (%d bytes)\n",
+                        rtype, rhsType->size_in_bytes, ltype, lhsType->size_in_bytes);
+                    break;
+                }
+                default:
+                    assert(!"Missing type in error check");
+                }
                 return false;
             }
 
-            if (lhsType->ast_type == AST_DIRECT_TYPE) {
-                assert(rhsType->ast_type == AST_DIRECT_TYPE);
-                DirectTypeAST *rhsDType = (DirectTypeAST *)rhsType;
-                DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
-
-                assert(lhsDType->basic_type != BASIC_TYPE_CUSTOM);
-
-                if (lhsDType->basic_type != rhsDType->basic_type) {
-                    char ltype[64] = {}, rtype[64] = {};
-                    printTypeToStr(ltype, lhsType);
-                    printTypeToStr(rtype, rhsType);
-                    Error(assign, "Incompatible types on this assignment: %s and %s\n",
-                        ltype, rtype);
-                    return false;
-                }
-
-                if (!isLiteral(assign->rhs)) {
-                    // If it is not a literal, we can only do very harsh decisions
-                    if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
-                        char ltype[64] = {}, rtype[64] = {};
-                        printTypeToStr(ltype, lhsType);
-                        printTypeToStr(rtype, rhsType);
-                        Error(assign, "Assignment right hand side type [%s] is too large for the left hand side [%s]\n",
-                            ltype, rtype);
-                        return false;
-                    }
-                    if ((rhsDType->size_in_bytes == lhsDType->size_in_bytes) && (lhsDType->isSigned != rhsDType->isSigned)) {
-                        char ltype[64] = {}, rtype[64] = {};
-                        printTypeToStr(ltype, lhsType);
-                        printTypeToStr(rtype, rhsType);
-                        Error(assign, "The assignment having mismatched sign types: %s and %s.\n", ltype, rtype);
-                        return false;
-                    }
-                    if ((rhsDType->size_in_bytes < lhsDType->size_in_bytes) && (!lhsDType->isSigned && rhsDType->isSigned)) {
-                        char ltype[64] = {}, rtype[64] = {};
-                        printTypeToStr(ltype, lhsType);
-                        printTypeToStr(rtype, rhsType);
-                        Error(assign, "The assignment trying to assign a signed type %s to an unsigned one %s.\n", rtype, ltype);
-                        return false;
-                    }
-                } else {
-                    auto lit = (LiteralAST *)assign->rhs;
-                    if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
-
-                        if (!lhsDType->isSigned && rhsDType->isSigned) {
-                            char ltype[64] = {}, rtype[64] = {};
-                            printTypeToStr(ltype, lhsType);
-                            printTypeToStr(rtype, rhsType);
-                            Error(assign, "The assignment having mismatched sign types: %s and %s.\n", ltype, rtype);
-                            return false;
-                        }
-
-                        // If the RHS is a literal, try to see if it can fit in less bytes
-                        if (literal_value_fits_in_bytes(lit, lhsDType)) {
-                            change_type_bytes(lit, lhsDType);
-                        } else {
-                            char ltype[64] = {}, rtype[64] = {};
-                            printTypeToStr(ltype, lhsType);
-                            printTypeToStr(rtype, rhsType);
-                            Error(assign, "Assignment right hand side type [%s] is too large for the left hand side [%s]\n",
-                                ltype, rtype);
-                            return false;
-                        }
-                    } else {
-
-                        if (!lhsDType->isSigned && rhsDType->isSigned) {
-                            Error(assign, "The assignment is trying to assign a signed value to an unsigned one.\n");
-                            return false;
-                        } else if (((lhsDType->isSigned == rhsDType->isSigned) ||
-                                    (lhsDType->isSigned))
-                                             &&
-                            (rhsDType->size_in_bytes == lhsDType->size_in_bytes)) {
-                            // there is a possible overflow here
-                            if (!literal_value_fits_in_bytes(lit, lhsDType)) {
-                                char ltype[64] = {}, rtype[64] = {};
-                                printTypeToStr(ltype, lhsType);
-                                printTypeToStr(rtype, rhsType);
-                                Error(assign, "Assignment right hand side type [%s] is too large for the left hand side [%s]\n",
-                                    ltype, rtype);
-                                return false;
-                            }
-                        } else {
-                            char ltype[64] = {}, rtype[64] = {};
-                            printTypeToStr(ltype, lhsType);
-                            printTypeToStr(rtype, rhsType);
-                            Error(assign, "Assignment right hand side type [%s] is too large for the left hand side [%s]\n",
-                                ltype, rtype);
-                            return false;
-                        }
-                    }
-
-                }
-                return true;
-
-            } else {
-                // for non direct types, just check the basic compatible types checks
-                bool needs_cast = false;
-                if (!compatibleTypes(lhsType, rhsType, needs_cast)) {
-                    char ltype[64] = {}, rtype[64] = {};
-                    printTypeToStr(ltype, lhsType);
-                    printTypeToStr(rtype, rhsType);
-                    Error(assign, "Incompatible types during assignment: %s and %s\n", ltype, rtype);
-                }
-                if (needs_cast) {
-                    addCast(&assign->rhs, rhsType, lhsType);
-                }
-
-                // Allow arrays to be assigned (as it is a known type with no more than 3 registers)
-                // But do not allow structures of known size, this should be replaced by a memcpy
-                if (lhsType->ast_type == AST_STRUCT_TYPE) {
-                    assert(!"Assignment of structs is unimplemented yet");
-                }
-
-                return true;
-            }
-
+            return true;
             // one of the hard things here is what to do on complex expressions with literals, promote?
 
         } else {
@@ -2666,6 +2673,7 @@ bool Interpreter::doWorkAST(interp_work * work)
             pt->size_in_bytes = 8;
 
             nast->expr_type = pt;
+            assert(!"Unimplemented");
         } else if (work->action == IA_COMPUTE_SIZE) {
 //            nast->size_in_bytes = 8;
 

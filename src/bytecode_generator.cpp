@@ -1739,7 +1739,8 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     // assert(funcall->args.size() == fundecl->arguments.size());
 
     if (reg_return == -1) {
-        assert(isVoidType(fundecl->return_type));
+        // We could have a function call where we do not care about the return value
+//        assert(isVoidType(fundecl->return_type));
     } else {
         assert(!isVoidType(fundecl->return_type));
     }

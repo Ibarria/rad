@@ -66,6 +66,14 @@ struct interp_deps {
     }
 };
 
+enum TypeCheckError {
+    TCH_OK = 0,
+    TCH_INCOMPATIBLE_TYPE,
+    TCH_SIGN_MISMATCH,
+    TCH_LITERAL_NOT_FIT,
+    TCH_TYPE_NOT_FIT
+};
+
 struct Interpreter
 {   
     PoolAllocator pool;
@@ -79,7 +87,7 @@ struct Interpreter
 
     void reset_errors();
 
-    bool checkTypesInDeclaration(VariableDeclarationAST *decl, ExpressionAST *expr, TypeAST *lhs, TypeAST *rhs);
+    TypeCheckError checkTypesAllowLiteralAndCast(ExpressionAST **expr, TypeAST *lhs, TypeAST *rhs);
 
     VariableDeclarationAST *validateVariable(IdentifierAST *a);
     VariableDeclarationAST *validateFunctionCall(FunctionCallAST *a);
@@ -105,6 +113,7 @@ struct Interpreter
     u64 overallDepsItemsSemantic();
     u64 overallDepsItemsRun();
     void printRemainingDependencies();
+    void printRemainingDependenciesRun();
     bool doWorkAST(interp_work *work);
     bool doBytecode(interp_work *work);
 

@@ -28,8 +28,7 @@ test_pointer :: ()
 }
 
 
-// global_x1 := #run add(3, 0);
-global_x1 := 3;
+global_x1 := #run add(3, 0);
 
 main :: ()
 {
@@ -44,11 +43,17 @@ main :: ()
     // x1 := add(3, 0);
     print("a.b.d is %u, mt.x: %d, add 3+2 = %I64u\n", a.b.d, mt.x, add(3, 2));
     
+    iden(3);
 }
 
 add := (x: u64, y: u64) -> u64 
 {
     return x + y;
+}
+
+iden :: (a: u32) -> u32
+{
+    return a;
 }
 
 #run main();
