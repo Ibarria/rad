@@ -218,7 +218,7 @@ bool isDefinedExpression(ExpressionAST *expr)
     return false;
 }
 
-s64 computeValue(ExpressionAST *expr)
+s64 computeValueInt(ExpressionAST *expr)
 {
     switch (expr->ast_type)
     {
@@ -227,7 +227,9 @@ s64 computeValue(ExpressionAST *expr)
         VariableDeclarationAST *decl = a->decl;
 
         assert(decl);
-        return computeValue((ExpressionAST *)decl->definition);
+        assert(isConstantDeclaration(decl));
+        assert(decl->definition);
+        return computeValueInt((ExpressionAST *)decl->definition);
     }
     case AST_LITERAL: {
         auto lit = (LiteralAST *)expr;
@@ -242,8 +244,8 @@ s64 computeValue(ExpressionAST *expr)
         // Only when both operands are
         auto binop = (BinaryOperationAST *)expr;
         s64 op1, op2;
-        op1 = computeValue(binop->lhs);
-        op2 = computeValue(binop->rhs);
+        op1 = computeValueInt(binop->lhs);
+        op2 = computeValueInt(binop->rhs);
         switch (binop->op)
         {
         case TK_STAR: {
@@ -275,10 +277,80 @@ s64 computeValue(ExpressionAST *expr)
         auto var_ref = (VarReferenceAST *)expr;
         // Another conservative approach. 
         // @TODO: When we have enums, this might have to change
+        assert(!"We should never be here, call isDefinedExpression first");
         return false;
     }
     case AST_ARRAY_ACCESS:
+        assert(!"We should never be here, call isDefinedExpression first");
         return false;
+    default:
+        assert(!"We should never be here, we could not parse this type\n");
+    }
+    return 0;
+}
+
+f64 computeValueFloat(ExpressionAST *expr)
+{
+    switch (expr->ast_type)
+    {
+    case AST_IDENTIFIER: {
+        IdentifierAST *a = (IdentifierAST *)expr;
+        VariableDeclarationAST *decl = a->decl;
+
+        assert(decl);
+        assert(isConstantDeclaration(decl));
+        assert(decl->definition);
+        return computeValueFloat((ExpressionAST *)decl->definition);
+    }
+    case AST_LITERAL: {
+        auto lit = (LiteralAST *)expr;
+        assert(lit->typeAST->basic_type == BASIC_TYPE_FLOATING);
+        return lit->_f64;
+    }
+    case AST_BINARY_OPERATION: {
+        // Only when both operands are
+        auto binop = (BinaryOperationAST *)expr;
+        f64 op1, op2;
+        op1 = computeValueFloat(binop->lhs);
+        op2 = computeValueFloat(binop->rhs);
+        switch (binop->op)
+        {
+        case TK_STAR: {
+            return op1 * op2;
+            break;
+        }
+        case TK_DIV: {
+            return op1 / op2;
+            break;
+        }
+        case TK_MOD: {
+            assert(!"Illegal operation");
+            return 0;
+            break;
+        }
+        case TK_PLUS: {
+            return op1 + op2;
+            break;
+        }
+        case TK_MINUS: {
+            return op1 - op2;
+            break;
+        }
+        default:
+            assert(false);
+            return 0;
+        }
+    }
+    case AST_STRUCT_ACCESS: {
+        auto var_ref = (VarReferenceAST *)expr;
+        // Another conservative approach. 
+        // @TODO: When we have enums, this might have to change
+        assert(!"We should never be here, call isDefinedExpression first");
+        return 0;
+    }
+    case AST_ARRAY_ACCESS:
+        assert(!"We should never be here, call isDefinedExpression first");
+        return 0;
     default:
         assert(!"We should never be here, we could not parse this type\n");
     }
@@ -392,6 +464,59 @@ DirectTypeAST *getTypeEx(DirectTypeAST *oldtype, u32 newbytes);
 static void change_type_bytes(LiteralAST *lit, DirectTypeAST *dt)
 {
     lit->typeAST = getTypeEx(lit->typeAST, dt->size_in_bytes);
+}
+
+static bool value_fits_in_bytes(s64 val, DirectTypeAST *dt)
+{
+    u64 mask;
+
+    // This is done to remove the sign and allow mask to work
+    if (val < 0) val = -val;
+
+    switch (dt->size_in_bytes) {
+    case 1: {
+        mask = 0x0FF;
+        break;
+    }
+    case 2: {
+        mask = 0x0FFFF;
+        break;
+    }
+    case 4: {
+        mask = 0x0FFFFFFFF;
+        break;
+    }
+    case 8: {
+        mask = 0xFFFFFFFFFFFFFFFFULL;
+        break;
+    }
+    default:
+        assert(!"We should never be here");
+        return false;
+    }
+
+    if ((val & mask) == val) {
+        return true;
+    }
+    return false;
+}
+
+static bool value_fits_in_bytes(f64 val, DirectTypeAST *dt)
+{
+    switch (dt->size_in_bytes) {
+    case 4: {
+        f32 val2 = (f32)val;
+        return val2 == val;
+    }
+    case 8: {
+        return true;
+    }
+    default:
+        assert(!"We should never be here");
+        return false;
+    }
+
+    return false;
 }
 
 static bool literal_value_fits_in_bytes(LiteralAST *lit, DirectTypeAST *dt)
@@ -585,6 +710,51 @@ TypeCheckError Interpreter::checkTypesAllowLiteralAndCast(ExpressionAST **expr, 
         }
 
         if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {
+            if (isDefinedExpression(*expr)) {
+                if (!lhsDType->isSigned && rhsDType->isSigned) {
+                    return TCH_SIGN_MISMATCH;
+                }
+
+                if (isLiteral(*expr)) {
+                    auto lit = (LiteralAST *)*expr;
+
+                    // If the RHS is a literal, try to see if it can fit in less bytes
+                    if (literal_value_fits_in_bytes(lit, lhsDType)) {
+                        change_type_bytes(lit, lhsDType);
+                        return TCH_OK;
+                    } else {
+                        return TCH_LITERAL_NOT_FIT;
+                    }
+                } else {
+                    // we have an expression that is more than a literal. 
+                    // We need to know the type first:
+                    if (rhsDType->basic_type == BASIC_TYPE_INTEGER) {
+                        s64 val = computeValueInt(*expr);
+                        if (value_fits_in_bytes(val, lhsDType)) {
+                            LiteralAST *lit = createLiteral(*expr, lhsDType);
+                            lit->_s64 = val;
+                            *expr = lit;
+                            return TCH_OK;
+                        } else {
+                            return TCH_LITERAL_NOT_FIT;
+                        }
+                    } else if (rhsDType->basic_type == BASIC_TYPE_FLOATING) {
+                        f64 val = computeValueFloat(*expr);
+                        if (value_fits_in_bytes(val, lhsDType)) {
+                            LiteralAST *lit = createLiteral(*expr, lhsDType);
+                            lit->_f64 = val;
+                            *expr = lit;
+                            return TCH_OK;
+                        } else {
+                            return TCH_LITERAL_NOT_FIT;
+                        }
+                    } else {
+                        assert(!"we should never be here");
+                    }
+                }
+            } else {
+                return TCH_TYPE_NOT_FIT;
+            }
             if (isLiteral(*expr)) {
                 auto lit = (LiteralAST *)*expr;
 
@@ -844,6 +1014,16 @@ IdentifierAST * Interpreter::createIdentifier(const char * name, VariableDeclara
     id->expr_type = decl->specified_type;
     id->scope = decl->scope;
     return id;
+}
+
+LiteralAST * Interpreter::createLiteral(ExpressionAST * expr, DirectTypeAST * type)
+{
+    LiteralAST *lit = new (&pool) LiteralAST();
+    copyASTloc(expr, lit);
+    lit->s = sequence_id++;
+    lit->expr_type = type;
+    lit->typeAST = type;
+    return lit;
 }
 
 VariableDeclarationAST * Interpreter::createDeclaration(const char * name, TypeAST * type, ExpressionAST * definition)
@@ -2172,7 +2352,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     Error(at, "Array needs to have an integer type for their size\n");
                     return false;
                 }
-                at->num_elems = computeValue(at->num_expr);
+                at->num_elems = computeValueInt(at->num_expr);
                 if (at->num_elems == 0) {
                     Error(at, "Array cannot have 0 length\n");
                     return false;

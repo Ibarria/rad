@@ -95,6 +95,7 @@ struct Interpreter
     bool compatibleTypes(TypeAST *lhs, TypeAST *rhs, bool &needs_cast);
     void addCast(ExpressionAST **expr, TypeAST *srcType, TypeAST *dstType);
     IdentifierAST *createIdentifier(const char *name, VariableDeclarationAST *decl);
+    LiteralAST *createLiteral(ExpressionAST *expr, DirectTypeAST *type);
     VariableDeclarationAST *createDeclaration(const char *name, TypeAST *type, ExpressionAST *definition);
     VariableDeclarationAST *createDeclarationPtr(const char *name, TypeAST *type, ExpressionAST *definition);
     VariableDeclarationAST *createDeclarationSInt(const char *name, s64 start_value, BaseAST *ast);
