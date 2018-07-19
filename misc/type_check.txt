@@ -1,0 +1,31 @@
+RETURN_STATEMENT
+	* Check types, allow casting (array casting, literal promotion)
+FUNCTION_CALL ARGUMENTS
+	* Check types, allow casting (array casting, literal promotion)
+BINARY_OPERATION
+	* pointer comparison is ok (even if types are not?)
+	* Pointer arithmetic with UINT, SINT
+	* Comparison between function pointers, structs, arrays not allowed?
+	* No allowing cast during comparison? (makes sense for arrays, but for literals?)
+UNARY_OPERATION
+	* Basic checks, +, - only for direct types
+	* BANG operation not allowed for functions or structs? (possible extension, if ptr)
+ASSIGNMENT
+	* Plenty of literal promotion work (signed, unsigned, etc)
+	* Checks for non literal where we check bytes, not default cast
+VARIABLE_DECLARATION
+	* If declaring a function, types must match recursively
+	* If declaring a struct, types must match recursively
+	* If declaring an array or integer, check types and cast if needed (promote too)
+
+
+- BINARY operation is the only one where expr can be on the left or right, and either could be promoted
+- all the others behave like assignment, where lhs is immutable (result), and if there is a cast, only the rhs can do it
+- for now, assume custom types is actually an alias (not a different type). Is this right? Or not?
+
+Create error enum for typecast
+INCOMPATIBLE_TYPE : Generic error, types do not match
+SIGN_MISMATCH 
+LITERAL_VALUE_TOO_LARGE
+TYPE_BYTES_ERROR
+
