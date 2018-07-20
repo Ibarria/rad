@@ -9,6 +9,7 @@
         var.a = 3;
 * Modify compiler to ensure sequence_id is atomic (WinAPI or c++)
 * Pointers and Arrays to be able to do varargs, and an easy way to do printf
+* Without the previous change, we should upconvert in the printf function since C expects it
 * write cast function (built in)
 * convert literal numbers to the right type (like v: float = 0;)
 * do conditionals (if done)

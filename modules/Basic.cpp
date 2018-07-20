@@ -14,6 +14,10 @@
 #define vprintf_s vprintf
 #endif
 
+// Using code from Sean Barret
+#define STB_SPRINTF_IMPLEMENTATION
+#include "stb_sprintf.h"
+
 struct string {
     char *data;
     unsigned long size;
@@ -41,7 +45,7 @@ int _strlen(const char *s)
     return r;
 }
 
-extern "C" DLLEXPORT int print(char *data, unsigned long size, ...)
+extern "C" DLLEXPORT int print(char *data, unsigned long long size, ...)
 {
 #if defined(_WIN32)
     DWORD dwRet;
@@ -50,7 +54,7 @@ extern "C" DLLEXPORT int print(char *data, unsigned long size, ...)
     va_list args;
     va_start(args, size);
 
-    wvsprintf(buffer, data, args);
+    stbsp_vsnprintf(buffer, sizeof(buffer), data, args);
     WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), buffer, _strlen(buffer), &dwRet, 0);
 
     // int ret = vprintf_s(data, args);

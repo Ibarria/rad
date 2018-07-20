@@ -33,7 +33,7 @@ iden :: (a: u32) -> u32
     return a;
 }
 
-fiden :: (a: f32) -> f32
+fiden :: (a: f64) -> f64
 {
     return a;
 }

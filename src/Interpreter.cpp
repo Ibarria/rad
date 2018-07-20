@@ -704,9 +704,21 @@ TypeCheckError Interpreter::checkTypesAllowLiteralAndCast(ExpressionAST **expr, 
         DirectTypeAST *lhsDType = (DirectTypeAST *)lhsType;
 
         if (lhsDType->basic_type != rhsDType->basic_type) {
-            if (rhsType->ast_type != lhsType->ast_type) {
-                return TCH_INCOMPATIBLE_TYPE;
+            // by default, if the basic types do not match, we will just say no 
+            // (demand explicit cast)
+            // There is one exception to this rule, Integer (for defined expressions)
+            // converts to float (not the other way around)            
+            if ((lhsDType->basic_type == BASIC_TYPE_FLOATING) &&
+                (rhsDType->basic_type == BASIC_TYPE_INTEGER) &&
+                isDefinedExpression(*expr)) {
+                s64 ival = computeValueInt(*expr);
+                LiteralAST *lit = createLiteral(*expr, lhsDType);
+                lit->_f64 = (f64)ival;
+                *expr = lit;
+                return TCH_OK;
             }
+
+            return TCH_INCOMPATIBLE_TYPE;
         }
 
         if (rhsDType->size_in_bytes > lhsDType->size_in_bytes) {

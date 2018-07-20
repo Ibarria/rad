@@ -18,10 +18,18 @@ template <class T> const T& max(const T& a, const T& b) {
 
 union __xxx_to_u64 {
     f64 f;
+    f32 d;
     s64 s;
     u64 u;
     void *p;
 };
+
+static u64 straight_convert(f32 f) {
+    __xxx_to_u64 x = { 0 };
+    x.d = f;
+    return x.u;
+}
+
 
 static u64 straight_convert(f64 f) {
     __xxx_to_u64 x;
@@ -1271,7 +1279,13 @@ BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit, s16 re
         break;
     }
     case BASIC_TYPE_FLOATING: {
-        u64 val = straight_convert(lit->_f64);
+        u64 val;
+        if (lit->typeAST->size_in_bytes == 8) val = straight_convert(lit->_f64);
+        else {
+            // this ensures the right floating point number gets added to the const
+            f32 fval = (f32)lit->_f64;
+            val = straight_convert(fval);
+        }
         assert(lit->typeAST->size_in_bytes < 256);
         bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, reg, val);
         bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
