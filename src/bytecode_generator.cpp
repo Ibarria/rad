@@ -564,8 +564,7 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
         // @TODO: Fix this to support either static arrays, Sized arrays or dynamic ones
         // Right now only handles static arrays
 
-        s16 index_reg = reserveRegister();
-        computeExpressionIntoRegister(ac->array_exp, index_reg);
+        s16 index_reg = computeExpressionIntoRegister(ac->array_exp);
         BCI *bci = create_instruction(BC_CAST, index_reg, -1, index_reg, 0);
         bci->dst_type = REGTYPE_UINT;
         bci->dst_type_bytes = 8;
@@ -838,12 +837,11 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
     case AST_ASSIGNMENT: {
         auto assign = (AssignmentAST *)stmt;
 //        s16 mark = program->machine.reg_mark();
-        s16 reg = reserveRegistersForSize(current_function, assign->lhs->expr_type->size_in_bytes);
-        computeExpressionIntoRegister(assign->rhs, reg);
+        s16 reg = computeExpressionIntoRegister(assign->rhs);
 
         if (assign->lhs->ast_type == AST_IDENTIFIER) {
             auto iden = (IdentifierAST *)assign->lhs;
-            s16 address_reg = reserveRegistersForSize(current_function, 8);
+            s16 address_reg = reserveRegister();
             computeAddressIntoRegister(iden, address_reg);
             createStoreInstruction(BC_STORE_TO_MEM_PTR, address_reg, reg, iden->expr_type->size_in_bytes);
         }
@@ -877,8 +875,7 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
     }
     case AST_RETURN_STATEMENT: {
         auto ret_stmt = (ReturnStatementAST *)stmt;
-        s16 reg = reserveRegistersForSize(current_function, ret_stmt->ret->expr_type->size_in_bytes);
-        computeExpressionIntoRegister(ret_stmt->ret, reg);
+        s16 reg = computeExpressionIntoRegister(ret_stmt->ret);
         createStoreInstruction(BC_STORE_TO_CALL_REGISTER, 0, ret_stmt->ret->expr_type->size_in_bytes,
             reg, get_regtype_from_type(ret_stmt->ret->expr_type));
         BCI *bci = create_instruction(BC_RETURN, -1, -1, -1, 0);
@@ -891,8 +888,7 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
     }
     case AST_IF_STATEMENT: {
         auto ifst = (IfStatementAST *)stmt;
-        s16 reg = reserveRegistersForSize(current_function, ifst->condition->expr_type->size_in_bytes);
-        computeExpressionIntoRegister(ifst->condition, reg);
+        s16 reg = computeExpressionIntoRegister(ifst->condition);
         BCI *if_cond_bci = create_instruction(BC_GOTO_CONSTANT_IF_FALSE, reg, -1, -1, -1);
         generate_statement(ifst->then_branch);
 
@@ -1253,7 +1249,7 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         auto unop = (UnaryOperationAST *)expr;
         TypeAST *type = unop->expr->expr_type;
 
-        s16 regexp = reserveRegistersForSize(current_function, type->size_in_bytes);
+        s16 regexp; 
 
         switch (unop->op) {
         case TK_PLUS: {
@@ -1264,25 +1260,26 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
             return;
         }
         case TK_MINUS: {
-            computeExpressionIntoRegister(unop->expr, regexp);
+            regexp = computeExpressionIntoRegister(unop->expr);
             break;
         }
         case TK_BANG: {
-            computeExpressionIntoRegister(unop->expr, regexp);
+            regexp = computeExpressionIntoRegister(unop->expr);
             break;
         }
         case TK_STAR: {
             computeAddressIntoRegister(unop->expr, reg);
+            current_ast = old;
             // There is nothing else to be done, * expr is just the address of expression
             return;
         }
         case TK_LSHIFT: {
             // For pointer types, the right answer is just the pointer
             if (isTypePointer(unop->expr->expr_type)) {
-                computeExpressionIntoRegister(unop->expr, regexp);
+                regexp = computeExpressionIntoRegister(unop->expr);
             } else {
                 assert(!"I am not sure we should ever be here...");
-                computeAddressIntoRegister(unop->expr, regexp);
+                // computeAddressIntoRegister(unop->expr, regexp);
             }
             break;
         }
@@ -1304,11 +1301,9 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         // operate on the 2 regs, write into the result
         TypeAST *lhsType = binop->lhs->expr_type;
         TypeAST *rhsType = binop->rhs->expr_type;
-        s16 reglhs = reserveRegistersForSize(current_function, lhsType->size_in_bytes);
-        s16 regrhs = reserveRegistersForSize(current_function, rhsType->size_in_bytes);
-        computeExpressionIntoRegister(binop->lhs, reglhs);
-        // @Optimization: do shortcircuit?
-        computeExpressionIntoRegister(binop->rhs, regrhs);
+        s16 reglhs = computeExpressionIntoRegister(binop->lhs);
+        // @Optimization: do shortcircuit? YES, MUST HAVE. But here?
+        s16 regrhs = computeExpressionIntoRegister(binop->rhs);
         BCI *bci = create_instruction(BC_BINARY_OPERATION, reglhs, regrhs, reg, binop->op);
         assert(expr->expr_type->size_in_bytes < 256);
         bci->dst_type_bytes = (u8)expr->expr_type->size_in_bytes;
@@ -1321,8 +1316,7 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     }
     case AST_FUNCTION_CALL: {
         auto funcall = (FunctionCallAST *)expr;
-        // This assert here was to ensure expressions would have a value, but #run directives are a special case
-        assert((reg == -1) || !isVoidType(funcall->fundef->declaration->return_type));
+
         // Recursive bytecode generation, if needed. Being_generated is here for recursive calls, or circular calls
         if (funcall->fundef->bc_function == nullptr && !funcall->fundef->being_generated) {
             generate_function(funcall->function_name, funcall->fundef);
@@ -1440,8 +1434,7 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     }
     case AST_CAST: {
         auto cast = (CastAST *)expr;
-        s16 expr_reg = reserveRegistersForSize(current_function, cast->expr->expr_type->size_in_bytes);
-        computeExpressionIntoRegister(cast->expr, expr_reg);
+        s16 expr_reg = computeExpressionIntoRegister(cast->expr);
 
         // And now we need to convert / Copy what is needed
         if (cast->dstType->ast_type == AST_ARRAY_TYPE) {
@@ -1639,13 +1632,6 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     // For now, we only support calling a function with as many arguments as declared
     // Relax this part... 
     // assert(funcall->args.size() == fundecl->arguments.size());
-
-    if (reg_return == -1) {
-        // We could have a function call where we do not care about the return value
-//        assert(isVoidType(fundecl->return_type));
-    } else {
-        assert(!isVoidType(fundecl->return_type));
-    }
 
     if (!isVoidType(fundecl->return_type)) {
         return_regs = roundToQWord(fundecl->return_type->size_in_bytes);
@@ -2527,16 +2513,9 @@ void bytecode_generator::generate_run_directive(RunDirectiveAST *run)
     current_function = run->bc_function;
     current_run = run;
 
-    s16 reg = -1;
-
+    s16 reg = computeExpressionIntoRegister((ExpressionAST *)run->expr);
     if (!isVoidType(run->expr_type)) {
-        // Return types are reserved first
-        reg = reserveRegistersForSize(current_function, run->expr_type->size_in_bytes);
         run->reg = reg;
-    }
-
-    computeExpressionIntoRegister((ExpressionAST *)run->expr, reg);
-    if (!isVoidType(run->expr_type)) {
         createStoreInstruction(BC_STORE_TO_CALL_REGISTER, 0, run->expr_type->size_in_bytes,
             reg, get_regtype_from_type(run->expr_type));
     }
