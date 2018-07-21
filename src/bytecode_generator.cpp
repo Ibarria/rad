@@ -1675,6 +1675,11 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     // This instruction will tell the runner what registers to use when calling the function
     BCI *bci = create_instruction(BC_CREATE_CALL_REGISTER, reg, -1, return_regs, argument_qwords);
 
+    // When a procedure call does not return a value, the call to BC_CALL_PROCEDURE needs a -1
+    // otherwise it accesses wrong memory
+    if (return_regs == -1) {
+        reg_return = -1;
+    }
     // And now we actually call the function
     bci = create_instruction(BC_CALL_PROCEDURE, -1, return_regs, reg_return, straight_convert(funcall->fundef));
     assert(fundecl->return_type->size_in_bytes < 256);
@@ -1710,17 +1715,21 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             break;
         case BC_ZERO_REG: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
             dstreg.data._u64 = 0;
             dstreg.bytes = bci->dst_type_bytes;
             dstreg.type = bci->dst_type;
             break;
         }
         case BC_COPY_REG: {
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             memcpy(&dstreg, &srcreg, sizeof(dstreg));
             break;
         }
         case BC_LOAD_BIG_CONSTANT_TO_REG: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
             copy_bytes(&bci->big_const, &dstreg.data._u64, bci->dst_type_bytes);
             dstreg.bytes = bci->dst_type_bytes;
             dstreg.type = bci->dst_type;
@@ -1729,6 +1738,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         case BC_STORE_TO_STACK_PLUS_CONSTANT: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(program->bss.stack_start + program->bss.stack_size > program->bss.stack_base + bci->big_const);
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             copy_bytes((u8*)(&srcreg.data._u64),
                 &program->bss.stack_base[bci->big_const],
                 bci->dst_type_bytes);
@@ -1744,13 +1754,16 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         case BC_STORE_TO_BSS_PLUS_CONSTANT: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(bci->big_const < program->bss.alloc_size);
-            copy_bytes((u8 *)&srcreg.data._u64, 
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+            copy_bytes((u8 *)&srcreg.data._u64,
                 &program->bss.mem[bci->big_const],
                 bci->dst_type_bytes);
             break;
         }
         case BC_STORE_TO_MEM_PTR: {
             assert(dstreg.type == REGTYPE_POINTER);
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             u8 * ptr = (u8 *)dstreg.data._ptr;
             ptr += bci->big_const;
             copy_bytes((u8 *)&srcreg.data._u64, ptr, bci->dst_type_bytes);
@@ -1759,12 +1772,14 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         case BC_STORE_TO_CALL_REGISTER: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(bci->big_const < current_call_register->num_regs);
-            copy_bytes(&srcreg.data._u64, 
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+            copy_bytes(&srcreg.data._u64,
                 &current_call_register->data[bci->big_const]._u64,                
                 bci->dst_type_bytes);
             break;
         }
         case BC_LOAD_FROM_MEM_PTR: {
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             assert(srcreg.type == REGTYPE_POINTER);
             u8 * ptr = (u8 *)srcreg.data._ptr;
             ptr += bci->big_const;
@@ -1773,6 +1788,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         }
         case BC_LOAD_FROM_STACK_PLUS_CONSTANT: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
             assert(program->bss.stack_start + program->bss.stack_size > program->bss.stack_base + bci->big_const);
             copy_bytes(&program->bss.stack_base[bci->big_const],
                 (u8 *)&dstreg.data._u64,
@@ -1784,7 +1800,8 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         case BC_LOAD_FROM_BSS_PLUS_CONSTANT: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(bci->big_const < program->bss.alloc_size);
-            copy_bytes(&program->bss.mem[bci->big_const], 
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+            copy_bytes(&program->bss.mem[bci->big_const],
                 (u8 *)&dstreg.data._u64, 
                 bci->dst_type_bytes);
             dstreg.bytes = bci->dst_type_bytes;
@@ -1795,6 +1812,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(current_call_register);
             assert(current_call_register->num_regs > bci->big_const);
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
             copy_bytes(&current_call_register->data[bci->big_const]._u64,
                 &dstreg.data._u64,
                 bci->dst_type_bytes);
@@ -1805,6 +1823,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         case BC_ADDRESS_FROM_STACK_PLUS_CONSTANT: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(program->bss.stack_start + program->bss.stack_size > program->bss.stack_base + bci->big_const);
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
 
             dstreg.data._ptr = &program->bss.stack_base[bci->big_const];
 
@@ -1815,6 +1834,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
         case BC_ADDRESS_FROM_BSS_PLUS_CONSTANT: {
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(bci->big_const < program->bss.alloc_size);
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
             dstreg.data._ptr = &program->bss.mem[bci->big_const];
 
             dstreg.bytes = bci->dst_type_bytes;
@@ -1826,6 +1846,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             assert(current_call_register);
             // Call registers are order on a per register granularity
             assert(current_call_register->num_regs > bci->big_const);
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
 
             // Since we are moving to doing address + mem access for all vars, we need to allow this
             // assert(!"Taking an address from a function parameter is not allowed");
@@ -1841,6 +1862,8 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             break;
         }
         case BC_INC_REG_CONST: {
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             assert(srcreg.type != REGTYPE_UNKNOWN);
             if (srcreg.type == REGTYPE_UINT) {                          
                 if (srcreg.bytes == 1) {                               
@@ -1872,6 +1895,8 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             break;
         }
         case BC_BINARY_OPERATION: {
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             assert(bci->dst_type != REGTYPE_UNKNOWN);
 
             // at this level, types have to match. It is up to the higher levels to put casts in
@@ -2173,6 +2198,8 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             break;
         }
         case BC_UNARY_OPERATION: {
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             
             switch (bci->big_const) {
@@ -2300,7 +2327,8 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             }
             for ( ; ind < bci->big_const; ind++) {
                 s16 src_reg = bci->src_reg + ind;
-                
+                assert((src_reg < func->num_regs) && (src_reg >= 0));
+
                 copy_bytes(&func->regs[src_reg].data._u64,
                     &call->data[ind]._u64,
                     func->regs[src_reg].bytes);
@@ -2363,8 +2391,8 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             return; 
         }
         case BC_CAST: {
-            assert(bci->src_reg < func->num_regs);
-            assert(bci->dst_reg < func->num_regs);
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             assert(bci->dst_type != REGTYPE_UNKNOWN);
             assert(bci->dst_type_bytes > 0);
 
@@ -2439,7 +2467,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             break;
         }
         case BC_GOTO_CONSTANT_IF_FALSE: {
-            assert(bci->src_reg < func->num_regs);
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             assert(srcreg.type != REGTYPE_UNKNOWN);
             assert(srcreg.bytes > 0);
 
@@ -2452,7 +2480,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             break;
         }
         case BC_GOTO_CONSTANT_IF_TRUE: {
-            assert(bci->src_reg < func->num_regs);
+            assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
             assert(srcreg.type != REGTYPE_UNKNOWN);
             assert(srcreg.bytes > 0);
 
@@ -2470,6 +2498,7 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
             continue;
         }
         case BC_MALLOC: {
+            assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
             u64 bytes = bci->big_const;
             u8 *ptr = (u8 *)malloc(bytes);
             dstreg.data._ptr = ptr;
