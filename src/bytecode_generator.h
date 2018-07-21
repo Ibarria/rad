@@ -104,6 +104,7 @@ struct bytecode_generator
     bytecode_function *current_function = nullptr;
     Interpreter *interp;
     RunDirectiveAST *current_run = nullptr;
+    BaseAST *current_ast = nullptr;
 
     external_library *findOrLoadLibrary(TextType filename);
 
