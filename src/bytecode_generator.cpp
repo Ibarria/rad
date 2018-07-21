@@ -1062,16 +1062,9 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         auto lit = (LiteralAST *)run->new_ast;
 
         run->reg = reserveRegistersForSize(current_function, run->expr_type->size_in_bytes);
-        if (run->bci == nullptr) {
-            BCI *extra = nullptr;
-            BCI *bci = create_load_literal_instruction(lit, -1, &extra);
-            assert(extra == nullptr);
-            run->bci = bci;
-            copyLoc(bci, stmt);
-        }
-
+        assert(run->bci == nullptr);
+        run->bci = create_load_literal_instruction(lit, -1);
         run->bci->dst_reg = run->reg;
-        issue_instruction(run->bci);
 
         if (!run->computed) {
             current_function->missing_run_directives++;
@@ -1178,7 +1171,7 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
     decl->flags |= DECL_FLAG_HAS_BEEN_BT_GEN;
 }
 
-BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit, s16 reg, BCI **extra)
+BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit, s16 reg)
 {
     BCI *bci = nullptr;
     auto old = current_ast;
@@ -1208,8 +1201,7 @@ BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit, s16 re
         bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg, val);
         bci->dst_type_bytes = 8;
         bci->dst_type = REGTYPE_POINTER;
-        assert(extra != nullptr);
-        *extra = bci;
+
         val = strlen(lit->str);
         bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg + 1, val);
         bci->dst_type_bytes = 8;
@@ -1252,11 +1244,9 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
     switch (expr->ast_type) {
     case AST_LITERAL: {
         auto lit = (LiteralAST *)expr;
-        BCI *bci, *extra;
-        bci = extra = nullptr;
-        bci = create_load_literal_instruction(lit, reg, &extra);
-        if (extra != nullptr) issue_instruction(extra);
-        issue_instruction(bci);
+        BCI *bci;
+        bci = nullptr;
+        bci = create_load_literal_instruction(lit, reg);
         break;
     }
     case AST_UNARY_OPERATION: {
@@ -1428,16 +1418,10 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         auto lit = (LiteralAST *)run->new_ast;
 
         run->reg = reg;
-        if (run->bci == nullptr) {
-            BCI *extra = nullptr;
-            BCI *bci = create_load_literal_instruction(lit, -1, &extra);
-            assert(extra == nullptr);
-            run->bci = bci;
-            copyLoc(bci, expr);
-        }
+        assert(run->bci == nullptr);
+        run->bci = create_load_literal_instruction(lit, -1);
 
         run->bci->dst_reg = run->reg;
-        issue_instruction(run->bci);
 
         if (!run->computed) {
             current_function->missing_run_directives++;

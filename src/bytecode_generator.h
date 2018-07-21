@@ -112,7 +112,7 @@ struct bytecode_generator
     s16 reserveRegisters(s16 num);
 
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 src2_reg, s16 dst_reg, u64 big_const);
-    BCI *create_load_literal_instruction(LiteralAST *lit, s16 reg, BCI **extra);
+    BCI *create_load_literal_instruction(LiteralAST *lit, s16 reg);
     void createStoreInstruction(VariableDeclarationAST *decl, s16 reg);
     void createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
     void createStoreInstruction(BytecodeInstructionOpcode opcode, s16 ptrreg, s16 datareg, u64 size_in_bytes);
