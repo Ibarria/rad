@@ -1077,10 +1077,12 @@ void bytecode_generator::initializeGlobalVariables(Scope * scope)
 void bytecode_generator::initializeGlobalVariable(VariableDeclarationAST * decl)
 {
     assert(decl->flags & DECL_FLAG_IS_GLOBAL_VARIABLE);
-
+    auto old = current_ast;
+    current_ast = decl;
     current_function = &program->preamble_function;
     initializeVariable(decl);
     current_function = nullptr;
+    current_ast = old;
 }
 
 void bytecode_generator::initializeGlobalFunctions(Scope * scope)
@@ -2508,6 +2510,8 @@ void bytecode_generator::generate_run_directive(RunDirectiveAST *run)
     // or bytecode with the final result
     bytecode_function *old_current = current_function;
     RunDirectiveAST *old_run = current_run;
+    auto old_ast = current_ast;
+    current_ast = run;
 
     if (run->bc_function == nullptr) {
         bytecode_function *func = new (pool) bytecode_function;
@@ -2533,7 +2537,7 @@ void bytecode_generator::generate_run_directive(RunDirectiveAST *run)
 
     current_function = old_current;
     current_run = old_run;
-
+    current_ast = old_ast;
     // do an early exit in case of any errors, such as those by recursive #run calls
     if (!interp->success) return;
 
