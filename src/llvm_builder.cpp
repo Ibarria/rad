@@ -205,18 +205,6 @@ static Value *generateIdentifierCode(IdentifierAST *id)
             }
         }
 
-        printf("Identifier type: ");
-        id->decl->specified_type->llvm_type->print(outs(), true);
-        outs().flush();
-        printf("\nIdentifier code\n\tvariable: ");
-        variable->print(outs(), true);
-        printf("\n\tIndices:");
-        for (auto i : idx) {
-            printf("\n\t");
-            i->print(outs(), true);
-        }
-        printf("\n");
-
         Value *gep = Builder.CreateGEP(
             // decl->specified_type->llvm_type, 
             variable, idx);
@@ -924,9 +912,6 @@ static void generateCode(BaseAST *ast)
             struct_members.push_back(decl->specified_type->llvm_type);
         }
         stype->llvm_type = StructType::create(TheContext, struct_members, stype->decl->varname);
-        printf("Defining type for %s: ", stype->decl->varname);
-        stype->llvm_type->print(outs(), true); outs().flush();
-        printf("\n");
         break;
     }
     case AST_RUN_DIRECTIVE: {
