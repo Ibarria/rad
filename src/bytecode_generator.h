@@ -151,6 +151,9 @@ struct bytecode_generator
     BCI *computeArrayDataPtr(IdentifierAST *array);
     BCI *computeArrayCount(IdentifierAST *array);
     BCI *compute_function_call(FunctionCallAST *funcall);
+    BCI *loadConstantU64(u64 val);
+    BCI *derefPointer(BCI *ptr_inst, RegisterType type, u8 bytes = 8);
+    BCI *derefPointer(BCI *ptr_inst, RegisterType type, u8 bytes, s16 dst_reg); // explicit version for optimization
 };
 
 struct bc_call_register
