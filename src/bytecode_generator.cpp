@@ -1702,7 +1702,11 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
 {
     u32 inst_index = 0;
     bc_register *old_regs = func->regs;
-    func->regs = (bc_register *)calloc(func->num_regs, sizeof(bc_register));
+    // calloc and malloc can allocate 0 bytes, but this makes some memory issues harder to debug
+    if (func->num_regs > 0)
+        func->regs = (bc_register *)calloc(func->num_regs, sizeof(bc_register));
+    else
+        func->regs = nullptr;
 
     while (inst_index < func->instructions.size()) {
         auto bci = func->instructions[inst_index];
