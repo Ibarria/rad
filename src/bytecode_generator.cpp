@@ -394,8 +394,8 @@ void print_bc_function(bytecode_function *func)
     } else {
         printf("Function <unnamed> ");
     }
-    printf(" reg arg size: %" U64FMT "u local var size: %" U64FMT "u num_instructions: %d\n",
-           func->bc_arg_size, func->bc_local_var_size, func->instructions.size());
+    printf("local regs: %d reg arg size: %" U64FMT "u local var size: %" U64FMT "u num_instructions: %d\n",
+           func->num_regs, func->bc_arg_size, func->bc_local_var_size, func->instructions.size());
     for(auto inst: func->instructions) {
         print_instruction(inst);
     }
@@ -504,7 +504,7 @@ void bytecode_generator::createLoadInstruction(BytecodeInstructionOpcode opcode,
     }
 }
 
-void bytecode_generator::createAddressInstruction(VariableDeclarationAST * decl, s16 reg)
+BCI *bytecode_generator::createAddressInstruction(VariableDeclarationAST * decl)
 {
     BytecodeInstructionOpcode opcode;
     if (isGlobal(decl)) {
@@ -518,17 +518,22 @@ void bytecode_generator::createAddressInstruction(VariableDeclarationAST * decl,
         opcode = BC_UNINITIALIZED;
     }
 
+    s16 reg = reserveRegister();
+
     auto old = current_ast;
     current_ast = decl;
     BCI *bci = create_instruction(opcode, -1, -1, reg, decl->bc_offset);
     bci->dst_type_bytes = 8;
     bci->dst_type = REGTYPE_POINTER;
     current_ast = old;
+
+    return bci;
 }
 
-void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 reg)
+BCI *bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr)
 {
     auto old = current_ast;
+    BCI *ret = nullptr;
     current_ast = expr;
     switch (expr->ast_type)
     {
@@ -539,21 +544,20 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
 
             s16 nreg = reserveRegister();
             // load the current offset
-            BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, nreg, sac->decl->bc_offset);
-            bci->dst_type = REGTYPE_UINT;
-            bci->dst_type_bytes = 8;
+            auto offset = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), sac->decl->bc_offset);
+            offset->dst_type = REGTYPE_UINT;
+            offset->dst_type_bytes = 8;
 
-            s16 innreg = reserveRegister();
             // load the inner offset
-            createLoadOffsetInstruction(sac->next, innreg );
+            auto inner = createLoadOffsetInstruction(sac->next);
             // add them up together
-            bci = create_instruction(BC_BINARY_OPERATION, nreg, innreg, reg, TK_PLUS);
-            bci->dst_type = REGTYPE_UINT;
-            bci->dst_type_bytes = 8;
+            ret = create_instruction(BC_BINARY_OPERATION, offset->dst_reg, inner->dst_reg, reserveRegister(), TK_PLUS);
+            ret->dst_type = REGTYPE_UINT;
+            ret->dst_type_bytes = 8;
         } else {
-            BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg, sac->decl->bc_offset);
-            bci->dst_type = REGTYPE_UINT;
-            bci->dst_type_bytes = 8;
+            ret = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), sac->decl->bc_offset);
+            ret->dst_type = REGTYPE_UINT;
+            ret->dst_type_bytes = 8;
         }
 
         break;
@@ -564,45 +568,44 @@ void bytecode_generator::createLoadOffsetInstruction(ExpressionAST * expr, s16 r
         // @TODO: Fix this to support either static arrays, Sized arrays or dynamic ones
         // Right now only handles static arrays
 
-        s16 index_reg = computeExpressionIntoRegister(ac->array_exp);
-        BCI *bci = create_instruction(BC_CAST, index_reg, -1, index_reg, 0);
+        auto index_inst = computeExpression(ac->array_exp);
+        BCI *bci = create_instruction(BC_CAST, index_inst->dst_reg, -1, index_inst->dst_reg, 0);
         bci->dst_type = REGTYPE_UINT;
         bci->dst_type_bytes = 8;
 
         // Multiply the index by the size of each array elemen
-        s16 size_reg = reserveRegister();
-        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, size_reg, ac->access_type->size_in_bytes);
-        bci->dst_type = REGTYPE_UINT;
-        bci->dst_type_bytes = 8;
+        auto array_size = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), ac->access_type->size_in_bytes);
+        array_size->dst_type = REGTYPE_UINT;
+        array_size->dst_type_bytes = 8;
 
-        s16 offset_reg = reg;
-        if (ac->next) {
-            offset_reg = reserveRegister();
-        }
-        bci = create_instruction(BC_BINARY_OPERATION, index_reg, size_reg, offset_reg, TK_STAR);
-        bci->dst_type = REGTYPE_UINT;
-        bci->dst_type_bytes = 8;
+        auto array_offset = create_instruction(BC_BINARY_OPERATION, index_inst->dst_reg, array_size->dst_reg, reserveRegister(), TK_STAR);
+        array_offset->dst_type = REGTYPE_UINT;
+        array_offset->dst_type_bytes = 8;
+
+        ret = array_offset;
 
         if (ac->next) {
-            s16 inner_reg = reserveRegister();
-            createLoadOffsetInstruction(ac->next, inner_reg);
-            bci = create_instruction(BC_BINARY_OPERATION, offset_reg, inner_reg, reg, TK_STAR);
+            auto next_offset = createLoadOffsetInstruction(ac->next);
+            bci = create_instruction(BC_BINARY_OPERATION, array_offset->dst_reg, next_offset->dst_reg, reserveRegister(), TK_STAR);
             bci->dst_type = REGTYPE_UINT;
             bci->dst_type_bytes = 8;
+
+            ret = bci;
         } 
         break;
     }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)expr;
-        BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg, id->decl->bc_offset);
-        bci->dst_type = REGTYPE_UINT;
-        bci->dst_type_bytes = 8;
+        ret = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), id->decl->bc_offset);
+        ret->dst_type = REGTYPE_UINT;
+        ret->dst_type_bytes = 8;
         break;
     }
     default:
         assert(!"This function can only be called with something that can yield a declaration");
     }
     current_ast = old;
+    return ret;
 }
 
 BCI * bytecode_generator::createNopInstruction(BaseAST *ast)
@@ -836,28 +839,25 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
     }
     case AST_ASSIGNMENT: {
         auto assign = (AssignmentAST *)stmt;
-//        s16 mark = program->machine.reg_mark();
-        s16 reg = computeExpressionIntoRegister(assign->rhs);
+        auto rhs = computeExpression(assign->rhs);
 
         if (assign->lhs->ast_type == AST_IDENTIFIER) {
             auto iden = (IdentifierAST *)assign->lhs;
-            s16 address_reg = reserveRegister();
-            computeAddressIntoRegister(iden, address_reg);
-            createStoreInstruction(BC_STORE_TO_MEM_PTR, address_reg, reg, iden->expr_type->size_in_bytes);
+            auto id_address = computeAddress(iden);
+            createStoreInstruction(BC_STORE_TO_MEM_PTR, id_address->dst_reg, rhs->dst_reg, iden->expr_type->size_in_bytes);
         }
         else if (assign->lhs->ast_type == AST_UNARY_OPERATION) {
             auto unop = (UnaryOperationAST *)assign->lhs;
             assert(unop->op == TK_LSHIFT);
             // LHS LSHIFT is always a pointer, load the pointer (which is the address where)
             // we want to store later
-            s16 ptr_reg = computeExpressionIntoRegister(unop->expr);            
-            createStoreInstruction(BC_STORE_TO_MEM_PTR, ptr_reg, reg, unop->expr_type->size_in_bytes);
+            auto ptr_reg = computeExpression(unop->expr);            
+            createStoreInstruction(BC_STORE_TO_MEM_PTR, ptr_reg->dst_reg, rhs->dst_reg, unop->expr_type->size_in_bytes);
         }
         else {
             assert(!"We do not support anything else for an lvalue");
         }
 
-//        program->machine.pop_mark(mark);
         break;
     }
     case AST_FUNCTION_CALL: {
@@ -870,15 +870,15 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
             assert(funcall->fundef->bc_function);
         }
 
-        compute_function_call_into_register(funcall, -1);
+        compute_function_call(funcall);
         break;
     }
     case AST_RETURN_STATEMENT: {
         auto ret_stmt = (ReturnStatementAST *)stmt;
-        s16 reg = computeExpressionIntoRegister(ret_stmt->ret);
+        auto ret_inst = computeExpression(ret_stmt->ret);
         createStoreInstruction(BC_STORE_TO_CALL_REGISTER, 0, ret_stmt->ret->expr_type->size_in_bytes,
-            reg, get_regtype_from_type(ret_stmt->ret->expr_type));
-        BCI *bci = create_instruction(BC_RETURN, -1, -1, -1, 0);
+            ret_inst->dst_reg, get_regtype_from_type(ret_stmt->ret->expr_type));
+        create_instruction(BC_RETURN, -1, -1, -1, 0);
         break;
     }
     case AST_STATEMENT_BLOCK: {
@@ -888,8 +888,8 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
     }
     case AST_IF_STATEMENT: {
         auto ifst = (IfStatementAST *)stmt;
-        s16 reg = computeExpressionIntoRegister(ifst->condition);
-        BCI *if_cond_bci = create_instruction(BC_GOTO_CONSTANT_IF_FALSE, reg, -1, -1, -1);
+        auto if_inst = computeExpression(ifst->condition);
+        BCI *if_cond_bci = create_instruction(BC_GOTO_CONSTANT_IF_FALSE, if_inst->dst_reg, -1, -1, -1);
         generate_statement(ifst->then_branch);
 
         BCI *else_cond_bci = nullptr;
@@ -915,87 +915,82 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
             generate_statement(decl);
         }
 
-        s16 reg = reserveRegisters(8);
-        s16 end_reg, it_val_reg, it_inc_val_reg, it_index_val_reg;
-        s16 array_count;
-        BCI *bci = nullptr, *bci_loop_cond = nullptr;
+        BCI *bci_loop_cond = nullptr;
         s32 loop_start = -1, loop_end = -1;
         // Work before the loop block
         if (forst->is_array) {
             auto atype = (ArrayTypeAST *)forst->arr->expr_type;
-            array_count = reg;
 
-            bci = createNopInstruction(forst);
+            auto nop = createNopInstruction(forst);
             // the loop starts at this instruction
-            loop_start = bci->inst_index;
+            loop_start = nop->inst_index;
 
-            array_count = computeArrayCountIntoRegister(forst->arr);
+            auto array_count = computeArrayCount(forst->arr);
 
             // Load the value of it_index, it is either 0 (start value) or whatever comes from the loop
-            it_index_val_reg = computeExpressionIntoRegister(forst->it_index);
+            auto it_index_val = computeExpression(forst->it_index);
 
-            bci = create_instruction(BC_BINARY_OPERATION, it_index_val_reg, array_count, reg + 1, TK_GT);
-            bci->dst_type = REGTYPE_UINT;
-            bci->dst_type_bytes = 1;
+            auto cond_val = create_instruction(BC_BINARY_OPERATION, it_index_val->dst_reg, array_count->dst_reg, reserveRegister(), TK_GT);
+            cond_val->dst_type = REGTYPE_UINT;
+            cond_val->dst_type_bytes = 1;
 
-            bci = create_instruction(BC_GOTO_CONSTANT_IF_TRUE, reg + 1, -1, -1, loop_end);
+            bci_loop_cond = create_instruction(BC_GOTO_CONSTANT_IF_TRUE, cond_val->dst_reg, -1, -1, loop_end);
             // store this instruction, as we do not know the end yet
-            bci_loop_cond = bci;
 
             // Load the correct value for it, before we go into the main loop
             {
-                s16 array_data_ptr = computeArrayDataPtrIntoRegister(forst->arr);
+                auto array_data_ptr = computeArrayDataPtr(forst->arr);
 
-                s16 array_elem_size = reserveRegister();
-                bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, array_elem_size, atype->array_of_type->size_in_bytes);
-                bci->dst_type = REGTYPE_UINT;
-                bci->dst_type_bytes = 8;
+                auto array_elem_size = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), 
+                    atype->array_of_type->size_in_bytes);
+                array_elem_size->dst_type = REGTYPE_UINT;
+                array_elem_size->dst_type_bytes = 8;
 
-                s16 it_ptr = reserveRegister();
-                s16 it_offset = reserveRegister();
-                s16 it_new_val = reserveRegister();
-                bci = create_instruction(BC_BINARY_OPERATION, array_elem_size, it_index_val_reg, it_offset, TK_STAR);
-                bci->dst_type = REGTYPE_UINT;
-                bci->dst_type_bytes = 8;
 
-                bci = create_instruction(BC_BINARY_OPERATION, array_data_ptr, it_offset, it_ptr, TK_PLUS);
-                bci->dst_type = REGTYPE_POINTER;
-                bci->dst_type_bytes = 8;
+                BCI *it_new_val;
+                auto it_offset = create_instruction(BC_BINARY_OPERATION, array_elem_size->dst_reg, it_index_val->dst_reg, 
+                    reserveRegister(), TK_STAR);
+                it_offset->dst_type = REGTYPE_UINT;
+                it_offset->dst_type_bytes = 8;
+
+                auto it_ptr = create_instruction(BC_BINARY_OPERATION, array_data_ptr->dst_reg, it_offset->dst_reg, 
+                    reserveRegister(), TK_PLUS);
+                it_ptr->dst_type = REGTYPE_POINTER;
+                it_ptr->dst_type_bytes = 8;
 
                 if (forst->is_it_ptr) {
                     it_new_val = it_ptr;
                 } else {
-                    bci = create_instruction(BC_UNARY_OPERATION, it_ptr, -1, it_new_val, TK_LSHIFT);
-                    bci->dst_type = get_regtype_from_type(forst->it->decl->specified_type);
-                    bci->dst_type_bytes = forst->it->decl->specified_type->size_in_bytes;
+                    it_new_val = create_instruction(BC_UNARY_OPERATION, it_ptr->dst_reg, -1, reserveRegister(), TK_LSHIFT);
+                    it_new_val->dst_type = get_regtype_from_type(forst->it->decl->specified_type);
+                    it_new_val->dst_type_bytes = forst->it->decl->specified_type->size_in_bytes;
                 }
 
-                createStoreInstruction(forst->it->decl, it_new_val);
+                createStoreInstruction(forst->it->decl, it_new_val->dst_reg);
             }
 
         } else {
             // Keep the end expression (should not change) loaded
-            end_reg = computeExpressionIntoRegister(forst->end);
+            auto end = computeExpression(forst->end);
 
-            bci = createNopInstruction(forst);
+            auto nop = createNopInstruction(forst);
             // the loop starts at this instruction
-            loop_start = bci->inst_index ;
+            loop_start = nop->inst_index ;
 
             // Now do the check if continue or not
             // load it value
-            it_val_reg = computeExpressionIntoRegister(forst->it);
+            auto it_val = computeExpression(forst->it);
 
             // The expression TK_GT here is so the start, end are inclusive
             // There is a possible, remote problem: if the end is also the last
             // representable number, we would never complete the loop. Given we use 64 bit
             // integers, this is unlikely here
-            bci = create_instruction(BC_BINARY_OPERATION, it_val_reg, end_reg, reg + 6, TK_GT);
-            bci->dst_type = REGTYPE_UINT;
-            bci->dst_type_bytes = 1;
+            auto cond_val = create_instruction(BC_BINARY_OPERATION, it_val->dst_reg, end->dst_reg, reserveRegister(), TK_GT);
+            cond_val->dst_type = REGTYPE_UINT;
+            cond_val->dst_type_bytes = 1;
 
-            bci = create_instruction(BC_GOTO_CONSTANT_IF_TRUE, reg + 6, -1, -1, loop_end);
+            bci_loop_cond = create_instruction(BC_GOTO_CONSTANT_IF_TRUE, cond_val->dst_reg, -1, -1, loop_end);
             // store this instruction, as we do not know the end yet
-            bci_loop_cond = bci;                 
         }
 
         // Next generate the loop itself
@@ -1004,39 +999,36 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         // Now we need to increment the loop variables
         if (forst->is_array) {
             // Load the value of it_index
-            it_index_val_reg = computeExpressionIntoRegister(forst->it_index);
-            s16 new_index = reserveRegister();
+            auto it_index_val = computeExpression(forst->it_index);
 
-            bci = create_instruction(BC_INC_REG_CONST, it_index_val_reg, -1, new_index, 1);
+            auto new_index = create_instruction(BC_INC_REG_CONST, it_index_val->dst_reg, -1, reserveRegister(), 1);
             // save the new it_index
-            createStoreInstruction(forst->it_index->decl, new_index);
+            createStoreInstruction(forst->it_index->decl, new_index->dst_reg);
         } else {
 
             // load it again, in case the loop modified it (weird, but possible
-            it_val_reg = computeExpressionIntoRegister(forst->it);
+            auto it_val = computeExpression(forst->it);
 
             // increment it by one
-            bci = create_instruction(BC_INC_REG_CONST, it_val_reg, -1, reg + 2, 1);
-            it_inc_val_reg = reg + 2;
+            auto it_inc_val = create_instruction(BC_INC_REG_CONST, it_val->dst_reg, -1, reserveRegister(), 1);
             // save the value
-            createStoreInstruction(forst->it->decl, it_inc_val_reg);
+            createStoreInstruction(forst->it->decl, it_inc_val->dst_reg);
 
-            it_index_val_reg = computeExpressionIntoRegister(forst->it_index);
+            auto it_index_val = computeExpression(forst->it_index);
             // increment it by one
-            bci = create_instruction(BC_INC_REG_CONST, it_index_val_reg, -1, reg + 4, 1);
-            it_index_val_reg = reg + 4;
+            it_index_val = create_instruction(BC_INC_REG_CONST, it_index_val->dst_reg, -1, reserveRegister(), 1);
             // save the value
-            createStoreInstruction(forst->it_index->decl, it_index_val_reg);
+            createStoreInstruction(forst->it_index->decl, it_index_val->dst_reg);
         }
 
         // go back to the start of the loop, there we check the condition
-        bci = create_instruction(BC_GOTO_CONSTANT, -1, -1, -1, loop_start);
+        create_instruction(BC_GOTO_CONSTANT, -1, -1, -1, loop_start);
 
         // Add a nop sow e have a place to jump to, in case the loop is at the end of a function
-        bci = createNopInstruction(forst);
+        auto nop = createNopInstruction(forst);
 
         // now that we know where the loop ends, store the value in the jump instruction
-        loop_end = bci->inst_index;
+        loop_end = nop->inst_index;
         bci_loop_cond->big_const = loop_end;
 
 
@@ -1057,10 +1049,9 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
         assert(run->new_ast);
         auto lit = (LiteralAST *)run->new_ast;
 
-        run->reg = reserveRegistersForSize(current_function, run->expr_type->size_in_bytes);
         assert(run->bci == nullptr);
-        run->bci = create_load_literal_instruction(lit, -1);
-        run->bci->dst_reg = run->reg;
+        run->bci = create_load_literal_instruction(lit);
+        run->reg = run->bci->dst_reg;
 
         if (!run->computed) {
             current_function->missing_run_directives++;
@@ -1156,20 +1147,20 @@ void bytecode_generator::initializeVariable(VariableDeclarationAST * decl)
     // ok, it is an expression (operation, literal (num, string) )
     // or god forbid, another variable (which means load its value
     watermark wm = getWatermark();    
-    s16 reg = computeExpressionIntoRegister((ExpressionAST *)decl->definition);
+    auto def = computeExpression((ExpressionAST *)decl->definition);
     if (!interp->success) {
         // in case of error, clean up
         resetWatermark(wm);
         return;
     }
-    createStoreInstruction(decl, reg);
+    createStoreInstruction(decl, def->dst_reg);
     
     decl->flags |= DECL_FLAG_HAS_BEEN_BT_GEN;
 }
 
-BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit, s16 reg)
+BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit)
 {
-    BCI *bci = nullptr;
+    BCI *ret = nullptr;
     auto old = current_ast;
     current_ast = lit;
 
@@ -1178,10 +1169,10 @@ BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit, s16 re
         u64 val;
         if (lit->typeAST->isSigned) val = straight_convert(lit->_s64);
         else val = lit->_u64;
-        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg, val);
+        ret = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), val);
         assert(lit->typeAST->size_in_bytes < 256);
-        bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
-        bci->dst_type = (lit->typeAST->isSigned ? REGTYPE_SINT : REGTYPE_UINT);
+        ret->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
+        ret->dst_type = (lit->typeAST->isSigned ? REGTYPE_SINT : REGTYPE_UINT);
         break;
     }
     case BASIC_TYPE_STRING: {
@@ -1194,21 +1185,22 @@ BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit, s16 re
         - Are strings mutable? How does allocation work? Do we care?
         */
         u64 val = straight_convert(lit->str);
-        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg, val);
-        bci->dst_type_bytes = 8;
-        bci->dst_type = REGTYPE_POINTER;
+        ret = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), val);
+        ret->dst_type_bytes = 8;
+        ret->dst_type = REGTYPE_POINTER;
+        ret->dst_num_reg = 2;
 
         val = strlen(lit->str);
-        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg + 1, val);
+        auto bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), val);
         bci->dst_type_bytes = 8;
         bci->dst_type = REGTYPE_UINT;
         break;
     }
     case BASIC_TYPE_BOOL: {
-        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg, lit->_bool);
+        ret = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), lit->_bool);
         assert(lit->typeAST->size_in_bytes < 256);
-        bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
-        bci->dst_type = REGTYPE_UINT;
+        ret->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
+        ret->dst_type = REGTYPE_UINT;
         break;
     }
     case BASIC_TYPE_FLOATING: {
@@ -1220,63 +1212,62 @@ BCI *bytecode_generator::create_load_literal_instruction(LiteralAST *lit, s16 re
             val = straight_convert(fval);
         }
         assert(lit->typeAST->size_in_bytes < 256);
-        bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg, val);
-        bci->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
-        bci->dst_type = REGTYPE_FLOAT;
+        ret = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), val);
+        ret->dst_type_bytes = (u8)lit->typeAST->size_in_bytes;
+        ret->dst_type = REGTYPE_FLOAT;
         break;
     }
     default:
         assert(false);
     }
     current_ast = old;
-    return bci;
+    return ret;
 }
 
-void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16 reg)
+
+BCI *bytecode_generator::computeExpression(ExpressionAST * expr)
 {
+//    s16 reg = reserveRegistersForSize(current_function, expr->expr_type->size_in_bytes);
     auto old = current_ast;
     current_ast = expr;
+    BCI *ret = nullptr;
 
     switch (expr->ast_type) {
     case AST_LITERAL: {
         auto lit = (LiteralAST *)expr;
-        BCI *bci;
-        bci = nullptr;
-        bci = create_load_literal_instruction(lit, reg);
+        ret = create_load_literal_instruction(lit);
         break;
     }
     case AST_UNARY_OPERATION: {
         auto unop = (UnaryOperationAST *)expr;
         TypeAST *type = unop->expr->expr_type;
 
-        s16 regexp; 
-
         switch (unop->op) {
         case TK_PLUS: {
             // Very simple, do practically nothing
-            computeExpressionIntoRegister(unop->expr, reg);
+            ret = computeExpression(unop->expr);
             current_ast = old;
             // And nothing else to do
-            return;
+            return ret;
         }
         case TK_MINUS: {
-            regexp = computeExpressionIntoRegister(unop->expr);
+            ret = computeExpression(unop->expr);
             break;
         }
         case TK_BANG: {
-            regexp = computeExpressionIntoRegister(unop->expr);
+            ret = computeExpression(unop->expr);
             break;
         }
         case TK_STAR: {
-            computeAddressIntoRegister(unop->expr, reg);
+            ret = computeExpression(unop->expr);
             current_ast = old;
             // There is nothing else to be done, * expr is just the address of expression
-            return;
+            return ret;
         }
         case TK_LSHIFT: {
             // For pointer types, the right answer is just the pointer
             if (isTypePointer(unop->expr->expr_type)) {
-                regexp = computeExpressionIntoRegister(unop->expr);
+                ret = computeExpression(unop->expr);
             } else {
                 assert(!"I am not sure we should ever be here...");
                 // computeAddressIntoRegister(unop->expr, regexp);
@@ -1287,10 +1278,11 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
 
         // All other unary operators do behave normally, included the dereference op
 
-        BCI *bci = create_instruction(BC_UNARY_OPERATION, regexp, -1, reg, unop->op);
+        BCI *bci = create_instruction(BC_UNARY_OPERATION, ret->dst_reg, -1, reserveRegister(), unop->op);
         assert(unop->expr_type->size_in_bytes < 256);
         bci->dst_type_bytes = (u8)unop->expr_type->size_in_bytes;
         bci->dst_type = get_regtype_from_type(unop->expr_type);
+        ret = bci;
         break;
     }
     case AST_BINARY_OPERATION: {
@@ -1301,13 +1293,14 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         // operate on the 2 regs, write into the result
         TypeAST *lhsType = binop->lhs->expr_type;
         TypeAST *rhsType = binop->rhs->expr_type;
-        s16 reglhs = computeExpressionIntoRegister(binop->lhs);
+        auto reglhs = computeExpression(binop->lhs);
         // @Optimization: do shortcircuit? YES, MUST HAVE. But here?
-        s16 regrhs = computeExpressionIntoRegister(binop->rhs);
-        BCI *bci = create_instruction(BC_BINARY_OPERATION, reglhs, regrhs, reg, binop->op);
+        auto regrhs = computeExpression(binop->rhs);
+        BCI *bci = create_instruction(BC_BINARY_OPERATION, reglhs->dst_reg, regrhs->dst_reg, reserveRegister(), binop->op);
         assert(expr->expr_type->size_in_bytes < 256);
         bci->dst_type_bytes = (u8)expr->expr_type->size_in_bytes;
         bci->dst_type = get_regtype_from_type(expr->expr_type);
+        ret = bci;
         break;
     }
     case AST_ASSIGNMENT: {
@@ -1322,7 +1315,7 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
             generate_function(funcall->function_name, funcall->fundef);
             assert(funcall->fundef->bc_function);
         }
-        compute_function_call_into_register(funcall, reg);
+        ret = compute_function_call(funcall);
         break;
     }
     case AST_IDENTIFIER: {
@@ -1331,67 +1324,76 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         BCI *bci = nullptr;
 
         if (isTypePointer(id->expr_type) || (id->expr_type->ast_type == AST_DIRECT_TYPE)) {
-            s16 pointer_reg = computeAddressIntoRegister(id);
+            auto id_pointer = computeAddress(id);
 
             // dereference the pointer to get the expression value
-            bci = create_instruction(BC_UNARY_OPERATION, pointer_reg, -1, reg, TK_LSHIFT);
+            bci = create_instruction(BC_UNARY_OPERATION, id_pointer->dst_reg, -1, reserveRegister(), TK_LSHIFT);
             assert(id->expr_type->size_in_bytes < 256);
 
             bci->dst_type_bytes = (u8)id->expr_type->size_in_bytes;
             bci->dst_type = get_regtype_from_type(id->expr_type);
+            ret = bci;
         } else if (id->expr_type->ast_type == AST_STRUCT_TYPE) {
             assert(!"We should never be here as the interpreter should have replaced this");
         } else if (id->expr_type->ast_type == AST_ARRAY_TYPE) {
             auto arType = (ArrayTypeAST *)id->expr_type;
             // We support arrays, first we need the data type, then the count (for SIZED, DYNAMIC) 
             // and then reserved_size (DYNAMIC only)
-            s16 array_reg = reserveRegistersForSize(current_function, 8*4);
-            computeAddressIntoRegister(id, array_reg);
-            
+            s16 array_reg = reserveRegisters(3);
+            auto array_addr = computeAddress(id);
+
             if (isStaticArray(arType)) {
                 // The address of `id` is the first field, the .data pointer already
-                bci = create_instruction(BC_COPY_REG, array_reg, -1, reg, -1);
+                bci = create_instruction(BC_COPY_REG, array_addr->dst_reg, -1, array_reg, -1);
                 bci->dst_type_bytes = 8; // this is a pointer
                 bci->dst_type = REGTYPE_POINTER;
-                // now reg contains the array.data pointer
+                // now array_reg contains the array.data pointer
             } else {
                 // For other array types, we need a dereference to get to .data
-                bci = create_instruction(BC_UNARY_OPERATION, array_reg, -1, reg, TK_LSHIFT);
+                bci = create_instruction(BC_UNARY_OPERATION, array_addr->dst_reg, -1, array_reg, TK_LSHIFT);
                 bci->dst_type_bytes = 8; // this is a pointer
                 bci->dst_type = REGTYPE_POINTER;
-                // now reg contains the array.data pointer
+                // now array_reg contains the array.data pointer
             }
 
+            // ret will point to the first register, and by default there are 2 being returned
+            ret = bci;
+            ret->dst_num_reg = 2;
+
             // Load the constant 8, the size of a pointer as we move through the array
-            bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, array_reg + 1, 8);
-            bci->dst_type_bytes = 8;
-            bci->dst_type = REGTYPE_UINT;
-            
+            auto num_8 = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), 8);
+            num_8->dst_type_bytes = 8;
+            num_8->dst_type = REGTYPE_UINT;
+
+            BCI *count_ptr;
+
             if (isSizedArray(arType) || isDynamicArray(arType)) {
                 // create a pointer to array.count
-                bci = create_instruction(BC_BINARY_OPERATION, array_reg, array_reg +1, array_reg + 2, TK_PLUS);
-                bci->dst_type_bytes = 8;
-                bci->dst_type = REGTYPE_POINTER;
+                count_ptr = create_instruction(BC_BINARY_OPERATION, array_addr->dst_reg, num_8->dst_reg, reserveRegister(), TK_PLUS);
+                count_ptr->dst_type_bytes = 8;
+                count_ptr->dst_type = REGTYPE_POINTER;
 
                 // Now dereference the pointer to get the result
-                bci = create_instruction(BC_UNARY_OPERATION, array_reg + 2, -1, reg + 1, TK_LSHIFT);
+                bci = create_instruction(BC_UNARY_OPERATION, count_ptr->dst_reg, -1, array_reg + 1, TK_LSHIFT);
                 bci->dst_type_bytes = 8; // this is a pointer
                 bci->dst_type = REGTYPE_UINT;
-                // now reg+1 contains the array.count pointer
+                // now array_reg+1 contains the array.count pointer
             }
 
             if (isDynamicArray(arType)) {
                 // create a pointer to array.reserved_size
-                bci = create_instruction(BC_BINARY_OPERATION, array_reg+2, array_reg + 1, array_reg + 3, TK_PLUS);
-                bci->src2_reg = array_reg + 1;
-                bci->dst_type_bytes = 8;
-                bci->dst_type = REGTYPE_POINTER;
+                auto rsize_ptr = create_instruction(BC_BINARY_OPERATION, count_ptr->dst_reg, num_8->dst_reg, reserveRegister(), TK_PLUS);
+                rsize_ptr->dst_type_bytes = 8;
+                rsize_ptr->dst_type = REGTYPE_POINTER;
 
                 // Now dereference the pointer to get the result
-                bci = create_instruction(BC_UNARY_OPERATION, array_reg + 3, -1, reg + 2, TK_LSHIFT);
+                bci = create_instruction(BC_UNARY_OPERATION, rsize_ptr->dst_reg, -1, array_reg + 2, TK_LSHIFT);
                 bci->dst_type_bytes = 8; // this is a pointer
                 bci->dst_type = REGTYPE_UINT;
-                // now reg+2 contains the array.reserved_size pointer
+                // now array_reg+2 contains the array.reserved_size pointer
+
+                // For Dynamic arrays we return 3 registers
+                ret->dst_num_reg = 3;
             }
         } else {
             assert(!"We should never be here, we better handle all cases!");
@@ -1399,7 +1401,7 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
 
         break;
     }
-    case AST_STRUCT_ACCESS: 
+    case AST_STRUCT_ACCESS:
     case AST_ARRAY_ACCESS:
         assert(!"These two AST types should never be here, only as a subset of Identifier");
         break;
@@ -1411,30 +1413,29 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         assert(run->new_ast);
         auto lit = (LiteralAST *)run->new_ast;
 
-        run->reg = reg;
         assert(run->bci == nullptr);
-        run->bci = create_load_literal_instruction(lit, -1);
-
-        run->bci->dst_reg = run->reg;
+        run->bci = create_load_literal_instruction(lit);
+        run->reg = run->bci->dst_reg;
 
         if (!run->computed) {
             current_function->missing_run_directives++;
             assert(current_run != run);
             if (current_run) current_run->run_deps.push_back(run);
         }
-
+        ret = run->bci;
         break;
     }
     case AST_NEW: {
         auto nast = (NewAllocAST *)expr;
-        BCI *bci = create_instruction(BC_MALLOC, -1, -1, reg, nast->type->size_in_bytes);
+        BCI *bci = create_instruction(BC_MALLOC, -1, -1, reserveRegister(), nast->type->size_in_bytes);
         bci->dst_type_bytes = 8;
         bci->dst_type = get_regtype_from_type(nast->expr_type);
+        ret = bci;
         break;
     }
     case AST_CAST: {
         auto cast = (CastAST *)expr;
-        s16 expr_reg = computeExpressionIntoRegister(cast->expr);
+        auto expr_reg = computeExpression(cast->expr);
 
         // And now we need to convert / Copy what is needed
         if (cast->dstType->ast_type == AST_ARRAY_TYPE) {
@@ -1451,22 +1452,22 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
                 break;
             }
             case ArrayTypeAST::DYNAMIC_ARRAY: {
-                // here we need to take the count of dynamic array and copy it
-                // discard the reserved_size
-                // this copies the data pointer
-                create_instruction(BC_COPY_REG, expr_reg, -1, reg, -1);
-                // And now copy the count
-                create_instruction(BC_COPY_REG, expr_reg + 1, -1, reg + 1, -1);
+                // The computed expression already contains all the items we need (contains extra, though)
+                ret = expr_reg;
+                // this lowers the number of registers we keep track
+                ret->dst_num_reg = 2;
                 break;
             }
             case ArrayTypeAST::STATIC_ARRAY: {
                 // here the count is implicit, we have to output it from computed value
                 // this copies the data pointer
-                BCI *bci = create_instruction(BC_COPY_REG, expr_reg, -1, reg, -1);
+                ret = create_instruction(BC_COPY_REG, expr_reg->dst_reg, -1, reserveRegister(), -1);
                 // this adds the count from the type
-                bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reg + 1, srcType->num_elems);
+                BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), srcType->num_elems);
                 bci->dst_type = REGTYPE_UINT;
                 bci->dst_type_bytes = 8;
+
+                ret->dst_num_reg = 2;
                 break;
             }
             default:
@@ -1481,70 +1482,63 @@ void bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr, s16
         assert(!"Unknown expression AST for bytecode");
     }
     current_ast = old;
+    return ret;
 }
 
-s16 bytecode_generator::computeExpressionIntoRegister(ExpressionAST * expr)
-{
-    s16 reg = reserveRegistersForSize(current_function, expr->expr_type->size_in_bytes);
-    computeExpressionIntoRegister(expr, reg);
-    return reg;
-}
-
-s16 bytecode_generator::computeArrayDataPtrIntoRegister(IdentifierAST * array)
+BCI *bytecode_generator::computeArrayDataPtr(IdentifierAST * array)
 {
     assert(array->expr_type->ast_type == AST_ARRAY_TYPE);
     auto arType = (ArrayTypeAST *)array->expr_type;
 
-    s16 array_reg = computeAddressIntoRegister(array);
+    auto array_inst = computeAddress(array);
 
     if (isStaticArray(arType)) {
         // The address of `id` is the first field, the .data pointer already
-        return array_reg;
+        return array_inst;
     } else {
         // For other array types, we need a dereference to get to .data
-        s16 data_reg = reserveRegister();
-        BCI *bci = create_instruction(BC_UNARY_OPERATION, array_reg, -1, data_reg, TK_LSHIFT);
+        BCI *bci = create_instruction(BC_UNARY_OPERATION, array_inst->dst_reg, -1, reserveRegister(), TK_LSHIFT);
         bci->dst_type_bytes = 8; // this is a pointer
         bci->dst_type = REGTYPE_POINTER;
         // now reg contains the array.data pointer
-        return data_reg;
+        return bci;
     }
 }
 
-s16 bytecode_generator::computeArrayCountIntoRegister(IdentifierAST * array)
+BCI *bytecode_generator::computeArrayCount(IdentifierAST * array)
 {
     assert(array->expr_type->ast_type == AST_ARRAY_TYPE);
     auto arType = (ArrayTypeAST *)array->expr_type;
 
     if (isStaticArray(arType)) {
-        s16 count_reg = reserveRegister();
-        BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, count_reg, arType->num_elems);
+        BCI *bci = create_instruction(BC_LOAD_BIG_CONSTANT_TO_REG, -1, -1, reserveRegister(), arType->num_elems);
         bci->dst_type_bytes = 8;
         bci->dst_type = REGTYPE_UINT;
-        return count_reg;
+        return bci;
     }
 
-    s16 array_reg = computeAddressIntoRegister(array);
+    auto array_ptr = computeAddress(array);
 
     // For other array types, we need a dereference to get to .data
     s16 count_reg = reserveRegister();
     // Increment the pointer by 8 bytes to move the pointer to count
-    BCI *bci = create_instruction(BC_INC_REG_CONST, array_reg, -1, count_reg, 8);
-    bci->dst_type_bytes = 8; // this is a pointer
-    bci->dst_type = REGTYPE_POINTER;
+    auto count_ptr = create_instruction(BC_INC_REG_CONST, array_ptr->dst_reg, -1, reserveRegister(), 8);
+    count_ptr->dst_type_bytes = 8; // this is a pointer
+    count_ptr->dst_type = REGTYPE_POINTER;
 
     // And now dereference the pointer to get the count
-    bci = create_instruction(BC_UNARY_OPERATION, count_reg, -1, count_reg+1, TK_LSHIFT);
-    bci->dst_type_bytes = 8; // this is a pointer
-    bci->dst_type = REGTYPE_UINT;
+    auto count_val = create_instruction(BC_UNARY_OPERATION, count_reg, -1, reserveRegister(), TK_LSHIFT);
+    count_val->dst_type_bytes = 8; // this is a value
+    count_val->dst_type = REGTYPE_UINT;
 
-    return count_reg + 1;
+    return count_val;
 }
 
-void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 reg)
+BCI *bytecode_generator::computeAddress(ExpressionAST * expr)
 {
     auto old = current_ast;
     current_ast = expr;
+    BCI *ret = nullptr;
 
     switch (expr->ast_type) {
     case AST_LITERAL: {
@@ -1556,35 +1550,35 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
         assert(id->decl);
 
         if (!id->next) {
-            createAddressInstruction(id->decl, reg);
+            ret = createAddressInstruction(id->decl);
         } else {
 
-            s16 pointer_reg = reserveRegistersForSize(current_function, 8);
             s16 offset_reg = reserveRegistersForSize(current_function, 8);
-            createAddressInstruction(id->decl, pointer_reg);
+            BCI *id_ptr = createAddressInstruction(id->decl);
 
             // if what we access is an Array of Sized or Dynamic, the Address is just the data pointer,
             // we have to do a de-reference here, but only for array access (a.data[x] , not a.count)
-            
-            if ((id->decl->specified_type->ast_type == AST_ARRAY_TYPE) && 
+
+            if ((id->decl->specified_type->ast_type == AST_ARRAY_TYPE) &&
                 (id->next->ast_type == AST_ARRAY_ACCESS)) {
                 auto at = (ArrayTypeAST *)id->decl->specified_type;
                 if (isSizedArray(at) || isDynamicArray(at)) {
-                    s16 extra_reg = reserveRegistersForSize(current_function, 8);
-                    BCI *bci = create_instruction(BC_UNARY_OPERATION, pointer_reg, -1, extra_reg, TK_LSHIFT);
+                    BCI *bci = create_instruction(BC_UNARY_OPERATION, id_ptr->dst_reg, -1, reserveRegister(), TK_LSHIFT);
                     bci->dst_type = REGTYPE_POINTER;
                     bci->dst_type_bytes = 8;
                     // update the register with the actual pointer to data
-                    pointer_reg = extra_reg;
+                    id_ptr = bci;
                 }
             }
-            
-            createLoadOffsetInstruction(id->next, offset_reg);
 
-            BCI *bci = create_instruction(BC_BINARY_OPERATION, pointer_reg, offset_reg, reg, TK_PLUS);
+            auto offset = createLoadOffsetInstruction(id->next);
+
+            BCI *bci = create_instruction(BC_BINARY_OPERATION, id_ptr->dst_reg, offset->dst_reg, reserveRegister(), TK_PLUS);
             bci->dst_type_bytes = 8;
             bci->dst_type = REGTYPE_POINTER;
-        } 
+
+            ret = bci;
+        }
         break;
     }
     case AST_UNARY_OPERATION: {
@@ -1592,7 +1586,7 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
         TypeAST *type = unop->expr->expr_type;
 
         assert(unop->op == TK_STAR);
-        computeAddressIntoRegister(unop->expr, reg);
+        ret = computeAddress(unop->expr);
 
         break;
     }
@@ -1607,18 +1601,13 @@ void bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr, s16 re
     default:
         assert(!"Unknown expression AST for bytecode");
     }
+
     current_ast = old;
-}
-
-s16 bytecode_generator::computeAddressIntoRegister(ExpressionAST * expr)
-{
-    s16 reg = reserveRegister();
-    computeAddressIntoRegister(expr, reg);
-    return reg;
+    return ret;
 }
 
 
-void bytecode_generator::compute_function_call_into_register(FunctionCallAST *funcall, s16 reg_return)
+BCI *bytecode_generator::compute_function_call(FunctionCallAST *funcall)
 {
     auto old = current_ast;
     auto fundecl = funcall->fundef->declaration;
@@ -1650,6 +1639,7 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     s16 offset = 0;
     if (!isVoidType(fundecl->return_type)) {
         offset += roundToQWord(fundecl->return_type->size_in_bytes);
+        assert(fundecl->return_type->size_in_bytes <= 8);
         // Commenting this code as it only zero initializes the return register and nothing else
         /*
         for (s16 ind = 0; ind < offset; ind++) {
@@ -1663,7 +1653,13 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
     for (u32 index = 0; index < funcall->args.size(); index++) {
         auto arg_expr = funcall->args[index];
 
-        computeExpressionIntoRegister(arg_expr, reg + offset);
+        auto arg_inst = computeExpression(arg_expr); 
+        u32 num_regs = 0;
+        do {
+            auto copy = create_instruction(BC_COPY_REG, arg_inst->dst_reg+num_regs, -1, reg + offset + num_regs, -1);
+            num_regs++;
+        } while (num_regs < arg_inst->dst_num_reg);
+
         // advance the offset for the next expression to write
         offset += roundToQWord(arg_expr->expr_type->size_in_bytes);
     }
@@ -1677,14 +1673,17 @@ void bytecode_generator::compute_function_call_into_register(FunctionCallAST *fu
 
     // When a procedure call does not return a value, the call to BC_CALL_PROCEDURE needs a -1
     // otherwise it accesses wrong memory
-    if (return_regs == -1) {
-        reg_return = -1;
+    s16 reg_return = -1;
+    if (return_regs != -1) {
+        reg_return = reserveRegister();
+        assert(funcall->expr_type->size_in_bytes <= 8);
     }
     // And now we actually call the function
     bci = create_instruction(BC_CALL_PROCEDURE, -1, return_regs, reg_return, straight_convert(funcall->fundef));
     assert(fundecl->return_type->size_in_bytes < 256);
     bci->dst_type_bytes = (u8)fundecl->return_type->size_in_bytes;
     current_ast = old;
+    return bci;
 }
 
 
@@ -2546,11 +2545,11 @@ void bytecode_generator::generate_run_directive(RunDirectiveAST *run)
     current_function = run->bc_function;
     current_run = run;
 
-    s16 reg = computeExpressionIntoRegister((ExpressionAST *)run->expr);
+    auto  expr_inst = computeExpression((ExpressionAST *)run->expr);
     if (!isVoidType(run->expr_type)) {
-        run->reg = reg;
+        run->reg = expr_inst->dst_reg;
         createStoreInstruction(BC_STORE_TO_CALL_REGISTER, 0, run->expr_type->size_in_bytes,
-            reg, get_regtype_from_type(run->expr_type));
+            run->reg, get_regtype_from_type(run->expr_type));
     }
 
     current_function = old_current;

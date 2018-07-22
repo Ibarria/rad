@@ -43,9 +43,12 @@ struct BCI {
     s16 src2_reg = -1;
     s16 dst_reg = -1;
     u8 dst_type_bytes = 0;
+    u8 dst_num_reg = 1; // This variable is used to indicate when the instruction
+                        // yields more than one register
     s32 inst_index = -1; // This holds the relative position of the instruction on the function
     RegisterType dst_type = REGTYPE_UNKNOWN;
     u64 s = 0;
+    // DEBUG information
     // These should be their own struct, with filename too
     u32 line_num = 0;
     u32 char_num = 0;
@@ -112,14 +115,14 @@ struct bytecode_generator
     s16 reserveRegisters(s16 num);
 
     BCI *create_instruction(BytecodeInstructionOpcode opcode, s16 src_reg, s16 src2_reg, s16 dst_reg, u64 big_const);
-    BCI *create_load_literal_instruction(LiteralAST *lit, s16 reg);
+    BCI *create_load_literal_instruction(LiteralAST *lit);
     void createStoreInstruction(VariableDeclarationAST *decl, s16 reg);
     void createStoreInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
     void createStoreInstruction(BytecodeInstructionOpcode opcode, s16 ptrreg, s16 datareg, u64 size_in_bytes);
     void createLoadInstruction(VariableDeclarationAST *decl, s16 reg);
     void createLoadInstruction(BytecodeInstructionOpcode opcode, u64 bc_mem_offset, u64 size_in_bytes, s16 reg, RegisterType regtype);
-    void createAddressInstruction(VariableDeclarationAST *decl, s16 reg);
-    void createLoadOffsetInstruction(ExpressionAST *expr, s16 reg);
+    BCI *createAddressInstruction(VariableDeclarationAST *decl);
+    BCI *createLoadOffsetInstruction(ExpressionAST *expr);
     BCI *createNopInstruction(BaseAST *ast);
     void issue_instruction(BCI *bci);
     void issueReserveStackSpace(u64 size);
@@ -143,13 +146,11 @@ struct bytecode_generator
     void generate_statement(StatementAST *stmt);
     void generate_statement_block(StatementBlockAST *block);
 
-    void computeAddressIntoRegister(ExpressionAST *expr, s16 reg);
-    s16  computeAddressIntoRegister(ExpressionAST *expr);
-    void computeExpressionIntoRegister(ExpressionAST *expr, s16 reg);
-    s16  computeExpressionIntoRegister(ExpressionAST *expr);
-    s16  computeArrayDataPtrIntoRegister(IdentifierAST *array);
-    s16  computeArrayCountIntoRegister(IdentifierAST *array);
-    void compute_function_call_into_register(FunctionCallAST *funcall, s16 reg);
+    BCI *computeAddress(ExpressionAST *expr);
+    BCI *computeExpression(ExpressionAST *expr);
+    BCI *computeArrayDataPtr(IdentifierAST *array);
+    BCI *computeArrayCount(IdentifierAST *array);
+    BCI *compute_function_call(FunctionCallAST *funcall);
 };
 
 struct bc_call_register
