@@ -1245,7 +1245,7 @@ BCI *bytecode_generator::computeExpression(ExpressionAST * expr)
             break;
         }
         case TK_STAR: {
-            ret = computeExpression(unop->expr);
+            ret = computeAddress(unop->expr);
             current_ast = old;
             // There is nothing else to be done, * expr is just the address of expression
             return ret;

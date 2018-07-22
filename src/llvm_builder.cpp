@@ -116,7 +116,11 @@ static void allocateVariable(VariableDeclarationAST *decl)
             generateCode(decl->definition);
             initializer = (llvm::Constant *) decl->definition->codegen;
         } else {
-            initializer = ConstantAggregateZero::get(decl->specified_type->llvm_type);
+            if (isTypeStruct(decl->specified_type) || isTypeArray(decl->specified_type)) {
+                initializer = ConstantAggregateZero::get(decl->specified_type->llvm_type);
+            } else {
+                initializer = Constant::getNullValue(decl->specified_type->llvm_type);
+            }
         }
         auto gv = new GlobalVariable(*TheModule, decl->specified_type->llvm_type, isConstant, 
             GlobalValue::LinkOnceAnyLinkage, initializer, decl->varname);
@@ -156,6 +160,16 @@ static Value *generateIdentifierCode(IdentifierAST *id)
         Value *variable = decl->codegen;
         Value *val = ConstantInt::get(Type::getInt32Ty(TheContext), 0);
         idx.push_back(val);
+
+        if (isTypePointer(id->decl->specified_type)) {
+            // if our AST says we have a pointer, in llvm we have a pointer to pointer.
+            // before we can compute anything, we need to dereference the pointer
+            Value *gep = Builder.CreateGEP(variable, idx);
+            Value *deref_ptr = Builder.CreateLoad(gep);
+            variable = deref_ptr;
+            // We do not clear indices here, as indices should just have a single deref
+            // idx.clear();
+        }
         
         while(loop_ast != nullptr) {
             switch(loop_ast->ast_type) {
@@ -164,8 +178,9 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                     ArrayTypeAST *atype = (ArrayTypeAST *)getDefinedType(loop_aa->prev);
                     assert(atype->ast_type == AST_ARRAY_TYPE);
                     if (isSizedArray(atype) || isDynamicArray(atype)) {
-                        // Sized and Dynamic arrays are implemented as a struct and requires
-                        // one more level of indirection
+                        // Sized and Dynamic arrays are implemented as a struct, meaning there
+                        // is a pointer. Whenever there is a pointer, llvm requires to load it
+                        // and then compute the GEP. Thus, one more level of indirection
                         idx.push_back(ConstantInt::get(Type::getInt32Ty(TheContext), 0));
                         // In this situation, llvm asks we load the pointer
                         Value *gep = Builder.CreateGEP(variable, idx);
@@ -189,6 +204,19 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                     assert(!"We should never get here!");
             }
         }
+
+        printf("Identifier type: ");
+        id->decl->specified_type->llvm_type->print(outs(), true);
+        outs().flush();
+        printf("\nIdentifier code\n\tvariable: ");
+        variable->print(outs(), true);
+        printf("\n\tIndices:");
+        for (auto i : idx) {
+            printf("\n\t");
+            i->print(outs(), true);
+        }
+        printf("\n");
+
         Value *gep = Builder.CreateGEP(
             // decl->specified_type->llvm_type, 
             variable, idx);
@@ -625,17 +653,24 @@ static void generateCode(BaseAST *ast)
     }
     case AST_UNARY_OPERATION: {
         auto unop = (UnaryOperationAST *)ast;
-        generateCode(unop->expr);
         switch (unop->op) {
         case TK_LSHIFT: {
+            generateCode(unop->expr);
             unop->codegen = Builder.CreateLoad(unop->expr->codegen);
             break;
         }
         case TK_BANG: {
+            generateCode(unop->expr);
             unop->codegen = Builder.CreateNot(unop->expr->codegen);
             break;
         }
-        default:
+        case TK_STAR: {
+            assert(unop->expr->ast_type == AST_IDENTIFIER);
+            auto id = (IdentifierAST *)unop->expr;
+            unop->codegen = generateIdentifierCode(id);
+            break;
+        }
+        default:            
             assert(!"Unary operator not implemented in llvm");
             exit(1);
         }
@@ -889,6 +924,9 @@ static void generateCode(BaseAST *ast)
             struct_members.push_back(decl->specified_type->llvm_type);
         }
         stype->llvm_type = StructType::create(TheContext, struct_members, stype->decl->varname);
+        printf("Defining type for %s: ", stype->decl->varname);
+        stype->llvm_type->print(outs(), true); outs().flush();
+        printf("\n");
         break;
     }
     case AST_RUN_DIRECTIVE: {
