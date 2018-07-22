@@ -369,11 +369,13 @@ DirectTypeAST *Parser::createType(TOKEN_TYPE tktype, TextType name)
     case TK_F32:
         type->basic_type = BASIC_TYPE_FLOATING;
         type->size_in_bytes = 4;
+        type->isSigned = true;
         break;
     case TK_FLOAT:
     case TK_F64:
         type->basic_type = BASIC_TYPE_FLOATING;
         type->size_in_bytes = 8;
+        type->isSigned = true;
         break;
     case TK_IDENTIFIER:
         type->basic_type = BASIC_TYPE_CUSTOM;
