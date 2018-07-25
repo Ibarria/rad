@@ -51,6 +51,10 @@ static void printTypeToStr(char *s, TypeAST *type)
         printTypeToStr(s + strlen(s), at->array_of_type);
         break;
     }
+    case AST_NULL_TYPE: {
+        sprintf(s, "nullptr ");
+        break;
+    }
     default:
         assert(!"Unsupported type");
     }
@@ -112,6 +116,9 @@ bool isLValue(ExpressionAST *expr, bool allowStar)
         // All other unary operators return an rvalue
         return false;
     }
+    case AST_NULL_PTR: {
+        return false;
+    }
     default:
         assert(!"We should never be here, we could not parse this type\n");
     }
@@ -164,6 +171,9 @@ bool isConstExpression(ExpressionAST *expr)
     case AST_ARRAY_ACCESS: {
         auto ac = (ArrayAccessAST *)expr;
         return isConstExpression(ac->next);
+    }
+    case AST_NULL_PTR: {
+        return true;
     }
     default:
         assert(!"We should never be here, we could not parse this type\n");
@@ -902,6 +912,9 @@ VariableDeclarationAST *Interpreter::validateFunctionCall(FunctionCallAST *a)
 bool Interpreter::compatibleTypes(TypeAST * lhs, TypeAST * rhs, bool &needs_cast)
 {
     needs_cast = false;
+    // special case for null pointers
+    if (isTypePointer(lhs) && isTypeNullPtr(rhs)) return true;
+
     if (lhs->ast_type != rhs->ast_type) {
         return false;
     }
@@ -1442,6 +1455,11 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
 
         // traverse the block latest as we should know all on the loop
         traversePostfixAST(PPC(forst->loop_block), deps);
+        break;
+    }
+    case AST_NULL_PTR: {
+        auto nptr = (NullPtrAST *)ast;
+        // Nothing to do here, we created the type with null on the parser
         break;
     }
     default:
@@ -2248,11 +2266,24 @@ bool Interpreter::doWorkAST(interp_work * work)
                 lhsType = fundecl->arguments[i]->specified_type;
                 rhsType = funcall->args[i]->expr_type;
                 assert(lhsType); assert(rhsType);
+                if (isTypeNullPtr(rhsType)) {
+                    if (!isTypePointer(lhsType)) {
+                        char ltype[64] = {};
+                        printTypeToStr(ltype, lhsType);
+                        Error(funcall->args[i], "Incompatible types between the provided argument: (null) and the function argument type %s for function %s, argument %d\n",
+                            ltype, funcall->function_name, i);
+                        return false;
+                    }
+
+                    auto nptr = (NullPtrAST *)funcall->args[i];
+                    nptr->type_to_null = lhsType;
+                    continue;
+                }
                 TypeCheckError err = checkTypesAllowLiteralAndCast(&funcall->args[i], lhsType, rhsType);
                 if (err != TCH_OK) {
                     char ltype[64] = {}, rtype[64] = {};
-                    printTypeToStr(rtype, lhsType);
-                    printTypeToStr(ltype, rhsType);
+                    printTypeToStr(ltype, lhsType);
+                    printTypeToStr(rtype, rhsType);
 
                     switch (err) {
                     case TCH_INCOMPATIBLE_TYPE: {
@@ -2511,12 +2542,40 @@ bool Interpreter::doWorkAST(interp_work * work)
                     pt->size_in_bytes = 8;
                 }
             }
-
         } else if (work->action == IA_COMPUTE_SIZE) {
 
         } else if (work->action == IA_OPERATION_CHECK) {
 
             bool needs_cast = false;
+            if (isNullLiteral(binop->lhs)) {
+                auto nptr = (NullPtrAST *)binop->rhs;
+
+                // special case of Null being on the left hand side
+                if (!isBoolOperator(binop->op)) {
+                    Error(binop, "Null can only be used on boolean operatorsm found on: %s\n",
+                        TokenTypeToCOP(binop->op));
+                    return false;
+                }
+
+                if (isNullLiteral(binop->rhs)) {
+                    // Two null can be compared, not useful but valid
+                    return true;
+                }
+
+                if (!compatibleTypes(lhsType, rhsType, needs_cast)) {
+                    char ltype[64] = {}, rtype[64] = {};
+                    printTypeToStr(ltype, lhsType);
+                    printTypeToStr(rtype, rhsType);
+                    Error(binop, "Incompatible types during binary operation %s: %s and %s\n",
+                        TokenTypeToCOP(binop->op),
+                        ltype, rtype);
+                    return false;
+                }
+                assert(!needs_cast);
+
+                nptr->type_to_null = rhsType;
+                return true;
+            }
             if (lhsType->ast_type == AST_POINTER_TYPE) {
                 /* Pointers are a special case
                    We allow The following operations:
@@ -2535,6 +2594,13 @@ bool Interpreter::doWorkAST(interp_work * work)
                         return false;
                     }
                     assert(!needs_cast);
+
+                    // Special case for null pointers, we need to propagate
+                    // the type. Only makes sense on boolean operators
+                    if (isNullLiteral(binop->rhs)) {
+                        auto nptr = (NullPtrAST *)binop->rhs;
+                        nptr->type_to_null = lhsType;
+                    }
                     return true;
                 }
 
@@ -2650,6 +2716,11 @@ bool Interpreter::doWorkAST(interp_work * work)
         //addCheckWork(&pool, ast, deps);
 
         if (work->action == IA_RESOLVE_TYPE) {
+            if (isNullLiteral(unop->expr)) {
+                Error(unop, "Unary operation [%s] is not allowed on a null pointer\n", TokenTypeToCOP(unop->op));
+                return false;
+            }
+
             TypeAST *type = unop->expr->expr_type;
             // This could happen because there is a lingering error, stop here. 
             if (type == nullptr) return false;
@@ -2811,6 +2882,12 @@ bool Interpreter::doWorkAST(interp_work * work)
             TypeAST *lhsType, *rhsType;
             lhsType = assign->lhs->expr_type;
             rhsType = assign->rhs->expr_type;
+
+            if (isNullLiteral(assign->rhs) && isTypePointer(lhsType)) {
+                auto nptr = (NullPtrAST *)assign->rhs;
+                nptr->type_to_null = lhsType;
+                return true;
+            }
 
             TypeCheckError err = checkTypesAllowLiteralAndCast(&assign->rhs, lhsType, rhsType);
             if (err != TCH_OK) {

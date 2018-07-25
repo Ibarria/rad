@@ -1003,11 +1003,16 @@ ExpressionAST * Parser::parseLiteral()
     if (t.type == TK_IDENTIFIER) {
         IdentifierAST *ex = NEW_AST(IdentifierAST);
         ex->name = t.string;
-        ex->next = parseVarReference();        
+        ex->next = parseVarReference();
         if (ex->next) {
             ex->next->prev = ex;
         }
         return ex;
+    } else if (t.type == TK_NULL) {
+        auto nptr = NEW_AST(NullPtrAST);
+        nptr->expr_type = NEW_AST(NullPtrTypeAST);
+        nptr->expr_type->size_in_bytes = 8;
+        return nptr;
     } else if ((t.type == TK_NUMBER) || (t.type == TK_TRUE) ||
         (t.type == TK_FNUMBER) || (t.type == TK_STRING) || (t.type == TK_FALSE)) {
         auto ex = NEW_AST(LiteralAST);

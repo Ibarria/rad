@@ -1450,6 +1450,11 @@ BCI *bytecode_generator::computeExpression(ExpressionAST * expr)
         }
         break;
     }
+    case AST_NULL_PTR: {
+        ret = loadConstantU64(0);
+        ret->dst_type = REGTYPE_POINTER;
+        break;
+    }
     default:
         assert(!"Unknown expression AST for bytecode");
     }

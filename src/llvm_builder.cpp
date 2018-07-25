@@ -994,6 +994,17 @@ static void generateCode(BaseAST *ast)
         }
         break;
     }
+    case AST_NULL_PTR: {
+        auto nptr = (NullPtrAST *)ast;
+        if (nptr->type_to_null) {
+            if (!nptr->type_to_null->llvm_type) generateCode(nptr->type_to_null);
+            nptr->codegen = ConstantPointerNull::get((PointerType *)nptr->type_to_null->llvm_type);
+        } else {
+            // assume we are in a corner case and use a default s64 ptr
+            nptr->codegen = ConstantPointerNull::get(Type::getInt64PtrTy(TheContext));
+        }
+        break;
+    }
     default:
         assert(!"Unknonw AST type on LLVM generation");
     }

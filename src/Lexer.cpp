@@ -56,6 +56,7 @@ struct ReservedKeyword {
     { "false",    TK_FALSE },
     { "new",      TK_NEW },
     { "delete",   TK_DELETE },
+    { "null",     TK_NULL },
     { "void",     TK_VOID },
     { "string",   TK_STRING_KEYWORD },
     { "int",      TK_INT },
