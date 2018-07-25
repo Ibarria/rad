@@ -52,6 +52,7 @@ enum AST_CLASS_TYPE {
     AST_DIRECT_TYPE,
     AST_POINTER_TYPE,
     AST_ARRAY_TYPE,
+    AST_NULL_TYPE,
     AST_IDENTIFIER,
     AST_LITERAL,
     AST_BINARY_OPERATION,
@@ -59,6 +60,7 @@ enum AST_CLASS_TYPE {
     AST_ASSIGNMENT,
     AST_NEW,
     AST_DELETE,
+    AST_NULL_PTR,
     AST_CAST,
     AST_VARIABLE_DECLARATION,
     AST_RUN_DIRECTIVE,
@@ -250,6 +252,11 @@ struct StructTypeAST : TypeAST
     VariableDeclarationAST *decl = nullptr; // which declaration used this type, if any
 };
 
+struct NullPtrTypeAST : TypeAST
+{
+    NullPtrTypeAST() { ast_type = AST_NULL_TYPE; }
+};
+
 struct StructDefinitionAST : DefinitionAST 
 {
     StructDefinitionAST() { ast_type = AST_STRUCT_DEFINITION; needsSemiColon = false; }
@@ -330,6 +337,12 @@ struct LiteralAST : ExpressionAST
     };
     TextType str = nullptr;
     DirectTypeAST *typeAST;
+};
+
+struct NullPtrAST : ExpressionAST
+{
+    NullPtrAST() { ast_type = AST_NULL_PTR; }
+    TypeAST *type_to_null = nullptr;  // LLVM demands a specific type, find it through BINOP or ASSIGN
 };
 
 struct BinaryOperationAST : ExpressionAST
@@ -454,7 +467,6 @@ inline bool isStringDefinition(VariableDeclarationAST *decl)
     return false;
 }
 
-
 inline bool isLiteral(ExpressionAST *expr) 
 {
     return expr->ast_type == AST_LITERAL;
@@ -468,6 +480,11 @@ inline bool isVoidType(TypeAST *type)
         return dt->basic_type == BASIC_TYPE_VOID;
     }
     return false;
+}
+
+inline bool isNullLiteral(ExpressionAST *expr)
+{
+    return expr->ast_type == AST_NULL_PTR;
 }
 
 // @TODO: These functions are very similar... maybe merge?
@@ -542,6 +559,11 @@ inline bool isTypeFloating(TypeAST *t)
 inline bool isTypePointer(TypeAST *t)
 {
     return t->ast_type == AST_POINTER_TYPE;
+}
+
+inline bool isTypeNullPtr(TypeAST *t)
+{
+    return t->ast_type == AST_NULL_TYPE;
 }
 
 // Should this include the VOID type?
