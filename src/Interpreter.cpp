@@ -73,7 +73,7 @@ static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
     if (scope == nullptr) return nullptr;
 
     for (auto d : scope->decls) {
-        if (!strcmp(name, d->varname)) return d;
+        if (name == d->varname) return d;
     }
     return findVariable(name, scope->parent);
 }
@@ -81,7 +81,7 @@ static VariableDeclarationAST *findVariable(TextType name, Scope *scope)
 static VariableDeclarationAST *findVariable(TextType name, Array<VariableDeclarationAST *>& decls)
 {
     for (auto d : decls) {
-        if (!strcmp(name, d->varname)) return d;
+        if (name == d->varname) return d;
     }
     return nullptr;
 }

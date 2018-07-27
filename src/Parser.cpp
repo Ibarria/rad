@@ -75,7 +75,7 @@ bool Parser::MustMatchToken(TOKEN_TYPE type, const char *msg)
 bool Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
 {
     for (auto d : current_scope->decls) {
-        if (!strcmp(d->varname, decl->varname)) {
+        if (d->varname == decl->varname) {
             Error("Variable [%s] is already defined in the scope", decl->varname);
             return false;
         }
@@ -95,7 +95,7 @@ bool Parser::AddDeclarationToScope(VariableDeclarationAST * decl)
 bool Parser::AddDeclarationToStruct(StructDefinitionAST * struct_def, VariableDeclarationAST * decl)
 {
     for (auto d : struct_def->struct_type->struct_scope.decls) {
-        if (!strcmp(d->varname, decl->varname)) {
+        if (d->varname == decl->varname) {
             Error("Variable %s is already defined within this struct", decl->varname);
             return false;
         }

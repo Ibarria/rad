@@ -634,17 +634,19 @@ external_library * bytecode_generator::findOrLoadLibrary(TextType filename)
     lib_name[l - 3] = 'd'; lib_name[l - 2] = 'y'; lib_name[l - 1] = 'l'; lib_name[l] = 'i'; lib_name[l + 1] = 'b';	
     #endif
 
+    TextType intern_lib_name = CreateTextType(pool, lib_name);
+
     for (auto lib : program->external_libs) {
-        if (!strcmp(lib->name, lib_name)) {
+        if (lib->name == intern_lib_name) {
             return lib;
         }
     }
     // If we are here, we need to load the library
     external_library *lib = new (pool) external_library;
-    lib->name = CreateTextType(pool, lib_name);
-    lib->dll = dlLoadLibrary(lib_name);
+    lib->name = intern_lib_name;
+    lib->dll = dlLoadLibrary(intern_lib_name);
     if (lib->dll == nullptr) {
-        printf("Could not find library: %s\n", lib_name);
+        printf("Could not find library: %s\n", intern_lib_name);
     }
     assert(lib->dll != nullptr);
     program->external_libs.push_back(lib);
