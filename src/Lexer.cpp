@@ -387,6 +387,16 @@ void Lexer::getNextToken(Token &tok)
     tok = tokens[token_index++];
 }
 
+void Lexer::lookbehindToken(Token & tok)
+{
+    if ((token_index == tokens.size()) || (token_index == 0)) {
+        tok.clear();
+        tok.type = TK_LAST_TOKEN;
+        return;
+    }
+    tok = tokens[token_index-1];
+}
+
 void Lexer::getNextTokenInternal(Token &tok)
 {
 	char c = 0;

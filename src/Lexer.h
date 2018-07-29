@@ -29,6 +29,7 @@ public:
     void parseFile();
     void getCurrentToken(Token &tok);
     void getNextToken(Token &tok);
+    void lookbehindToken(Token &tok);
     void lookaheadToken(Token &tok);
     void lookNaheadToken(Token &tok, unsigned int ahead);
     void consumeToken();

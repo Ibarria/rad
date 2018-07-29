@@ -47,6 +47,20 @@ static BaseAST * setASTinfo(Parser *p, BaseAST *ast)
     return ast;
 }
 
+void Parser::ErrorWithLoc(SrcLocation &loc, const char *msg, ...)
+{
+    va_list args;
+    s32 off = sprintf(errorString, "%s:%d:%d: error : ", lex->getFilename(),
+        loc.line, loc.col);
+
+    va_start(args, msg);
+    off += vsprintf(errorString + off, msg, args);
+    va_end(args);
+    success = false;
+    errorString += off;
+    errorString = lex->getFileData()->printLocation(loc, errorString);
+}
+
 void Parser::Error(const char *msg, ...)
 {
     va_list args;
@@ -66,6 +80,12 @@ void Parser::Error(const char *msg, ...)
 bool Parser::MustMatchToken(TOKEN_TYPE type, const char *msg)
 {
     if (!lex->checkToken(type)) {
+        if (type == TK_SEMICOLON) {
+            Token tok;
+            lex->lookbehindToken(tok);
+            ErrorWithLoc(tok.loc, "%s - Expected a semicolon after this token\n", msg);
+            return false;
+        }
         Error("%s - Token %s was expected, but we found: %s\n", msg,
             TokenTypeToStr(type), TokenTypeToStr(lex->getTokenType()) );
         return false;

@@ -15,6 +15,7 @@ struct Parser {
     bool isImport = false;
     bool success;
     void Error(const char *msg, ...);
+    void ErrorWithLoc(SrcLocation &loc, const char *msg, ...);
 
     bool MustMatchToken(TOKEN_TYPE type, const char *msg = nullptr);
     bool AddDeclarationToScope(VariableDeclarationAST *decl);
