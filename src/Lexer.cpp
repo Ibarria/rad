@@ -190,7 +190,7 @@ bool Lexer::parseStringToken(char *input, Token &tok)
             int i, s;
             s = (int)strlen(st->str); 
             // the for loop starts with 1 because we usually have consumed 1 char
-            for (i = 1; i < s; i++) file.getc(c);
+            for (i = 1; i < s; i++) file->getc(c);
             return true;
         }
         st++;
@@ -233,22 +233,22 @@ void Lexer::parseNumber(Token & tok, char c)
 
     *s++ = c;
 
-    file.peek(c);
+    file->peek(c);
     if (c == 'x') {
         if (total != 0) {
             Error("Hex numbers must start with prefix 0x, the compiler saw %d%c\n", (int)total, c);
         }
         base = 16;
 
-        file.getc(c);
+        file->getc(c);
         *s++ = c;
     }
 
-    while (file.peek(c)) {
+    while (file->peek(c)) {
         if (c == '.') {
             // handle the conversion to float right now
             if (base == 16) Error("Hex numbers cannot have a period in them\n");
-            file.getc(c);
+            file->getc(c);
             *s++ = c;
             decimal = true;
             dtotal = (double)total;
@@ -276,7 +276,7 @@ void Lexer::parseNumber(Token & tok, char c)
             float num = float(c - '0');
             dtotal = dtotal + num / pow(10, dec_index);
         }
-        file.getc(c);
+        file->getc(c);
         *s++ = c;
     }
     if (decimal) {
@@ -292,11 +292,11 @@ void Lexer::parseNumber(Token & tok, char c)
 void Lexer::consumeWhiteSpace()
 {
 	char c = 0;
-	while (file.peek(c)) {
+	while (file->peek(c)) {
 		if (!isWhiteSpace(c)) {			
 			return;
 		} else {
-			file.getc(c);
+			file->getc(c);
 		}
 	}
 }
@@ -305,8 +305,8 @@ void Lexer::Error(const char * msg, ...)
 {
     va_list args;
 	SrcLocation loc;
-	file.getLocation(loc);
-	printf("%s:%d:%d: error: ", file.getFilename(), 
+	file->getLocation(loc);
+	printf("%s:%d:%d: error: ", file->getFilename(), 
         loc.line, loc.col);
 
     va_start(args, msg);
@@ -330,12 +330,20 @@ bool Lexer::openFile(const char * filename)
 {
     CPU_SAMPLE("openFile");
 
-	return file.open(filename);
+    if (!file) {
+        file = new (pool) FileData();
+    }
+
+	return file->open(filename);
 }
 
 bool Lexer::loadString(const char *str, u64 size)
 {
-    return file.loadString(str, size);
+    if (!file) {
+        file = new (pool) FileData();
+    }
+
+    return file->loadString(str, size);
 }
 
 void Lexer::parseFile()
@@ -344,13 +352,13 @@ void Lexer::parseFile()
 
     CPU_SAMPLE("Lexer - ParseFile");
 
-    filename = CreateTextType(pool, file.getFilename());
+    filename = CreateTextType(pool, file->getFilename());
 
     while (tok.type != TK_LAST_TOKEN) {
         getNextTokenInternal(tok);
         tokens.push_back(tok);
     }
-    file.close();
+//    file->close();
     token_index = 0;
     // this is a small optimization to not check for
     // indices on tokens
@@ -386,14 +394,15 @@ void Lexer::getNextTokenInternal(Token &tok)
 	tok.clear();
 
 	while(1) {
-		consumeWhiteSpace();
-		if (!file.getc(c)) {
+        consumeWhiteSpace();
+
+        // Get the location in the token, the one for the first character of the token
+        file->getLocation(tok.loc);
+
+        if (!file->getc(c)) {
 			tok.type = TK_LAST_TOKEN;
 			return;
 		}
-
-        // Get the location in the token, the one for the first character of the token
-		file.getLocation(tok.loc);
 
 		if (isNumber(c)) {
             parseNumber(tok, c);
@@ -402,9 +411,9 @@ void Lexer::getNextTokenInternal(Token &tok)
 			char buff[256] = {};
 			unsigned int i = 0;
 			buff[i++] = c;
-			while (file.peek(c) && (isAlpha(c) || isNumber(c) || (c == '_')) && (i<255)) {
+			while (file->peek(c) && (isAlpha(c) || isNumber(c) || (c == '_')) && (i<255)) {
 				buff[i++] = c;
-				file.getc(c);
+				file->getc(c);
 			}
 			tok.type = TK_IDENTIFIER;
             buff[i] = 0;
@@ -415,7 +424,7 @@ void Lexer::getNextTokenInternal(Token &tok)
             char *s = new char[1024];
             bool backslash = false;
             u32 i = 0;
-			while (file.getc(c) && (c != '"') && (!isNewLine(c))) {
+			while (file->getc(c) && (c != '"') && (!isNewLine(c))) {
                 if (backslash) {
                     switch (c) {
                     case 'n':
@@ -457,12 +466,12 @@ void Lexer::getNextTokenInternal(Token &tok)
             return;
         } else if (c == '\'') {
             // this marks a character
-            if (!file.getc(c)) {
+            if (!file->getc(c)) {
                 Error("Character was not defined before end of file\n");
             }
             tok.type = TK_CHAR;
             tok._u64 = c;
-            if (!file.getc(c)) {
+            if (!file->getc(c)) {
                 Error("Character was not defined before end of file\n");
             }
             if (c != '\'') {
@@ -472,9 +481,9 @@ void Lexer::getNextTokenInternal(Token &tok)
         } else if (c == '#') {
             char buff[256] = {};
             unsigned int i = 0;
-            while (file.peek(c) && (isAlpha(c) || (c == '_')) && (i<255)) {
+            while (file->peek(c) && (isAlpha(c) || (c == '_')) && (i<255)) {
                 buff[i++] = c;
-                file.getc(c);
+                file->getc(c);
             }
             tok.type = TK_INVALID;
             buff[i] = 0;
@@ -487,7 +496,7 @@ void Lexer::getNextTokenInternal(Token &tok)
             // we are going to do a bit of lookahead in the string
             char input[4] = {};
             input[0] = c;
-            file.lookAheadTwo(&input[1]);
+            file->lookAheadTwo(&input[1]);
             if (!parseStringToken(input, tok)) {
                 // at this point, all other tokens must be in this form
                 Error("Token not recognized : [%s]\n", input); 
@@ -495,34 +504,34 @@ void Lexer::getNextTokenInternal(Token &tok)
 
             if (tok.type == TK_LINE_COMMENT) {
                 // we are in a comment situation, advance the pointer
-                file.getc(c);
+                file->getc(c);
                 // this will consume all characters until the newline is found, or end of file
-                while (file.getc(c) && !isNewLine(c));
+                while (file->getc(c) && !isNewLine(c));
                 tok.clear();
                 continue;
             } else if (tok.type == TK_OPEN_BLOCK_COMMENT) {
                 // this is a multi line comment, move until we find a star (and then a slash)
-                bool cont = file.getc(c);
-                file.getLocation(nested_comment_stack[num_nested]);
+                bool cont = file->getc(c);
+                file->getLocation(nested_comment_stack[num_nested]);
                 num_nested++;
                 while (cont) {
-                    while ((cont = file.getc(c)) && (c != '*') && (c != '/'));
+                    while ((cont = file->getc(c)) && (c != '*') && (c != '/'));
                     if (!cont) {
                         tok.type = TK_LAST_TOKEN;
                         return;
                     }
                     if (c == '/') {
                         // possible nested comment
-                        cont = file.getc(c);
+                        cont = file->getc(c);
                         if (cont && (c == '*')) {
                             if (num_nested + 1 >= MAX_NESTED_COMMENT) {
                                 Error("You have reached the maximum number of nested comments: %d\n", MAX_NESTED_COMMENT);
                             }
-                            file.getLocation(nested_comment_stack[num_nested]);
+                            file->getLocation(nested_comment_stack[num_nested]);
                             num_nested++;
                         }
                     } else {
-                        cont = file.getc(c);
+                        cont = file->getc(c);
                         if (cont && (c == '/')) {
                             num_nested--;
                             if (num_nested == 0) break;

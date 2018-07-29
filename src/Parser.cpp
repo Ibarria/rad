@@ -52,13 +52,15 @@ void Parser::Error(const char *msg, ...)
     va_list args;
     SrcLocation loc;
     lex->getLocation(loc);
-    u32 off = sprintf_s(errorString, "%s:%d:%d: error : ", lex->getFilename(), 
+    s32 off = sprintf(errorString, "%s:%d:%d: error : ", lex->getFilename(), 
         loc.line, loc.col);
 
     va_start(args, msg);
-    vsprintf_s(errorString + off, sizeof(errorString) - off, msg, args);
+    off += vsprintf(errorString + off, msg, args);
     va_end(args);
     success = false;
+    errorString += off;
+    errorString = lex->getFileData()->printLocation(loc, errorString);
 }
 
 bool Parser::MustMatchToken(TOKEN_TYPE type, const char *msg)
@@ -1280,7 +1282,7 @@ void Parser::parseImportDirective()
         import_parser.Parse(fname, pool, top_level_ast);
 
         if (!import_parser.success) {
-            strncpy_s(errorString, import_parser.errorString, sizeof(errorString));
+            errorString = strcpy(errorString, import_parser.errorStringBuffer);
             success = false;
         }
     }
@@ -1309,7 +1311,7 @@ void Parser::parseLoadDirective()
     import_parser.Parse(t.string, pool, top_level_ast);
 
     if (!import_parser.success) {
-        strncpy_s(errorString, import_parser.errorString, sizeof(errorString));
+        errorString = strcpy(errorString, import_parser.errorStringBuffer);
         success = false;
     }
 }
@@ -1445,8 +1447,13 @@ FileAST *Parser::Parse(const char *filename, PoolAllocator *pool, FileAST *fast)
 
     lex.setPoolAllocator(pool);
 
+    if (errorString == nullptr) {
+        errorString = errorStringBuffer;
+        errorString[0] = 0;
+    }
+
     if (!lex.openFile(filename)) {
-        sprintf_s(errorString, "Error: File [%s] could not be opened to be processed\n", filename);
+        errorString += sprintf(errorString, "Error: File [%s] could not be opened to be processed\n", filename);
         return nullptr;
     }
 
@@ -1463,8 +1470,13 @@ FileAST * Parser::ParseFromString(const char *str, u64 str_size, PoolAllocator *
 
     lex.setPoolAllocator(pool);
 
+    if (errorString == nullptr) {
+        errorString = errorStringBuffer;
+        errorString[0] = 0;
+    }
+
     if (!lex.loadString(str, str_size)) {
-        sprintf_s(errorString, "Error: String could not be loaded to be processed\n");
+        errorString += sprintf(errorString, "Error: String could not be loaded to be processed\n");
         return nullptr;
     }
 
@@ -1484,6 +1496,10 @@ FileAST * Parser::ParseInternal(FileAST *fast)
      
     top_level_ast = file_inst;
     success = true;
+
+    if (errorString == nullptr) {
+        errorString = errorStringBuffer;
+    }
 
     defineBuiltInTypes();
 

@@ -588,6 +588,7 @@ inline TypeAST *getDefinedType(VarReferenceAST *ast)
     }
     case AST_STRUCT_ACCESS: {
         auto sac = (StructAccessAST *)ast;
+        if (!sac->decl) return nullptr;
         assert(sac->decl);
         return sac->decl->specified_type;
         break;

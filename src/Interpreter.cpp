@@ -409,6 +409,10 @@ bool isTypeStructOrPtr(TypeAST *type)
                 // we need the new dependency system...
                 return false;
             }
+            if (!type_var->specified_type) {
+                // @Cleanup: ensure this false triggers a re-evaluation later of types
+                return false;
+            }
             assert(type_var->specified_type);
             dt->custom_type = type_var->specified_type;
         }
@@ -1930,6 +1934,10 @@ bool Interpreter::doWorkAST(interp_work * work)
             if (sac->decl == nullptr) {
                 assert(sac->prev);
                 TypeAST *enclosingType = getDefinedType(sac->prev);
+                if (!enclosingType) {
+                    Error(ast, "Could not find reference to %s\n", sac->name);
+                    return false;
+                }
                 if (isTypeArray(enclosingType)) {
                     // Arrays of all type support the struct access .count, some .reserved_size
                     ArrayTypeAST *atype = (ArrayTypeAST *)enclosingType;
@@ -2439,6 +2447,7 @@ bool Interpreter::doWorkAST(interp_work * work)
             if (id->decl == nullptr) return false;
 
             if (id->next) {
+                if (!id->next->expr_type) return false;
                 id->expr_type = id->next->expr_type;
             } else {
                 // if we do not have a type for the declaration yet, do not consider this done

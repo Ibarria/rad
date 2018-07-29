@@ -153,7 +153,7 @@ int main(int argc, char **argv)
 	FileAST *parsedFile = p.Parse(root_file, &interp.pool);
 
     if (!parsedFile) {
-        printf("Error during Lexical and Syntactic parsing:\n%s", p.errorString);
+        printf("Error during Lexical and Syntactic parsing:\n%s", p.errorStringBuffer);
         exit(1);
     }
 

@@ -8,7 +8,7 @@
 class Lexer
 {
     static const int MAX_NESTED_COMMENT = 16;
-	FileData file;
+	FileData *file = nullptr;
     SrcLocation nested_comment_stack[MAX_NESTED_COMMENT];
     u8 num_nested;
     Array<Token> tokens;
@@ -39,4 +39,5 @@ public:
     unsigned int getTokenStreamPosition() const;
     void setTokenStreamPosition(unsigned int index);
     TextType getFilename() { return filename; }
+    FileData *getFileData() { return file; }
 };

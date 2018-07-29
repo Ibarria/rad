@@ -8,7 +8,8 @@
 struct Parser {
     Lexer *lex;
     PoolAllocator *pool = nullptr;
-    char errorString[512];
+    char errorStringBuffer[4096];
+    char *errorString = nullptr;
     Scope *current_scope = nullptr;
     FileAST *top_level_ast = nullptr;
     bool isImport = false;

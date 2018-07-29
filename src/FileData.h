@@ -2,6 +2,7 @@
 
 #include "mytypes.h"
 #include "SrcLocation.h"
+#include "Array.h"
 
 #if defined(getc)
 #undef getc
@@ -16,6 +17,7 @@ class FileData
 	u64 size;
 	u64 nline;
 	u64 ncol;
+    Array<char *> lines;
 public:
 	FileData();
 	~FileData();
@@ -27,5 +29,6 @@ public:
 	void getLocation(SrcLocation &loc) const;
     void lookAheadTwo(char *in);
 	const char *getFilename() const { return filename; }
+    char * printLocation(const SrcLocation &loc, char *str) const;
 };
 
