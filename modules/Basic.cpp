@@ -129,6 +129,6 @@ extern "C" DLLEXPORT void _abort()
     __debugbreak();
     end();
 #else
-    abort(0);
+    abort();
 #endif  
 }
