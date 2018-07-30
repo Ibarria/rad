@@ -5,7 +5,7 @@ struct bytecode_generator;
 class FileData;
 
 enum InterpAction {
-    IA_NOP,
+    IA_NOP = 0,
     IA_RESOLVE_TYPE,
     IA_RESOLVE_TYPE_POST,
     IA_COMPUTE_SIZE,
@@ -121,6 +121,7 @@ struct Interpreter
     bool doBytecode(interp_work *work);
 
     void printErrors();
+    void printWork(interp_work *work, bool r);
 
     // Functions to call from outside
     void semanticProcess(FileAST *root);

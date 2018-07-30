@@ -12,6 +12,9 @@
 # define vsprintf_s vsnprintf
 #endif
 
+// This helps see how dependencies are actually being processed
+#define DEBUG_DEPS 1
+
 extern bool option_printBytecode;
 extern u64 sequence_id;
 
@@ -1137,6 +1140,24 @@ void Interpreter::printErrors()
     printf("%s", errorStringBuffer);
 }
 
+static char *WorkToStr[] = {
+    "NOP",
+    "TYPE",
+    "TPOST",
+    "SIZE",
+    "CHECK",
+    "BCODE",
+    "RUN"
+};
+
+void Interpreter::printWork(interp_work * work, bool r)
+{
+    printf("    >> %6s %4s %s:%d,%d : %s\n", WorkToStr[work->action], 
+        (r ? "OK": "FAIL"),
+        (*work->ast)->filename, (*work->ast)->line_num,
+        (*work->ast)->char_num, AstClassTypeToStr((*work->ast)->ast_type));
+}
+
 void Interpreter::semanticProcess(FileAST *root)
 {
     traversePostfixTopLevel(root);
@@ -1371,8 +1392,11 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
     case AST_DIRECT_TYPE: {
         auto dt = (DirectTypeAST *)ast;
 
-        addTypeWork(&pool, astp, deps);
-        addSizeWork(&pool, astp, deps);
+        // Only do dependency processing for custom types
+        if (dt->basic_type == BASIC_TYPE_CUSTOM) {
+            addTypeWork(&pool, astp, deps);
+            addSizeWork(&pool, astp, deps);
+        }
 
         break;
     }
@@ -1576,6 +1600,9 @@ void Interpreter::processDependencies(interp_deps * deps)
         for (; index < deps->resolve_type.work.size(); index++) {
             auto work = deps->resolve_type.work[index];
             bool r = doWorkAST(work);
+#if DEBUG_DEPS
+            printWork(work, r);
+#endif
             if (!r) {
                 firstFailure = true;
                 stageComplete = false;
@@ -1589,7 +1616,12 @@ void Interpreter::processDependencies(interp_deps * deps)
     }
 
     // One stage needs to be completely done before the next
-    if (!stageComplete) return;
+    if (!stageComplete) {
+#if DEBUG_DEPS
+        printf("****************** EARLY RETURN, TYPE COULD NOT BE COMPLETED ****************\n");
+#endif
+        return;
+    }
 
     if (!deps->compute_size.empty()) {
         CPU_SAMPLE("SizeDependencies");
@@ -1599,6 +1631,9 @@ void Interpreter::processDependencies(interp_deps * deps)
         for (; index < deps->compute_size.work.size(); index++) {
             auto work = deps->compute_size.work[index];
             bool r = doWorkAST(work);
+#if DEBUG_DEPS
+            printWork(work, r);
+#endif
             if (!r) {
                 firstFailure = true;
                 stageComplete = false;
@@ -1612,7 +1647,12 @@ void Interpreter::processDependencies(interp_deps * deps)
     }
 
     // One stage needs to be completely done before the next
-    if (!stageComplete) return;
+    if (!stageComplete) {
+#if DEBUG_DEPS
+        printf("****************** EARLY RETURN, SIZE COULD NOT BE COMPLETED ****************\n");
+#endif
+        return;
+    }
 
     if (!deps->operation_check.empty()) {
         CPU_SAMPLE("CheckDependencies");
@@ -1621,6 +1661,9 @@ void Interpreter::processDependencies(interp_deps * deps)
         for (; index < deps->operation_check.work.size(); index++) {
             auto work = deps->operation_check.work[index];
             bool r = doWorkAST(work);
+#if DEBUG_DEPS
+            printWork(work, r);
+#endif
             if (!r) {
                 return;
             } else {
