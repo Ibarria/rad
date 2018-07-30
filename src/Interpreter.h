@@ -81,8 +81,9 @@ struct Interpreter
     Array<interp_deps *> overall_deps;
     bytecode_generator *bcgen = nullptr;
 
-    Array<TextType> errors;
-    char errorString[512];
+    Array<char *> errors;
+    char errorStringBuffer[4096];
+    char *errorString = nullptr;
     void Error(BaseAST *ast, const char *msg, ...);
 
     void reset_errors();

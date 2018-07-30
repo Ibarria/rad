@@ -668,26 +668,35 @@ void Interpreter::Error(BaseAST *ast, const char *msg, ...)
 {
     va_list args;
     u32 off = 0;
+
+    if (!errorString) {
+        errorString = errorStringBuffer;
+        *errorString = 0;
+    }
+
     if (ast != nullptr) {
-        off = sprintf_s(errorString, "%s:%d:%d: error : ", ast->filename,
+        off = sprintf(errorString, "%s:%d:%d: error : ", ast->filename,
             ast->line_num, ast->char_num);
     }
     else {
-        off = sprintf_s(errorString, "Compilation error : ");
+        off = sprintf(errorString, "Compilation error : ");
     }
 
     va_start(args, msg);
-    vsprintf_s(errorString + off, sizeof(errorString) - off, msg, args);
+    off += vsprintf(errorString + off, msg, args);
     va_end(args);
     success = false;
 
-    errors.push_back(CreateTextType(&pool, errorString));
+    errors.push_back(errorString);
+    errorString += off;
 }
 
 void Interpreter::reset_errors()
 {
     success = true;
     errors.reset();
+    errorString = errorStringBuffer;
+    *errorString = 0;
 }
 
 TypeCheckError Interpreter::checkTypesAllowLiteralAndCast(ExpressionAST **expr, TypeAST * lhsType, TypeAST * rhsType)
