@@ -8,18 +8,18 @@ Vector3 := struct {
 
 Apointer: *Vector3;
 
-print_position :: (entity : *Entity) {
-    print("Position: (%f, %f, %f)\n", entity.position.x, entity.position.y, entity.position.z);
-}
-
 Entity :: struct {
-	position: Vector3;
+    position: Vector3;
 }
 
 main :: ()
 {
     myvar: Vector3;
     fx : float;
+
+    print_position :: (entity : *Entity) {
+        print("Position: (%f, %f, %f)\n", entity.position.x, entity.position.y, entity.position.z);
+    }
 
 
     myvar.x = 0.0;  
@@ -51,7 +51,7 @@ main :: ()
 check_pointer :: (p: *s16)
 {
     if (p == null) print("check_pointer: the pointer is null now\n");
-    else print("check_pointer: the pointer is not null now\n");	
+    else print("check_pointer: the pointer is not null now\n"); 
 }
 
 #run main();

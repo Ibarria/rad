@@ -2047,6 +2047,8 @@ bool Interpreter::doWorkAST(interp_work * work)
 
             if (sac->next) {
                 if (!sac->next->expr_type) {
+                    // We should have this type, unless there was a missing dependency
+                    // in which case we should return and not continue further
                     return false;
                 }
                 sac->expr_type = sac->next->expr_type;

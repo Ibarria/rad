@@ -688,6 +688,7 @@ static void generateCode(BaseAST *ast)
         case AST_FUNCTION_TYPE: {
             // @TODO: differentiate between top level functions
             // and lambda (these need rename)
+            BasicBlock *oldBlock = nullptr;
 
             auto func_decl = (FunctionDefinitionAST *)decl->definition;
             auto ft = (FunctionTypeAST *)decl->specified_type;
@@ -696,6 +697,11 @@ static void generateCode(BaseAST *ast)
             if (ft->isForeign) return;
 
             Function *llvm_func = (Function *)decl->codegen;
+
+            if (!isGlobalDeclaration(decl)) {
+                // save the current block where we are inserting
+                oldBlock = Builder.GetInsertBlock();
+            }
 
             u32 arg_index = 0;
             auto& arg_decls = func_decl->function_body->block_scope.decls;
@@ -718,6 +724,10 @@ static void generateCode(BaseAST *ast)
 
             verifyFunction(*llvm_func);
             llvm_function = old_func;
+
+            if (oldBlock) {
+                Builder.SetInsertPoint(oldBlock);
+            }
 
             break;
         }
@@ -1236,6 +1246,9 @@ extern "C" DLLEXPORT void llvm_compile(FileAST *root, const char *obj_file, doub
     generateCode(root);
 
     codegenTime = timer.stopTimer();
+
+    TheModule->print(outs(), nullptr);
+    outs().flush();
 
     timer.startTimer();
 
