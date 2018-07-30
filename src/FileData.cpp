@@ -133,18 +133,26 @@ char * FileData::printLocation(const SrcLocation & loc, char *str) const
     }
 
     // How to print: print one line above, the current line, the marker
+    if (loc.line > 2) {
+        // -1 for previous, -1 because lines is 0 indexed
+        char *prev_line = lines[loc.line - 3];
+        char *end = strchr(prev_line, '\n');
+        s32 off = sprintf(str, ">>>>%.*s", (u32)(end - prev_line + 1), prev_line);
+        str += off;
+    }
+
     if (loc.line > 1) {
         // -1 for previous, -1 because lines is 0 indexed
         char *prev_line = lines[loc.line - 2];
         char *end = strchr(prev_line, '\n');
-        s32 off = sprintf(str, "%.*s", (u32)(end - prev_line + 1), prev_line);
+        s32 off = sprintf(str, ">>>>%.*s", (u32)(end - prev_line + 1), prev_line);
         str += off;
     }
 
     {
         char *cur_line = lines[loc.line - 1];
         char *end = strchr(cur_line, '\n');
-        s32 off = sprintf(str, "%.*s", (u32)(end - cur_line +1), cur_line);
+        s32 off = sprintf(str, ">>>>%.*s", (u32)(end - cur_line +1), cur_line);
         str += off;
     }
 
@@ -153,12 +161,12 @@ char * FileData::printLocation(const SrcLocation & loc, char *str) const
         if (loc.col <= 16) {
             // small column, marker looks like:
             //   ^-----------
-            s32 off = sprintf(str, "%*s^%s\n", loc.col - 1, "", "----------------");
+            s32 off = sprintf(str, ">>>>%*s^%s\n", loc.col - 1, "", "----------------");
             str += off;
         } else {
             // small column, marker looks like:
             //   -----------^
-            s32 off = sprintf(str, "%*s%s^\n", (loc.col - 17), "", "----------------");
+            s32 off = sprintf(str, ">>>>%*s%s^\n", (loc.col - 17), "", "----------------");
             str += off;
         }
     }

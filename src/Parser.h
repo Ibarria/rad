@@ -5,9 +5,12 @@
 #include "Lexer.h"
 #include "Array.h"
 
+struct Interpreter;
+
 struct Parser {
-    Lexer *lex;
+    Lexer *lex = nullptr;
     PoolAllocator *pool = nullptr;
+    Interpreter *interp = nullptr;
     char errorStringBuffer[4096];
     char *errorString = nullptr;
     Scope *current_scope = nullptr;

@@ -2,6 +2,7 @@
 #include "AST.h"
 
 struct bytecode_generator;
+class FileData;
 
 enum InterpAction {
     IA_NOP,
@@ -79,9 +80,9 @@ struct Interpreter
     PoolAllocator pool;
     bool success = true;
     Array<interp_deps *> overall_deps;
+    Array<FileData *> files;
     bytecode_generator *bcgen = nullptr;
 
-    Array<char *> errors;
     char errorStringBuffer[4096];
     char *errorString = nullptr;
     void Error(BaseAST *ast, const char *msg, ...);

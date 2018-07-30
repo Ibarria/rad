@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include "TextType.h"
 #include "bytecode_generator.h"
+#include "FileData.h"
 
 #ifndef WIN32
 # define sprintf_s sprintf
@@ -668,6 +669,7 @@ void Interpreter::Error(BaseAST *ast, const char *msg, ...)
 {
     va_list args;
     u32 off = 0;
+    FileData *fd = nullptr;
 
     if (!errorString) {
         errorString = errorStringBuffer;
@@ -677,6 +679,12 @@ void Interpreter::Error(BaseAST *ast, const char *msg, ...)
     if (ast != nullptr) {
         off = sprintf(errorString, "%s:%d:%d: error : ", ast->filename,
             ast->line_num, ast->char_num);
+        for (auto f : files) {
+            if (!strcmp(f->getFilename(), ast->filename)) {
+                fd = f;
+                break;
+            }
+        }
     }
     else {
         off = sprintf(errorString, "Compilation error : ");
@@ -687,14 +695,17 @@ void Interpreter::Error(BaseAST *ast, const char *msg, ...)
     va_end(args);
     success = false;
 
-    errors.push_back(errorString);
     errorString += off;
+    if (fd) {
+        SrcLocation loc;
+        loc.line = ast->line_num; loc.col = ast->char_num;
+        errorString = fd->printLocation(loc, errorString);
+    }
 }
 
 void Interpreter::reset_errors()
 {
     success = true;
-    errors.reset();
     errorString = errorStringBuffer;
     *errorString = 0;
 }
@@ -1123,9 +1134,7 @@ static u32 overallRunDependencies(RunDirectiveAST *run)
 
 void Interpreter::printErrors()
 {
-    for (auto err : errors) {
-        printf("%s", err);
-    }
+    printf("%s", errorStringBuffer);
 }
 
 void Interpreter::semanticProcess(FileAST *root)
@@ -1516,7 +1525,7 @@ void Interpreter::processAllDependencies(FileAST *root)
     if (current_remain > 0) {
         Error(nullptr, "Could not process all dependencies\n");
         // This is for debugging, ideally we have errors already
-        printRemainingDependencies();
+        // printRemainingDependencies();
         success = false;
         return;
     }

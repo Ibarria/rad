@@ -150,6 +150,7 @@ int main(int argc, char **argv)
     Parser p;
     int res;
 
+    p.interp = &interp;
 	FileAST *parsedFile = p.Parse(root_file, &interp.pool);
 
     if (!parsedFile) {

@@ -1,6 +1,7 @@
 #include "Parser.h"
 #include "Lexer.h"
 #include "PoolAllocator.h"
+#include "Interpreter.h"
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
@@ -1289,6 +1290,7 @@ void Parser::parseImportDirective()
     // this could be done in parallel if needed be
     Parser import_parser;
     import_parser.isImport = true;
+    import_parser.interp = interp;
     import_parser.current_scope = current_scope;
     // All modules are in the modules folder, with the extension
     // One day this will be a search path
@@ -1327,6 +1329,7 @@ void Parser::parseLoadDirective()
 
     // this could be done in parallel if needed be
     Parser import_parser;
+    import_parser.interp = interp;
     import_parser.current_scope = current_scope;
     import_parser.Parse(t.string, pool, top_level_ast);
 
@@ -1524,6 +1527,7 @@ FileAST * Parser::ParseInternal(FileAST *fast)
     defineBuiltInTypes();
 
     lex->parseFile();
+    interp->files.push_back(lex->getFileData());
 
     if (option_printTokens) {
         while (!lex->checkToken(TK_LAST_TOKEN)) {

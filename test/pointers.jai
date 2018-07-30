@@ -22,8 +22,7 @@ main :: ()
     fx : float;
 
 
-    myvar.x = 0.0  
-    // Silly comment
+    myvar.x = 0.0;  
     myvar.y = 0.0;
     myvar.z = 0.0;
 
