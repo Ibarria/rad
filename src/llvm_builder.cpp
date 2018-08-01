@@ -888,9 +888,21 @@ static void generateCode(BaseAST *ast)
             assert(!"Only pointers to direct types are supported for now");
         }
         auto dtype = (DirectTypeAST *)ptype->points_to_type;
-        generateCode(dtype);
-        assert(dtype->llvm_type != nullptr);
-        ptype->llvm_type = getLlvmPointer(dtype);
+        if ((dtype->basic_type == BASIC_TYPE_CUSTOM) && isTypeStruct(dtype->custom_type)) {
+            auto stype = (StructTypeAST *)dtype->custom_type;
+            // shortcut pointers to structs
+            if (stype->llvm_type) {
+                ptype->llvm_type = stype->llvm_type->getPointerTo();
+            } else {
+                Type *tp = StructType::create(TheContext, stype->decl->varname);
+                stype->llvm_type = tp;
+                ptype->llvm_type = tp->getPointerTo();
+            }
+        } else {
+            generateCode(dtype);
+            assert(dtype->llvm_type != nullptr);
+            ptype->llvm_type = getLlvmPointer(dtype);
+        }
         break;
     }
     case AST_ARRAY_TYPE: {
@@ -917,11 +929,20 @@ static void generateCode(BaseAST *ast)
     case AST_STRUCT_TYPE: {
         auto stype = (StructTypeAST *)ast;
         std::vector<Type *> struct_members;
+        if (stype->llvm_type) {
+            auto llvm_stype = static_cast<StructType *>(stype->llvm_type);
+            if (!llvm_stype->isOpaque()) break;
+        }
         for (auto decl : stype->struct_scope.decls) {
             generateCode(decl->specified_type);
             struct_members.push_back(decl->specified_type->llvm_type);
         }
-        stype->llvm_type = StructType::create(TheContext, struct_members, stype->decl->varname);
+        if (stype->llvm_type) {
+            auto llvm_stype = static_cast<StructType *>(stype->llvm_type);
+            llvm_stype->setBody(struct_members);
+        } else {
+            stype->llvm_type = StructType::create(TheContext, struct_members, stype->decl->varname);
+        }
         break;
     }
     case AST_RUN_DIRECTIVE: {
@@ -1247,8 +1268,10 @@ extern "C" DLLEXPORT void llvm_compile(FileAST *root, const char *obj_file, doub
 
     codegenTime = timer.stopTimer();
 
+#if 0
     TheModule->print(outs(), nullptr);
     outs().flush();
+#endif
 
     timer.startTimer();
 

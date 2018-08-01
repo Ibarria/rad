@@ -10,6 +10,7 @@ Apointer: *Vector3;
 
 Entity :: struct {
     position: Vector3;
+    other: *Entity;
 }
 
 main :: ()

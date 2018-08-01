@@ -104,7 +104,10 @@ struct TypeAST : BaseAST
 {
     u32 size_in_bytes = 0;
     llvm::Type *llvm_type = nullptr;
+    u32 type_flags = 0;
 };
+
+#define TYPE_FLAG_SIZED  0x1
 
 struct FunctionTypeAST : TypeAST
 {

@@ -13,7 +13,7 @@
 #endif
 
 // This helps see how dependencies are actually being processed
-#define DEBUG_DEPS 1
+#define DEBUG_DEPS 0
 
 extern bool option_printBytecode;
 extern u64 sequence_id;
@@ -1849,6 +1849,10 @@ bool Interpreter::doWorkAST(interp_work * work)
         } else if (work->action == IA_COMPUTE_SIZE) {
             if (decl->definition && decl->definition->ast_type == AST_STRUCT_DEFINITION) {
                 auto struct_def = (StructDefinitionAST *)decl->definition;
+                if (!(struct_def->struct_type->type_flags & TYPE_FLAG_SIZED)) {
+                    // dependencies are not met
+                    return false;
+                }
                 assert((struct_def->struct_type->struct_scope.decls.size() == 0) ||
                     (struct_def->struct_type->size_in_bytes > 0));
                 // Go around all the members of the struct and assign relative bc_mem_offset (offset from struct parent)
@@ -1976,6 +1980,7 @@ bool Interpreter::doWorkAST(interp_work * work)
         assert(work->action == IA_COMPUTE_SIZE);
 
         struct_type->size_in_bytes = 0;
+        u32 accum_size = 0;
         for (auto var : struct_type->struct_scope.decls) {
             if (var->specified_type->size_in_bytes == 0) {
                 Error(ast, "Struct %s could not compute size due to member %s\n",
@@ -1983,9 +1988,10 @@ bool Interpreter::doWorkAST(interp_work * work)
                 return false;
             }
             assert(var->specified_type->size_in_bytes > 0);
-            struct_type->size_in_bytes += var->specified_type->size_in_bytes;
+            accum_size += var->specified_type->size_in_bytes;
         }
-
+        struct_type->size_in_bytes = accum_size;
+        struct_type->type_flags |= TYPE_FLAG_SIZED;
         break;
     }
     case AST_STRUCT_ACCESS: {
@@ -2423,6 +2429,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                     return false;
                 }
                 dt->size_in_bytes = dt->custom_type->size_in_bytes;
+                dt->type_flags |= TYPE_FLAG_SIZED;
             }
         }
         return true;
@@ -2489,6 +2496,7 @@ bool Interpreter::doWorkAST(interp_work * work)
                 d->llvm_index = llvm_index++;
                 bc_offset += d->specified_type->size_in_bytes;
             }
+            at->type_flags |= TYPE_FLAG_SIZED;
         }
         return true;
         break;
