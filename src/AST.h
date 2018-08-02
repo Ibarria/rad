@@ -598,6 +598,7 @@ inline TypeAST *getDefinedType(VarReferenceAST *ast)
     }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
+        if (!id->decl) return nullptr;
         assert(id->decl);
         return id->decl->specified_type;
         break;

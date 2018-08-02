@@ -3015,17 +3015,20 @@ bool Interpreter::doWorkAST(interp_work * work)
         if (work->action == IA_RESOLVE_TYPE) {
             TypeAST *type = nast->type;
             assert(type);
-            PointerTypeAST *pt = new (&pool) PointerTypeAST;
-            copyASTloc(nast, pt);
-            pt->s = sequence_id++;
-            pt->points_to_type = type;
-            pt->size_in_bytes = 8;
+            if (isTypeArray(type)) {
+                // Arrays are returned as a fat pointer itself
+                nast->expr_type = type;
+            } else { 
+                PointerTypeAST *pt = new (&pool) PointerTypeAST;
+                copyASTloc(nast, pt);
+                pt->s = sequence_id++;
+                pt->points_to_type = type;
+                pt->size_in_bytes = 8;
 
-            nast->expr_type = pt;
-            assert(!"Unimplemented");
+                nast->expr_type = pt;
+            }
         } else if (work->action == IA_COMPUTE_SIZE) {
-//            nast->size_in_bytes = 8;
-
+            
         } else if (work->action == IA_OPERATION_CHECK) {
             // Decide on what checks to do for a new call, if any
         } else {

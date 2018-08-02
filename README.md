@@ -79,3 +79,33 @@ Thoughts on RUN directive
 
 The RUN directive is a powerful feature of the language, but I am wrestling on how it will be implemented. All the code will be compiled to bytecode (as possible, as run directives might be needed). Then, RUN directives can be used to trigger a function call (in the correct scope), referencing only global variables, external functions or literals. This is to bound the dependencies for a run call. 
 A RUN directive can not produce any output, or produce code that later is inserted into the compilation step. 
+
+Error Messages
+--------------
+
+The compiler will produce error messages and report where the issue is:
+
+```
+test/new.jai:17:7: error : Variable [e] could not be found on this scope
+>>>>{
+>>>>    arr := new [10] int;
+>>>>    e = new Entity;
+>>>>      ^----------------
+test/new.jai:18:6: error : Variable [e] could not be found on this scope
+>>>>    arr := new [10] int;
+>>>>    e = new Entity;
+>>>>    e.position.x = 10;
+>>>>     ^----------------
+test/new.jai:18:7: error : Could not find reference to position
+>>>>    arr := new [10] int;
+>>>>    e = new Entity;
+>>>>    e.position.x = 10;
+>>>>      ^----------------
+test/new.jai:18:16: error : Could not find reference to x
+>>>>    arr := new [10] int;
+>>>>    e = new Entity;
+>>>>    e.position.x = 10;
+>>>>               ^----------------
+Compilation error : Could not process all dependencies
+There were errors during the semantic analysis. Exiting...
+```

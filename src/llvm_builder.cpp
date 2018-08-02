@@ -42,6 +42,12 @@ static Function *llvm_function = nullptr;
 static Type *llvm_u32;
 static Type *llvm_u64;
 
+// These helpers are for new and delete to know what to call
+// this could be done in the Interpreter
+static VariableDeclarationAST* decl_malloc = nullptr;
+static VariableDeclarationAST* decl_free = nullptr;
+
+
 static void generateCode(BaseAST *ast);
 
 static void printBasicBlock(BasicBlock *bb)
@@ -1036,6 +1042,35 @@ static void generateCode(BaseAST *ast)
         }
         break;
     }
+    case AST_NEW: {
+        auto nast = (NewAllocAST *)ast;
+        if (isTypePointer(nast->expr_type)) {
+            auto ptype = (PointerTypeAST *)nast->expr_type;
+            generateCode(ptype);
+            if (!decl_malloc->codegen) generateCode(decl_malloc);
+            std::vector<Value *> ArgsV;
+            ArgsV.push_back(ConstantInt::get(llvm_u64, ptype->points_to_type->size_in_bytes));
+            auto llvm_call = Builder.CreateCall(decl_malloc->codegen, ArgsV);
+            // And now we need a cast
+            nast->codegen = Builder.CreatePointerCast(llvm_call, ptype->llvm_type);
+        } else {
+            // Only arrays make sense otherwise
+            assert(isTypeArray(nast->expr_type));
+            auto atype = (ArrayTypeAST *)nast->expr_type;
+            // Only support this for now
+            assert(isStaticArray(atype));
+
+            generateCode(atype);
+            if (!decl_malloc->codegen) generateCode(decl_malloc);
+            std::vector<Value *> ArgsV;
+            ArgsV.push_back(ConstantInt::get(llvm_u64, atype->size_in_bytes));
+            auto llvm_call = Builder.CreateCall(decl_malloc->codegen, ArgsV);
+            // And now we need a cast
+            nast->codegen = Builder.CreatePointerCast(llvm_call, atype->llvm_type);
+
+        }
+        break;
+    }
     default:
         assert(!"Unknonw AST type on LLVM generation");
     }
@@ -1263,6 +1298,15 @@ extern "C" DLLEXPORT void llvm_compile(FileAST *root, const char *obj_file, doub
     llvm_u32 = Type::getInt32Ty(TheContext);
     llvm_u64 = Type::getInt64Ty(TheContext);
 
+    // look for the malloc and free calls (which new depends on)
+    for (auto decl : root->global_scope.decls) {
+        if (!strcmp(decl->varname, "malloc")) {
+            decl_malloc = decl;
+        }
+        if (!strcmp(decl->varname, "free")) {
+            decl_free = decl;
+        }
+    }
     // Do the actual compile
     generateCode(root);
 
