@@ -148,10 +148,6 @@ static void allocateVariable(VariableDeclarationAST *decl)
             }
             TmpB.CreateStore(decl->codegen, AllocA);
         }
-        if ((decl->flags & DECL_FLAG_IS_LOCAL_VARIABLE) && (decl->definition)) {
-            generateCode(decl->definition);
-            TmpB.CreateStore(decl->definition->codegen, AllocA);
-        }
         decl->codegen = AllocA;
     }
 }
@@ -164,7 +160,7 @@ static Value *generateIdentifierCode(IdentifierAST *id)
         auto decl = id->decl;
         BaseAST *loop_ast = id->next;
         Value *variable = decl->codegen;
-        Value *val = ConstantInt::get(Type::getInt32Ty(TheContext), 0);
+        Value *val = ConstantInt::get(llvm_u32, 0);
         idx.push_back(val);
 
         if (isTypePointer(id->decl->specified_type)) {
@@ -201,7 +197,7 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                 }
                 case AST_STRUCT_ACCESS: {
                     auto loop_sac = (StructAccessAST *)loop_ast;
-                    val = ConstantInt::get(Type::getInt32Ty(TheContext),loop_sac->decl->llvm_index);
+                    val = ConstantInt::get(llvm_u32, loop_sac->decl->llvm_index);
                     idx.push_back(val);
                     loop_ast = loop_sac->next;
                     break;
@@ -211,6 +207,16 @@ static Value *generateIdentifierCode(IdentifierAST *id)
             }
         }
 
+#if 0
+        printf("\nGetIdentifier code for %s on %d:%d", id->name, id->line_num, id->char_num);
+        printf("\nIndices: ");
+        for (auto v : idx) {
+            v->print(outs(), true);
+        }
+        printf("\ndeclaration: ");
+        variable->print(outs(), true);
+
+#endif 
         Value *gep = Builder.CreateGEP(
             // decl->specified_type->llvm_type, 
             variable, idx);
@@ -278,6 +284,409 @@ static Value *computeArrayCount(IdentifierAST * array)
     return gep;
 }
 
+static void generateVariableDeclaration(VariableDeclarationAST *decl)
+{
+    // Type variables do not need any further work
+    if (decl->definition && decl->definition->ast_type == AST_STRUCT_DEFINITION) return;
+    // all variables should have their alloc (or prototype) done already
+    assert(decl->codegen);
+
+    switch (decl->specified_type->ast_type) {
+    case AST_FUNCTION_TYPE: {
+        // @TODO: differentiate between top level functions
+        // and lambda (these need rename)
+        BasicBlock *oldBlock = nullptr;
+
+        auto func_decl = (FunctionDefinitionAST *)decl->definition;
+        auto ft = (FunctionTypeAST *)decl->specified_type;
+
+        // If it is a Foreign function, nothing else to do;
+        if (ft->isForeign) return;
+
+        Function *llvm_func = (Function *)decl->codegen;
+
+        if (!isGlobalDeclaration(decl)) {
+            // save the current block where we are inserting
+            oldBlock = Builder.GetInsertBlock();
+        }
+
+        u32 arg_index = 0;
+        auto& arg_decls = func_decl->function_body->block_scope.decls;
+        for (auto& llvm_arg : llvm_func->args()) {
+            arg_decls[arg_index++]->codegen = &llvm_arg;
+        }
+        // If it is not foreign, we should do the body here
+        // Create a new basic block to start insertion into.
+        BasicBlock *BB = BasicBlock::Create(TheContext, "entry", llvm_func);
+        Builder.SetInsertPoint(BB);
+
+        Function *old_func = llvm_function;
+        llvm_function = llvm_func;
+
+        generateCode(func_decl->function_body);
+
+        if (isVoidType(ft->return_type)) {
+            Builder.CreateRetVoid();
+        }
+
+        verifyFunction(*llvm_func);
+        llvm_function = old_func;
+
+        if (oldBlock) {
+            Builder.SetInsertPoint(oldBlock);
+        }
+
+        break;
+    }
+    case AST_DIRECT_TYPE: {
+        // Global variables do not require the initialization, it is done in another section.
+        if (isGlobalDeclaration(decl)) return;
+
+        generateCode(decl->specified_type);
+        // The variable has already been allocated, now we might have to initialize it
+        if (!decl->definition) return;
+
+        generateCode(decl->definition);
+        Builder.CreateStore(decl->definition->codegen, decl->codegen);
+
+        break;
+    }
+    case AST_POINTER_TYPE: {
+        // @TODO: check if we can merge POINTER TYPE with DIRECT_TYPE
+        // Global variables do not require the initialization, it is done in another section.
+        if (isGlobalDeclaration(decl)) return;
+
+        generateCode(decl->specified_type);
+        // The variable has already been allocated, now we might have to initialize it
+        if (!decl->definition) return;
+
+        generateCode(decl->definition);
+        Builder.CreateStore(decl->definition->codegen, decl->codegen);
+
+        break;
+    }
+    case AST_ARRAY_TYPE: {
+        // Global variables do not require the initialization, it is done in another section.
+        if (isGlobalDeclaration(decl)) return;
+
+        generateCode(decl->specified_type);
+        // The variable has already been allocated, now we might have to initialize it
+        if (isStaticArray(decl->specified_type)) {
+            // Static arrays have their allocation created when looping over declarations
+            return;
+            /*
+            std::vector<Value *>idx;
+            Value *val = ConstantInt::get(llvm_u32, 0);
+            idx.push_back(val);
+//            idx.push_back(val);
+            Value *gep = Builder.CreateGEP(decl->llvm_storage, idx);
+            Builder.CreateStore(gep, decl->codegen);
+            */
+        }
+
+        if (!decl->definition) return;
+
+        generateCode(decl->definition);
+        Builder.CreateStore(decl->definition->codegen, decl->codegen);
+
+        break;
+    }
+    default:
+        assert(!"Type of variable declaration on llvm is not supported!");
+    }
+}
+
+static void generateIfStatement(IfStatementAST *ifst)
+{
+    // This code is taken from http://llvm.org/docs/tutorial/LangImpl05.html
+    generateCode(ifst->condition);
+
+    Value *cond = ifst->condition->codegen;
+    cond = Builder.CreateICmpEQ(cond, ConstantInt::getTrue(TheContext), "if_cond");
+
+    Function *lfunc = Builder.GetInsertBlock()->getParent();
+
+    BasicBlock *then_block = BasicBlock::Create(TheContext, "then", lfunc);
+    BasicBlock *else_block = BasicBlock::Create(TheContext, "else");
+    BasicBlock *merge_block = BasicBlock::Create(TheContext, "ifcont");
+
+    Builder.CreateCondBr(cond, then_block, else_block);
+
+    Builder.SetInsertPoint(then_block);
+
+    generateCode(ifst->then_branch);
+    Value *then_val = ifst->then_branch->codegen;
+
+    Builder.CreateBr(merge_block);
+    then_block = Builder.GetInsertBlock();
+
+    llvm_function->getBasicBlockList().push_back(else_block);
+    Builder.SetInsertPoint(else_block);
+    if (ifst->else_branch) generateCode(ifst->else_branch);
+
+    Builder.CreateBr(merge_block);
+    else_block = Builder.GetInsertBlock();
+
+    llvm_function->getBasicBlockList().push_back(merge_block);
+    Builder.SetInsertPoint(merge_block);
+}
+
+static void generateForStatement(ForStatementAST *forst)
+{
+    for (auto decl : forst->for_scope.decls) {
+        allocateVariable(decl);
+    }
+
+    Function *lfunc = Builder.GetInsertBlock()->getParent();
+    BasicBlock *for_entry = BasicBlock::Create(TheContext, "for_entry", lfunc);
+    BasicBlock *for_block = BasicBlock::Create(TheContext, "for_block", lfunc);
+    BasicBlock *for_after = BasicBlock::Create(TheContext, "for_after", lfunc);
+
+    if (forst->is_array) {
+        Builder.CreateBr(for_entry);
+        Builder.SetInsertPoint(for_entry);
+
+        Value *array_count = computeArrayCount(forst->arr);
+        Value *it_index = Builder.CreateLoad(forst->it_index->decl->codegen, forst->it_index->name);
+        Value *for_check = Builder.CreateICmpUGT(it_index, array_count);
+
+        Builder.CreateCondBr(for_check, for_after, for_block);
+        Builder.SetInsertPoint(for_block);
+
+        // load it with the correct value
+        Value *array_ptr = computeArrayDataPtr(forst->arr);
+        std::vector<Value *> idx;
+        Value *llvm_zero = ConstantInt::get(llvm_u64, 0);
+        idx.push_back(llvm_zero);
+        idx.push_back(it_index);
+        Value *it_ptr = Builder.CreateGEP(array_ptr, idx, forst->it->name);
+        if (forst->is_it_ptr) {
+            Builder.CreateStore(it_ptr, forst->it->decl->codegen);
+        } else {
+            Value *it_val = Builder.CreateLoad(it_ptr);
+            Builder.CreateStore(it_val, forst->it->decl->codegen);
+        }
+
+        // Do the actual loop code
+        generateCode(forst->loop_block);
+
+        // Do the loop increment, and then inconditional jump
+        Value *llvm_one = ConstantInt::get(llvm_u64, 1);
+        Value *it_index_val = Builder.CreateLoad(generateIdentifierCode(forst->it_index), forst->it_index->name);
+        Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one);
+        Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
+
+        Builder.CreateBr(for_entry);
+        Builder.SetInsertPoint(for_after);
+    } else {
+        generateCode(forst->end);
+        Value *end_val = forst->end->codegen;
+
+        Builder.CreateBr(for_entry);
+        Builder.SetInsertPoint(for_entry);
+
+        Value *it_val = Builder.CreateLoad(generateIdentifierCode(forst->it), forst->it->name);
+        Value *for_check;
+        assert(forst->end->expr_type->ast_type == AST_DIRECT_TYPE);
+        auto dtype = (DirectTypeAST *)forst->end->expr_type;
+        if (dtype->isSigned) {
+            for_check = Builder.CreateICmpSGT(it_val, end_val);
+        } else {
+            for_check = Builder.CreateICmpUGT(it_val, end_val);
+        }
+
+        Builder.CreateCondBr(for_check, for_after, for_block);
+        Builder.SetInsertPoint(for_block);
+        // Do the actual loop code
+        generateCode(forst->loop_block);
+
+        // increment the it, it_index. It could have changed
+        it_val = Builder.CreateLoad(generateIdentifierCode(forst->it), forst->it->name);
+        Value *llvm_one = ConstantInt::get(llvm_u64, 1);
+        Value *it_inc = Builder.CreateAdd(it_val, llvm_one);
+        Builder.CreateStore(it_inc, forst->it->decl->codegen);
+
+        Value *it_index_val = Builder.CreateLoad(generateIdentifierCode(forst->it_index), forst->it_index->name);
+        Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one);
+        Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
+
+        Builder.CreateBr(for_entry);
+        Builder.SetInsertPoint(for_after);
+    }
+}
+
+static void generateLiteral(LiteralAST *lit)
+{
+    generateCode(lit->typeAST);
+    switch (lit->typeAST->basic_type) {
+    case BASIC_TYPE_INTEGER: {
+        auto llvm_val = ConstantInt::get(
+            lit->typeAST->llvm_type,
+            APInt(lit->typeAST->size_in_bytes * 8,
+            (lit->typeAST->isSigned ? lit->_s64 : lit->_u64),
+                lit->typeAST->isSigned));
+        lit->codegen = llvm_val;
+        break;
+    }
+    case BASIC_TYPE_FLOATING: {
+        auto llvm_val = ConstantFP::get(lit->typeAST->llvm_type, lit->_f64);
+        lit->codegen = llvm_val;
+        break;
+    }
+    case BASIC_TYPE_BOOL: {
+        auto llvm_val = ConstantInt::get(lit->typeAST->llvm_type, APInt(1, lit->_bool));
+        lit->codegen = llvm_val;
+        break;
+    }
+    case BASIC_TYPE_STRING: {
+        auto llvm_str = (Constant *)Builder.CreateGlobalStringPtr(lit->str);
+        auto llvm_sz = ConstantInt::get(llvm_u64, strlen(lit->str));
+        std::vector<Constant *> members;
+        members.push_back(llvm_str);
+        members.push_back(llvm_sz);
+        auto llvm_struct = ConstantStruct::get((StructType *)lit->typeAST->llvm_type, members);
+        lit->codegen = llvm_struct;
+        break;
+    }
+    default:
+        assert(!"Unknonw literal type!");
+    }
+}
+
+static void generateBinaryOperation(BinaryOperationAST *binop)
+{
+    generateCode(binop->lhs);
+    generateCode(binop->rhs);
+    switch (binop->op) {
+    case TK_EQ: {
+        if (isTypeInteger(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type) ||
+            isTypePointer(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateICmpEQ(binop->lhs->codegen, binop->rhs->codegen);
+        } else if (isTypeFloating(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateFCmpOEQ(binop->lhs->codegen, binop->rhs->codegen);
+        } else {
+            assert(!"Type not supported for EQ comparison!");
+        }
+        break;
+    }
+    case TK_LEQ: {
+        if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
+        } else if (isTypeInteger(binop->lhs->expr_type)) {
+            auto dt = (DirectTypeAST *)binop->lhs->expr_type;
+            if (dt->isSigned) {
+                binop->codegen = Builder.CreateICmpSLE(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
+            }
+        } else if (isTypeFloating(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateFCmpOLE(binop->lhs->codegen, binop->rhs->codegen);
+        } else {
+            assert(!"Type not supported for LEQ comparison!");
+        }
+        break;
+    }
+    case TK_GEQ: {
+        if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
+        } else if (isTypeInteger(binop->lhs->expr_type)) {
+            auto dt = (DirectTypeAST *)binop->lhs->expr_type;
+            if (dt->isSigned) {
+                binop->codegen = Builder.CreateICmpSGE(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                binop->codegen = Builder.CreateICmpUGE(binop->lhs->codegen, binop->rhs->codegen);
+            }
+        } else if (isTypeFloating(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateFCmpOGE(binop->lhs->codegen, binop->rhs->codegen);
+        } else {
+            assert(!"Type not supported for GEQ comparison!");
+        }
+        break;
+    }
+    case TK_NEQ: {
+        if (isTypeInteger(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type) ||
+            isTypePointer(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateICmpNE(binop->lhs->codegen, binop->rhs->codegen);
+        } else if (isTypeFloating(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateFCmpONE(binop->lhs->codegen, binop->rhs->codegen);
+        } else {
+            assert(!"Type not supported for NEQ comparison!");
+        }
+        break;
+    }
+    case TK_LT: {
+        if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
+        } else if (isTypeInteger(binop->lhs->expr_type)) {
+            auto dt = (DirectTypeAST *)binop->lhs->expr_type;
+            if (dt->isSigned) {
+                binop->codegen = Builder.CreateICmpSLT(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                binop->codegen = Builder.CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
+            }
+        } else if (isTypeFloating(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateFCmpOLT(binop->lhs->codegen, binop->rhs->codegen);
+        } else {
+            assert(!"Type not supported for LT comparison!");
+        }
+        break;
+    }
+    case TK_GT: {
+        if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
+        } else if (isTypeInteger(binop->lhs->expr_type)) {
+            auto dt = (DirectTypeAST *)binop->lhs->expr_type;
+            if (dt->isSigned) {
+                binop->codegen = Builder.CreateICmpSGT(binop->lhs->codegen, binop->rhs->codegen);
+            } else {
+                binop->codegen = Builder.CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
+            }
+        } else if (isTypeFloating(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateFCmpOGT(binop->lhs->codegen, binop->rhs->codegen);
+        } else {
+            assert(!"Type not supported for GT comparison!");
+        }
+        break;
+    }
+    case TK_STAR: {
+        if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+            assert(!"Pointers and booleans cannot be multiplied!");
+        } else if (isTypeInteger(binop->lhs->expr_type) || isTypeFloating(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateMul(binop->lhs->codegen, binop->rhs->codegen);
+        } else {
+            assert(!"Type not supported for division!");
+        }
+        break;
+    }
+    case TK_DIV: {
+        if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
+            assert(!"Pointers and booleans cannot be divided!");
+        } else if (isTypeInteger(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateUDiv(binop->lhs->codegen, binop->rhs->codegen);
+        } else if (isTypeFloating(binop->lhs->expr_type)) {
+            binop->codegen = Builder.CreateFDiv(binop->lhs->codegen, binop->rhs->codegen);
+        } else {
+            assert(!"Type not supported for division!");
+        }
+        break;
+    }
+    case TK_MOD: {
+        assert(!"TK_MOD has not been implemented for llvm!");
+        break;
+    }
+    case TK_PLUS: {
+        binop->codegen = Builder.CreateAdd(binop->lhs->codegen, binop->rhs->codegen);
+        break;
+    }
+    case TK_MINUS: {
+        binop->codegen = Builder.CreateSub(binop->lhs->codegen, binop->rhs->codegen);
+        break;
+    }
+    default:
+        assert(!"Token operation is not recognized/supported!");
+    }
+}
+
 static void generateCode(BaseAST *ast)
 {
     switch (ast->ast_type)
@@ -321,123 +730,12 @@ static void generateCode(BaseAST *ast)
     }
     case AST_IF_STATEMENT: {
         auto ifst = (IfStatementAST *)ast;
-        // This code is taken from http://llvm.org/docs/tutorial/LangImpl05.html
-        generateCode(ifst->condition);
-
-        Value *cond = ifst->condition->codegen;
-        cond = Builder.CreateICmpEQ(cond, ConstantInt::getTrue(TheContext), "if_cond");
-
-        Function *lfunc = Builder.GetInsertBlock()->getParent();
-
-        BasicBlock *then_block = BasicBlock::Create(TheContext, "then", lfunc);
-        BasicBlock *else_block = BasicBlock::Create(TheContext, "else");
-        BasicBlock *merge_block = BasicBlock::Create(TheContext, "ifcont");        
-
-        Builder.CreateCondBr(cond, then_block, else_block);
-
-        Builder.SetInsertPoint(then_block);
-
-        generateCode(ifst->then_branch);
-        Value *then_val = ifst->then_branch->codegen;
-
-        Builder.CreateBr(merge_block);
-        then_block = Builder.GetInsertBlock();
-
-        llvm_function->getBasicBlockList().push_back(else_block);
-        Builder.SetInsertPoint(else_block);
-        if (ifst->else_branch) generateCode(ifst->else_branch);
-
-        Builder.CreateBr(merge_block);
-        else_block = Builder.GetInsertBlock();
-
-        llvm_function->getBasicBlockList().push_back(merge_block);
-        Builder.SetInsertPoint(merge_block);
-
+        generateIfStatement(ifst);
         break;
     }
     case AST_FOR_STATEMENT: {
         auto forst = (ForStatementAST *)ast;
-
-        for (auto decl : forst->for_scope.decls) {
-            allocateVariable(decl);
-        }
-
-        Function *lfunc = Builder.GetInsertBlock()->getParent();
-        BasicBlock *for_entry = BasicBlock::Create(TheContext, "for_entry", lfunc);
-        BasicBlock *for_block = BasicBlock::Create(TheContext, "for_block", lfunc);
-        BasicBlock *for_after = BasicBlock::Create(TheContext, "for_after", lfunc);
-
-        if (forst->is_array) {
-            Builder.CreateBr(for_entry);
-            Builder.SetInsertPoint(for_entry);
-
-            Value *array_count = computeArrayCount(forst->arr);
-            Value *it_index = Builder.CreateLoad(forst->it_index->decl->codegen, forst->it_index->name);
-            Value *for_check = Builder.CreateICmpUGT(it_index, array_count);
-
-            Builder.CreateCondBr(for_check, for_after, for_block);
-            Builder.SetInsertPoint(for_block);
-
-            // load it with the correct value
-            Value *array_ptr = computeArrayDataPtr(forst->arr);
-            std::vector<Value *> idx;
-            Value *llvm_zero = ConstantInt::get(llvm_u64, 0);
-            idx.push_back(llvm_zero);
-            idx.push_back(it_index);
-            Value *it_ptr = Builder.CreateGEP(array_ptr, idx, forst->it->name);
-            if (forst->is_it_ptr) {
-                Builder.CreateStore(it_ptr, forst->it->decl->codegen);
-            } else {
-                Value *it_val = Builder.CreateLoad(it_ptr);
-                Builder.CreateStore(it_val, forst->it->decl->codegen);
-            }
-
-            // Do the actual loop code
-            generateCode(forst->loop_block);
-
-            // Do the loop increment, and then inconditional jump
-            Value *llvm_one = ConstantInt::get(llvm_u64, 1);
-            Value *it_index_val = Builder.CreateLoad(generateIdentifierCode(forst->it_index), forst->it_index->name);
-            Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one);
-            Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
-
-            Builder.CreateBr(for_entry);
-            Builder.SetInsertPoint(for_after);
-        } else {
-            generateCode(forst->end);
-            Value *end_val = forst->end->codegen;
-
-            Builder.CreateBr(for_entry);
-            Builder.SetInsertPoint(for_entry);
-
-            Value *it_val = Builder.CreateLoad(generateIdentifierCode(forst->it), forst->it->name);
-            Value *for_check;
-            assert(forst->end->expr_type->ast_type == AST_DIRECT_TYPE);
-            auto dtype = (DirectTypeAST *)forst->end->expr_type;
-            if (dtype->isSigned) {
-                for_check = Builder.CreateICmpSGT(it_val, end_val);
-            } else {
-                for_check = Builder.CreateICmpUGT(it_val, end_val);
-            }
-
-            Builder.CreateCondBr(for_check, for_after, for_block);
-            Builder.SetInsertPoint(for_block);
-            // Do the actual loop code
-            generateCode(forst->loop_block);
-
-            // increment the it, it_index. It could have changed
-            it_val = Builder.CreateLoad(generateIdentifierCode(forst->it), forst->it->name);
-            Value *llvm_one = ConstantInt::get(llvm_u64, 1);
-            Value *it_inc = Builder.CreateAdd(it_val, llvm_one);
-            Builder.CreateStore(it_inc, forst->it->decl->codegen);
-
-            Value *it_index_val = Builder.CreateLoad(generateIdentifierCode(forst->it_index), forst->it_index->name);
-            Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one);
-            Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
-
-            Builder.CreateBr(for_entry);
-            Builder.SetInsertPoint(for_after);
-        }
+        generateForStatement(forst);
         break;
     }
     case AST_RETURN_STATEMENT: {
@@ -475,174 +773,12 @@ static void generateCode(BaseAST *ast)
     }
     case AST_LITERAL: {
         auto lit = (LiteralAST *)ast;
-        generateCode(lit->typeAST);
-        switch (lit->typeAST->basic_type) {
-        case BASIC_TYPE_INTEGER: {
-            auto llvm_val = ConstantInt::get(
-                lit->typeAST->llvm_type, 
-                APInt(lit->typeAST->size_in_bytes * 8, 
-                    (lit->typeAST->isSigned ? lit->_s64 : lit->_u64), 
-                    lit->typeAST->isSigned));
-            lit->codegen = llvm_val;
-            break;
-        }
-        case BASIC_TYPE_FLOATING: {
-            auto llvm_val = ConstantFP::get(lit->typeAST->llvm_type, lit->_f64);
-            lit->codegen = llvm_val;
-            break;
-        }
-        case BASIC_TYPE_BOOL: {
-            auto llvm_val = ConstantInt::get(lit->typeAST->llvm_type, APInt(1, lit->_bool));
-            lit->codegen = llvm_val;
-            break;
-        }
-        case BASIC_TYPE_STRING: {
-            auto llvm_str = (Constant *)Builder.CreateGlobalStringPtr(lit->str);
-            auto llvm_sz = ConstantInt::get(llvm_u64, strlen(lit->str));
-            std::vector<Constant *> members;
-            members.push_back(llvm_str);
-            members.push_back(llvm_sz);
-            auto llvm_struct = ConstantStruct::get((StructType *)lit->typeAST->llvm_type, members);
-            lit->codegen = llvm_struct;
-            break;
-        }
-        default:
-            assert(!"Unknonw literal type!");
-        }
+        generateLiteral(lit);
         break;
     }
     case AST_BINARY_OPERATION: {
         auto binop = (BinaryOperationAST *)ast;
-        generateCode(binop->lhs);
-        generateCode(binop->rhs);
-        switch (binop->op) {
-        case TK_EQ: {
-            if (isTypeInteger(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type) ||
-                isTypePointer(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateICmpEQ(binop->lhs->codegen, binop->rhs->codegen);
-            } else if (isTypeFloating(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateFCmpOEQ(binop->lhs->codegen, binop->rhs->codegen);
-            } else { 
-                assert(!"Type not supported for EQ comparison!"); 
-            }
-            break;
-        }
-        case TK_LEQ: {
-            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
-            } else if (isTypeInteger(binop->lhs->expr_type)) {
-                auto dt = (DirectTypeAST *)binop->lhs->expr_type;
-                if (dt->isSigned) {
-                    binop->codegen = Builder.CreateICmpSLE(binop->lhs->codegen, binop->rhs->codegen);
-                } else {
-                    binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
-                }
-            } else if (isTypeFloating(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateFCmpOLE(binop->lhs->codegen, binop->rhs->codegen);
-            } else {
-                assert(!"Type not supported for LEQ comparison!");
-            }
-            break;
-        }
-        case TK_GEQ: {
-            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
-            } else if (isTypeInteger(binop->lhs->expr_type)) {
-                auto dt = (DirectTypeAST *)binop->lhs->expr_type;
-                if (dt->isSigned) {
-                    binop->codegen = Builder.CreateICmpSGE(binop->lhs->codegen, binop->rhs->codegen);
-                } else {
-                    binop->codegen = Builder.CreateICmpUGE(binop->lhs->codegen, binop->rhs->codegen);
-                }
-            } else if (isTypeFloating(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateFCmpOGE(binop->lhs->codegen, binop->rhs->codegen);
-            } else {
-                assert(!"Type not supported for GEQ comparison!");
-            }
-            break;
-        }
-        case TK_NEQ: {
-            if (isTypeInteger(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type) ||
-                isTypePointer(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateICmpNE(binop->lhs->codegen, binop->rhs->codegen);
-            } else if (isTypeFloating(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateFCmpONE(binop->lhs->codegen, binop->rhs->codegen);
-            } else {
-                assert(!"Type not supported for NEQ comparison!");
-            }
-            break;
-        }
-        case TK_LT: {
-            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
-            } else if (isTypeInteger(binop->lhs->expr_type)) {
-                auto dt = (DirectTypeAST *)binop->lhs->expr_type;
-                if (dt->isSigned) {
-                    binop->codegen = Builder.CreateICmpSLT(binop->lhs->codegen, binop->rhs->codegen);
-                } else {
-                    binop->codegen = Builder.CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
-                }
-            } else if (isTypeFloating(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateFCmpOLT(binop->lhs->codegen, binop->rhs->codegen);
-            } else {
-                assert(!"Type not supported for LT comparison!");
-            }
-            break;
-        }
-        case TK_GT: {
-            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
-            } else if (isTypeInteger(binop->lhs->expr_type)) {
-                auto dt = (DirectTypeAST *)binop->lhs->expr_type;
-                if (dt->isSigned) {
-                    binop->codegen = Builder.CreateICmpSGT(binop->lhs->codegen, binop->rhs->codegen);
-                } else {
-                    binop->codegen = Builder.CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
-                }
-            } else if (isTypeFloating(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateFCmpOGT(binop->lhs->codegen, binop->rhs->codegen);
-            } else {
-                assert(!"Type not supported for GT comparison!");
-            }
-            break;
-        }
-        case TK_STAR: {
-            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-                assert(!"Pointers and booleans cannot be multiplied!");
-            } else if (isTypeInteger(binop->lhs->expr_type) || isTypeFloating(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateMul(binop->lhs->codegen, binop->rhs->codegen);
-            } else {
-                assert(!"Type not supported for division!");
-            }
-            break;
-        }
-        case TK_DIV: {
-            if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-                assert(!"Pointers and booleans cannot be divided!");
-            } else if (isTypeInteger(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateUDiv(binop->lhs->codegen, binop->rhs->codegen);
-            } else if (isTypeFloating(binop->lhs->expr_type)) {
-                binop->codegen = Builder.CreateFDiv(binop->lhs->codegen, binop->rhs->codegen);
-            } else {
-                assert(!"Type not supported for division!");
-            }
-            break;
-        }
-        case TK_MOD: {
-            assert(!"TK_MOD has not been implemented for llvm!");
-            break;
-        }
-        case TK_PLUS: {
-            binop->codegen = Builder.CreateAdd(binop->lhs->codegen, binop->rhs->codegen);
-            break;
-        }
-        case TK_MINUS: {
-            binop->codegen = Builder.CreateSub(binop->lhs->codegen, binop->rhs->codegen);
-            break;
-        }
-        default:
-            assert(!"Token operation is not recognized/supported!");
-        }
+        generateBinaryOperation(binop);
         break;
     }
     case AST_UNARY_OPERATION: {
@@ -684,102 +820,7 @@ static void generateCode(BaseAST *ast)
     }
     case AST_VARIABLE_DECLARATION: {
         auto decl = (VariableDeclarationAST *)ast;
-
-        // Type variables do not need any further work
-        if (decl->definition && decl->definition->ast_type == AST_STRUCT_DEFINITION) return;
-        // all variables should have their alloc (or prototype) done already
-        assert(decl->codegen);
-
-        switch (decl->specified_type->ast_type) {
-        case AST_FUNCTION_TYPE: {
-            // @TODO: differentiate between top level functions
-            // and lambda (these need rename)
-            BasicBlock *oldBlock = nullptr;
-
-            auto func_decl = (FunctionDefinitionAST *)decl->definition;
-            auto ft = (FunctionTypeAST *)decl->specified_type;
-
-            // If it is a Foreign function, nothing else to do;
-            if (ft->isForeign) return;
-
-            Function *llvm_func = (Function *)decl->codegen;
-
-            if (!isGlobalDeclaration(decl)) {
-                // save the current block where we are inserting
-                oldBlock = Builder.GetInsertBlock();
-            }
-
-            u32 arg_index = 0;
-            auto& arg_decls = func_decl->function_body->block_scope.decls;
-            for (auto& llvm_arg : llvm_func->args()) {
-                arg_decls[arg_index++]->codegen = &llvm_arg;
-            }
-            // If it is not foreign, we should do the body here
-            // Create a new basic block to start insertion into.
-            BasicBlock *BB = BasicBlock::Create(TheContext, "entry", llvm_func);
-            Builder.SetInsertPoint(BB);
-
-            Function *old_func = llvm_function;
-            llvm_function = llvm_func;
-
-            generateCode(func_decl->function_body);
-
-            if (isVoidType(ft->return_type)) {
-                Builder.CreateRetVoid();
-            }
-
-            verifyFunction(*llvm_func);
-            llvm_function = old_func;
-
-            if (oldBlock) {
-                Builder.SetInsertPoint(oldBlock);
-            }
-
-            break;
-        }
-        case AST_DIRECT_TYPE: {
-            // Global variables do not require the initialization, it is done in another section.
-            if (isGlobalDeclaration(decl)) return;
-
-            generateCode(decl->specified_type);
-            // The variable has already been allocated, now we might have to initialize it
-            if (!decl->definition) return;
-
-            generateCode(decl->definition);
-            Builder.CreateStore(decl->definition->codegen, decl->codegen);
-
-            break;
-        }
-        case AST_POINTER_TYPE: {
-            // @TODO: check if we can merge POINTER TYPE with DIRECT_TYPE
-            // Global variables do not require the initialization, it is done in another section.
-            if (isGlobalDeclaration(decl)) return;
-
-            generateCode(decl->specified_type);
-            // The variable has already been allocated, now we might have to initialize it
-            if (!decl->definition) return;
-
-            generateCode(decl->definition);
-            Builder.CreateStore(decl->definition->codegen, decl->codegen);
-
-            break;            
-        }
-        case AST_ARRAY_TYPE: {
-            // Global variables do not require the initialization, it is done in another section.
-            if (isGlobalDeclaration(decl)) return;
-
-            generateCode(decl->specified_type);
-            // The variable has already been allocated, now we might have to initialize it
-            if (!decl->definition) return;
-
-            generateCode(decl->definition);
-            Builder.CreateStore(decl->definition->codegen, decl->codegen);
-
-            break;
-        }
-        default:
-            assert(!"Type of variable declaration on llvm is not supported!");
-        }
+        generateVariableDeclaration(decl);
         break;
     }
     case AST_STRUCT_DEFINITION: {
@@ -875,7 +916,7 @@ static void generateCode(BaseAST *ast)
             std::vector<Type *> struct_members;
             struct_members.push_back(Type::getInt8PtrTy(TheContext)); // the char *
             struct_members.push_back(Type::getInt64Ty(TheContext)); // the size
-            dtype->llvm_type = StructType::create(TheContext, struct_members);
+            dtype->llvm_type = StructType::create(TheContext, struct_members, "Jai_string");
             break;
         }
         case BASIC_TYPE_VOID: {
@@ -1003,23 +1044,23 @@ static void generateCode(BaseAST *ast)
 
                 generateCode(dstType->array_of_type);
                 // Get the address of the casted static array, do an llvm to pointer to element (from array)
-                Value *array_data_ptr = TmpB.CreatePointerCast(decl->codegen, 
+                Value *array_data_ptr = Builder.CreatePointerCast(decl->codegen, 
                     dstType->array_of_type->llvm_type->getPointerTo());
                 // And then do a store
-                Value *local_data = TmpB.CreateGEP(
+                Value *local_data = Builder.CreateGEP(
                     // decl->specified_type->llvm_type, 
                     local_array, idx);
-                TmpB.CreateStore(array_data_ptr, local_data);
+                Builder.CreateStore(array_data_ptr, local_data);
                 
                 // And now do the same for the count
                 Value *count = ConstantInt::get(llvm_u64, srcType->num_elems);
                 idx.clear();
                 idx.push_back(val_zero);
                 idx.push_back(val_one);
-                Value *local_count = TmpB.CreateGEP(
+                Value *local_count = Builder.CreateGEP(
                     // decl->specified_type->llvm_type, 
                     local_array, idx);
-                TmpB.CreateStore(count, local_count);
+                Builder.CreateStore(count, local_count);
                 cast->codegen = local_array;
                 break;
             }
@@ -1058,7 +1099,7 @@ static void generateCode(BaseAST *ast)
             assert(isTypeArray(nast->expr_type));
             auto atype = (ArrayTypeAST *)nast->expr_type;
             // Only support this for now
-            assert(isStaticArray(atype));
+            assert(isSizedArray(atype) && (atype->num_elems > 0));
 
             generateCode(atype);
             if (!decl_malloc->codegen) generateCode(decl_malloc);
@@ -1066,8 +1107,7 @@ static void generateCode(BaseAST *ast)
             ArgsV.push_back(ConstantInt::get(llvm_u64, atype->size_in_bytes));
             auto llvm_call = Builder.CreateCall(decl_malloc->codegen, ArgsV);
             // And now we need a cast
-            nast->codegen = Builder.CreatePointerCast(llvm_call, atype->llvm_type);
-
+            nast->codegen = Builder.CreatePointerCast(llvm_call, atype->array_of_type->llvm_type->getPointerTo());
         }
         break;
     }
