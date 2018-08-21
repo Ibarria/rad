@@ -233,21 +233,6 @@ struct ArrayTypeAST : TypeAST
     u32 flags = 0;
 };
 
-inline bool isStaticArray(ArrayTypeAST *at)
-{
-    return at->array_type == ArrayTypeAST::STATIC_ARRAY;
-}
-
-inline bool isSizedArray(ArrayTypeAST *at)
-{
-    return at->array_type == ArrayTypeAST::SIZED_ARRAY;
-}
-
-inline bool isDynamicArray(ArrayTypeAST *at)
-{
-    return at->array_type == ArrayTypeAST::DYNAMIC_ARRAY;
-}
-
 struct StructTypeAST : TypeAST
 {
     StructTypeAST() { ast_type = AST_STRUCT_TYPE; }
@@ -577,6 +562,37 @@ inline bool isTypeRunSupported(TypeAST *t)
         return (dt->basic_type == BASIC_TYPE_BOOL) ||
             (dt->basic_type == BASIC_TYPE_INTEGER) ||
             (dt->basic_type == BASIC_TYPE_FLOATING);
+    }
+    return false;
+}
+
+inline bool isStaticArray(ArrayTypeAST *at)
+{
+    return at->array_type == ArrayTypeAST::STATIC_ARRAY;
+}
+
+inline bool isSizedArray(ArrayTypeAST *at)
+{
+    return at->array_type == ArrayTypeAST::SIZED_ARRAY;
+}
+
+inline bool isDynamicArray(ArrayTypeAST *at)
+{
+    return at->array_type == ArrayTypeAST::DYNAMIC_ARRAY;
+}
+
+inline bool isStaticArray(TypeAST *t)
+{
+    if (isTypeArray(t)) {
+        return isStaticArray((ArrayTypeAST *)t);
+    }
+    return false;
+}
+
+inline bool isSizedArray(TypeAST *t)
+{
+    if (isTypeArray(t)) {
+        return isSizedArray((ArrayTypeAST *)t);
     }
     return false;
 }
