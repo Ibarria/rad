@@ -3015,17 +3015,20 @@ bool Interpreter::doWorkAST(interp_work * work)
         if (work->action == IA_RESOLVE_TYPE) {
             TypeAST *type = nast->type;
             assert(type);
-            if (isTypeArray(type)) {
-                // Arrays are returned as a fat pointer itself
-                nast->expr_type = type;
-            } else { 
-                PointerTypeAST *pt = new (&pool) PointerTypeAST;
-                copyASTloc(nast, pt);
-                pt->s = sequence_id++;
-                pt->points_to_type = type;
-                pt->size_in_bytes = 8;
 
-                nast->expr_type = pt;
+            PointerTypeAST *pt = new (&pool) PointerTypeAST;
+            copyASTloc(nast, pt);
+            pt->s = sequence_id++;
+            pt->points_to_type = type;
+            pt->size_in_bytes = 8;
+
+            nast->expr_type = pt;
+
+            if (isTypeArray(type)) {
+                auto at = (ArrayTypeAST *)type;
+                // Static arrays are returned as Sized array (but with count already)
+                at->array_type = ArrayTypeAST::SIZED_ARRAY;
+            } else { 
             }
         } else if (work->action == IA_COMPUTE_SIZE) {
             
