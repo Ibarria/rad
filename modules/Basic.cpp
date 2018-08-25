@@ -28,14 +28,22 @@ extern "C" DLLEXPORT void func()
     return;
 }
 
-extern "C" DLLEXPORT void * _malloc(unsigned long size)
+extern "C" DLLEXPORT void * _malloc(unsigned long long size)
 {
-    return 0;
+#if defined(_WIN32)
+    return HeapAlloc(GetProcessHeap(), 0, size);
+#else
+#error "Implement this"
+#endif
 }
 
 extern "C" DLLEXPORT void _free(void *ptr)
 {
-    return;
+#if defined(_WIN32)
+    HeapFree(GetProcessHeap(), 0, ptr);
+#else
+#error "Implement this"
+#endif
 }
 
 int _strlen(const char *s)
