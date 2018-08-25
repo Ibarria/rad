@@ -2,11 +2,10 @@
 Debug/
 Release/
 modules/Basic\.dll
-
 modules/Basic\.lib
-
+modules/Basic\.exp
+modules/Basic\.obj
 modules/Basic\.pdb
-
 modules/vc140\.pdb
 
 *.pdb
