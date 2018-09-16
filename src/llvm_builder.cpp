@@ -18,6 +18,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/IR/DIBuilder.h"
 
 #include "llvm_builder.h"
 #include "assert.h"
@@ -35,6 +36,7 @@ int link_object(const char *obj_file, ImportsHash &imports);
 static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 static Module *TheModule = nullptr;
+static DIBuilder *diBuilder = nullptr;
 
 static Function *llvm_function = nullptr;
 
@@ -1338,6 +1340,9 @@ extern "C" DLLEXPORT void llvm_compile(FileAST *root, const char *obj_file, doub
     llvm_u32 = Type::getInt32Ty(TheContext);
     llvm_u64 = Type::getInt64Ty(TheContext);
 
+    diBuilder = new DIBuilder(*TheModule);
+    // the 1 here is just a hack, we have to define some language
+    DICompileUnit *TheCU = diBuilder->createCompileUnit(1, diBuilder->createFile(obj_file, "."), "C2 compiler", 0, "", 0);
     // look for the malloc and free calls (which new depends on)
     for (auto decl : root->global_scope.decls) {
         if (!strcmp(decl->varname, "malloc")) {
@@ -1377,6 +1382,8 @@ extern "C" DLLEXPORT void llvm_compile(FileAST *root, const char *obj_file, doub
             assert(false);
             return;
         }
+
+        diBuilder->finalize();
 
         pass.run(*TheModule);
 
