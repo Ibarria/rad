@@ -15,7 +15,7 @@
     <ProjectGuid>{3C572731-74FD-45AE-8B82-E6B4AA9F958C}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>c2</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.16299.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -132,6 +132,7 @@
     <ClCompile Include="src/TextType.cpp" />
     <ClCompile Include="src/Timer.cpp" />
     <ClCompile Include="src/Token.cpp" />
+    <ClCompile Include="src\FileObject.cpp" />
     <ClCompile Include="src\Hash.cpp" />
     <ClCompile Include="src\llvm_backend.cpp" />
     <ClCompile Include="src\llvm_builder.cpp">
@@ -161,6 +162,7 @@
     <ClInclude Include="src/Timer.h" />
     <ClInclude Include="src/Token.h" />
     <ClInclude Include="src/TokenType.h" />
+    <ClInclude Include="src\FileObject.h" />
     <ClInclude Include="src\Hash.h" />
     <ClInclude Include="src\llvm_builder.h" />
     <ClInclude Include="src\Profiler.h" />
