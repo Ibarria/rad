@@ -1,7 +1,7 @@
 
 OS = $(shell uname -s)
 
-target = bin/c2
+target = bin/rapid
 root_dir := ../
 root_dir := $(abspath $(root_dir))
 
@@ -10,18 +10,20 @@ root_dir := $(abspath $(root_dir))
 all: $(target)
 	@
 
-SOURCES += $(filter-out $(wildcard src/llvm*), $(wildcard src/*.cpp))
+SOURCES += $(wildcard src/*.cpp)
 LLVM_SOURCES += src/llvm_builder.cpp llvm_backend/llvm_backend.cpp src/Timer.cpp
-LLVM_INCLUDES += -I$(root_dir)/llvm-build/include -I$(root_dir)/llvm/include -Isrc
+LLVM_INCLUDES += -I$(root_dir)/llvm/debug/include -I$(root_dir)/llvm/llvm-src/include -Isrc
 DYNCALL_INCLUDES += -Idyncall/include
 
-CFLAGS += -g -std=c++14 -arch x86_64 -Wno-switch -Wno-format-security
+LLVM_ALL_FLAGS=$(shell ../llvm/debug/bin/llvm-config --cxxflags --ldflags --system-libs --libs all)
+
+CFLAGS += -g -std=c++14 -Wno-switch -Wno-format-security
 
 LLVM_LIBS += -lLLVMLTO -lLLVMPasses -lLLVMObjCARCOpts -lLLVMSymbolize -lLLVMDebugInfoPDB -lLLVMDebugInfoDWARF -lLLVMFuzzMutate -lLLVMTableGen -lLLVMDlltoolDriver -lLLVMLineEditor -lLLVMOrcJIT -lLLVMCoverage -lLLVMMIRParser -lLLVMTestingSupport -lLLVMObjectYAML -lLLVMLibDriver -lLLVMOption -lgtest_main -lgtest -lLLVMWindowsManifest -lLLVMX86Disassembler -lLLVMX86AsmParser -lLLVMX86CodeGen -lLLVMGlobalISel -lLLVMSelectionDAG -lLLVMAsmPrinter -lLLVMX86Desc -lLLVMMCDisassembler -lLLVMX86Info -lLLVMX86AsmPrinter -lLLVMX86Utils -lLLVMMCJIT -lLLVMInterpreter -lLLVMExecutionEngine -lLLVMRuntimeDyld -lLLVMCodeGen -lLLVMTarget -lLLVMCoroutines -lLLVMipo -lLLVMInstrumentation -lLLVMVectorize -lLLVMScalarOpts -lLLVMLinker -lLLVMIRReader -lLLVMAsmParser -lLLVMInstCombine -lLLVMBitWriter -lLLVMAggressiveInstCombine -lLLVMTransformUtils -lLLVMAnalysis -lLLVMProfileData -lLLVMObject -lLLVMMCParser -lLLVMMC -lLLVMDebugInfoCodeView -lLLVMDebugInfoMSF -lLLVMBitReader -lLLVMCore -lLLVMBinaryFormat -lLLVMSupport -lLLVMDemangle
 
 LLVM_SYSTEM_LIBS += -lz -lcurses -lm -lxml2
 DYNCALL_LIBS += -ldyncall_s -ldynload_s 
-LIBS += -lstdc++ -lm -ldl -lpthread  
+LIBS += -lstdc++ -lz -lcurses -lxml2 -lm -ldl -lpthread  
 
 LLVM_LFLAGS += $(LIBS) $(LLVM_LIBS) $(LLVM_SYSTEM_LIBS)
 
@@ -32,7 +34,8 @@ ifeq ($(OS), Darwin)
   SOEXT += dylib
 endif
 ifeq ($(OS), Linux)
-  LFLAGS += -Lbin -Ldyncall/lib/linux
+  LFLAGS += -Lbin -Ldyncall/lib/linux -L$(root_dir)/llvm/debug/lib 
+# -Wl,-search_paths_first -Wl,-headerpad_max_install_names
   SOFLAGS += -shared
   SOEXT = so
 endif
@@ -40,13 +43,14 @@ endif
 LLVM_LIB = llvm_backend.$(SOEXT)
 
 bin/$(LLVM_LIB): $(LLVM_SOURCES)
-	clang $(CFLAGS) $(LLVM_INCLUDES) $(SOFLAGS) -g -fPIC $(LLVM_SOURCES) $(LLVM_LFLAGS) -o bin/$(LLVM_LIB) 
+	g++ $(CFLAGS) $(LLVM_INCLUDES) $(SOFLAGS) -g -fPIC $(LLVM_SOURCES) $(LLVM_LFLAGS) -o bin/$(LLVM_LIB) 
 
 bin:
 	mkdir -p bin
 
-$(target): $(SOURCES) bin bin/$(LLVM_LIB)
-	clang $(CFLAGS) $(DYNCALL_INCLUDES) $(SOURCES) -o bin/c2 $(LFLAGS) $(LIBS) $(DYNCALL_LIBS) 
+$(target): $(SOURCES) bin 
+	clang $(CFLAGS) $(DYNCALL_INCLUDES) $(LLVM_INCLUDES) $(SOURCES) -o $(target) $(LFLAGS) $(LIBS) $(LLVM_ALL_FLAGS) $(DYNCALL_LIBS) 
+#	clang $(CFLAGS) $(DYNCALL_INCLUDES) $(LLVM_INCLUDES) $(SOURCES) -o $(target) $(LFLAGS) $(LIBS) $(LLVM_LIBS) $(DYNCALL_LIBS) 
 
 dynlibs = modules/Basic.$(SOEXT)
 
@@ -60,5 +64,5 @@ dlls: $(dynlibs)
 	@
 
 clean:
-	rm -f bin/c2 modules/*.o modules/*.so modules/*.dylib bin/*.dylib
-	rm -fR c2.dSYM
+	rm -f bin/rapid modules/*.o modules/*.so modules/*.dylib bin/*.dylib
+	rm -fR rapid.dSYM

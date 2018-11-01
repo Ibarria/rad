@@ -33,7 +33,7 @@ extern "C" DLLEXPORT void * _malloc(unsigned long long size)
 #if defined(_WIN32)
     return HeapAlloc(GetProcessHeap(), 0, size);
 #else
-#error "Implement this"
+    return malloc(size);
 #endif
 }
 
@@ -42,7 +42,7 @@ extern "C" DLLEXPORT void _free(void *ptr)
 #if defined(_WIN32)
     HeapFree(GetProcessHeap(), 0, ptr);
 #else
-#error "Implement this"
+    free(ptr);
 #endif
 }
 
