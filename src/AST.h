@@ -19,7 +19,7 @@ struct bytecode_function;
 struct interp_deps;
 struct BCI;
 
-namespace llvm { class Value; class Type; }
+namespace llvm { class Value; class Type; class DIType; class DISubprogram; }
 
 #pragma pack(push, 4)
 
@@ -104,6 +104,7 @@ struct TypeAST : BaseAST
 {
     u32 size_in_bytes = 0;
     llvm::Type *llvm_type = nullptr;
+    llvm::DIType *debug_type = nullptr;
     u32 type_flags = 0;
 };
 
@@ -163,8 +164,9 @@ struct FunctionDefinitionAST : DefinitionAST
     FunctionTypeAST *declaration = nullptr;
     StatementBlockAST *function_body = nullptr;
     VariableDeclarationAST *var_decl = nullptr; // so that we can find the name of the function
-    u32 size_in_bytes = 8;
     bytecode_function *bc_function = nullptr;
+    llvm::DISubprogram *llvm_sp = nullptr;
+    u32 size_in_bytes = 8;
     bool being_generated = false;
 };
 

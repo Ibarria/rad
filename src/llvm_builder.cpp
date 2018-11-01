@@ -37,7 +37,7 @@ int link_object(FileObject &obj_file, ImportsHash &imports);
 static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 static Module *TheModule = nullptr;
-static DIBuilder *diBuilder = nullptr;
+static DIBuilder *DBuilder = nullptr;
 
 static Function *llvm_function = nullptr;
 
@@ -306,6 +306,7 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
         // If it is a Foreign function, nothing else to do;
         if (ft->isForeign) return;
 
+        assert(func_decl);
         Function *llvm_func = (Function *)decl->codegen;
 
         if (!isGlobalDeclaration(decl)) {
@@ -844,13 +845,25 @@ static void generateCode(BaseAST *ast)
     case AST_FUNCTION_TYPE: {
         auto ftype = (FunctionTypeAST *)ast;
         std::vector<Type *> func_args;
+        std::vector<DIType *> debug_args;
+        generateCode(ftype->return_type);
+        // Extend this to support functions that return arrays or structs
+        assert(!isTypeArray(ftype->return_type) && !isTypeStruct(ftype->return_type));
+        if (isVoidType(ftype->return_type)) {
+            debug_args.push_back(nullptr);
+        } else {
+            debug_args.push_back(ftype->return_type->debug_type);
+        }
+
         for (auto arg : ftype->arguments) {
             generateCode(arg->specified_type);
             // Complex data structures are pointers in llvm
             if (isTypeArray(arg->specified_type) || isTypeStruct(arg->specified_type)) {
                 func_args.push_back(arg->specified_type->llvm_type->getPointerTo());
+                debug_args.push_back(DBuilder->createPointerType(arg->specified_type->debug_type, 64));
             } else {
                 func_args.push_back(arg->specified_type->llvm_type);
+                debug_args.push_back(arg->specified_type->debug_type);
             }
         }
         generateCode(ftype->return_type);
@@ -868,22 +881,26 @@ static void generateCode(BaseAST *ast)
         switch (dtype->basic_type) {
         case BASIC_TYPE_BOOL: {
             dtype->llvm_type = Type::getInt1Ty(TheContext);
+            dtype->debug_type = DBuilder->createBasicType("bool", 1, dwarf::DW_ATE_boolean);
             break;
         }
         case BASIC_TYPE_CUSTOM: {
             assert(dtype->custom_type != nullptr);
             if (dtype->custom_type->llvm_type == nullptr) generateCode(dtype->custom_type);
             dtype->llvm_type = dtype->custom_type->llvm_type;
+            dtype->debug_type = dtype->custom_type->debug_type;
             break;
         }
         case BASIC_TYPE_FLOATING: {
             switch (dtype->size_in_bytes) {
             case 4: {
                 dtype->llvm_type = Type::getFloatTy(TheContext);
+                dtype->debug_type = DBuilder->createBasicType("f32", 32, dwarf::DW_ATE_float);
                 break;
             }
             case 8: {
                 dtype->llvm_type = Type::getDoubleTy(TheContext);
+                dtype->debug_type = DBuilder->createBasicType("f64", 64, dwarf::DW_ATE_float);
                 break;
             }
             default:
@@ -895,18 +912,38 @@ static void generateCode(BaseAST *ast)
             switch (dtype->size_in_bytes) {
             case 1: {
                 dtype->llvm_type = Type::getInt8Ty(TheContext);
+                if (dtype->isSigned) {
+                    dtype->debug_type = DBuilder->createBasicType("s8", 8, dwarf::DW_ATE_signed);
+                } else {
+                    dtype->debug_type = DBuilder->createBasicType("u8", 8, dwarf::DW_ATE_unsigned);
+                }
                 break;
             }
             case 2: {
                 dtype->llvm_type = Type::getInt16Ty(TheContext);
+                if (dtype->isSigned) {
+                    dtype->debug_type = DBuilder->createBasicType("s16", 16, dwarf::DW_ATE_signed);
+                } else {
+                    dtype->debug_type = DBuilder->createBasicType("u16", 16, dwarf::DW_ATE_unsigned);
+                }
                 break;
             }
             case 4: {
                 dtype->llvm_type = Type::getInt32Ty(TheContext);
+                if (dtype->isSigned) {
+                    dtype->debug_type = DBuilder->createBasicType("s32", 32, dwarf::DW_ATE_signed);
+                } else {
+                    dtype->debug_type = DBuilder->createBasicType("u32", 32, dwarf::DW_ATE_unsigned);
+                }
                 break;
             }
             case 8: {
                 dtype->llvm_type = Type::getInt64Ty(TheContext);
+                if (dtype->isSigned) {
+                    dtype->debug_type = DBuilder->createBasicType("s64", 64, dwarf::DW_ATE_signed);
+                } else {
+                    dtype->debug_type = DBuilder->createBasicType("u64", 64, dwarf::DW_ATE_unsigned);
+                }
                 break;
             }
             default:
@@ -1341,9 +1378,9 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     llvm_u32 = Type::getInt32Ty(TheContext);
     llvm_u64 = Type::getInt64Ty(TheContext);
 
-    diBuilder = new DIBuilder(*TheModule);
+    DBuilder = new DIBuilder(*TheModule);
     // the 1 here is just a hack, we have to define some language
-    DICompileUnit *TheCU = diBuilder->createCompileUnit(1, diBuilder->createFile(obj_file, "."), "C2 compiler", 0, "", 0);
+    DICompileUnit *TheCU = DBuilder->createCompileUnit(1, DBuilder->createFile(obj_file.getFilename(), "."), "C2 compiler", 0, "", 0);
     // look for the malloc and free calls (which new depends on)
     for (auto decl : root->global_scope.decls) {
         if (!strcmp(decl->varname, "malloc")) {
@@ -1384,7 +1421,7 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
             return;
         }
 
-        diBuilder->finalize();
+        DBuilder->finalize();
 
         pass.run(*TheModule);
 
