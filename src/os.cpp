@@ -288,7 +288,7 @@ u64 osGetCurrentThreadId()
 
 // @TODO: We need to pass a list of the libraries (externs) that 
 // the program has to link against
-int compile_c_into_binary(const char *filename, ImportsHash &imports)
+int compile_c_into_binary(FileObject &filename, ImportsHash &imports)
 {
 #if defined(PLATFORM_WINDOWS)
     STARTUPINFOA si;
@@ -299,7 +299,7 @@ int compile_c_into_binary(const char *filename, ImportsHash &imports)
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
-    u32 chars_written = sprintf_s(cmd_line, "cl.exe /nologo %s", filename);
+    u32 chars_written = sprintf_s(cmd_line, "cl.exe /nologo %s", filename.getFilename());
 
     auto it = imports.begin();
     char *line_ptr = cmd_line + chars_written;
@@ -329,12 +329,12 @@ int compile_c_into_binary(const char *filename, ImportsHash &imports)
 #elif defined(PLATFORM_POSIX)
     char cmd_line[512] = {};
     char outfile[64];
-    strncpy(outfile, filename, sizeof(outfile));
+    strncpy(outfile, filename.getFilename(), sizeof(outfile));
 
     char *ext = strrchr(outfile, '.');
     *ext = 0;
 
-    sprintf(cmd_line, "clang %s -g -o %s -lstdc++", filename, outfile);
+    sprintf(cmd_line, "clang %s -g -o %s -lstdc++", filename.getFilename(), outfile);
 
     int exit_code = system(cmd_line);
 

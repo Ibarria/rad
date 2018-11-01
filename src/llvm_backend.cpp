@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "Hash.h"
+#include "FileObject.h"
 
 #ifndef WIN32
 # define sprintf_s  sprintf
@@ -23,7 +24,7 @@
 
 
 
-int link_object(const char *obj_file, ImportsHash &imports)
+int link_object(FileObject &obj_file, ImportsHash &imports)
 {
 #if defined(PLATFORM_WINDOWS)
     STARTUPINFOA si;
@@ -41,7 +42,7 @@ int link_object(const char *obj_file, ImportsHash &imports)
     // We need msvcrt here, otherwise we have to specify the /ENTRY:<entrypoint> and
     // the program takes a very long time to exit. We would have to build our own global
     // constructors, destructors and call ExitProcess at the end. Basically implementing a basic CRT
-    u32 chars_written = sprintf_s(cmd_line, "link.exe /nologo /DEBUG /subsystem:CONSOLE /NODEFAULTLIB .\\%s kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", obj_file);
+    u32 chars_written = sprintf_s(cmd_line, "link.exe /nologo /DEBUG /subsystem:CONSOLE /NODEFAULTLIB %s kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", obj_file.getFilename());
 
     auto it = imports.begin();
     char *line_ptr = cmd_line + chars_written;
@@ -76,7 +77,7 @@ int link_object(const char *obj_file, ImportsHash &imports)
 #elif defined(PLATFORM_MACOS)
     char cmd_line[512] = {};
     char outfile[64];
-    strncpy(outfile, obj_file, sizeof(outfile));
+    strncpy(outfile, obj_file.getFilename(), sizeof(outfile));
 
     char *ext = strrchr(outfile, '.');
     *ext = 0;

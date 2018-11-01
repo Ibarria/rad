@@ -20,6 +20,7 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/IR/DIBuilder.h"
 
+#include "FileObject.h"
 #include "llvm_builder.h"
 #include "assert.h"
 #include "AST.h"
@@ -30,7 +31,7 @@
 using namespace llvm;
 
 // function on llvm_backend.cpp
-int link_object(const char *obj_file, ImportsHash &imports);
+int link_object(FileObject &obj_file, ImportsHash &imports);
 
 // These should be wrapped in some kinda class... some day
 static LLVMContext TheContext;
@@ -1305,7 +1306,7 @@ xsaveopt                      - Support xsaveopt instructions.
 xsaves                        - Support xsaves instructions.
 */
 
-void llvm_compile(FileAST *root, const char *obj_file, double &codegenTime, double &bingenTime, double &linkTime, bool option_llvm_print)
+void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, double &bingenTime, double &linkTime, bool option_llvm_print)
 {   
     Timer timer;
 
@@ -1366,7 +1367,7 @@ void llvm_compile(FileAST *root, const char *obj_file, double &codegenTime, doub
 
     {
         std::error_code EC;
-        raw_fd_ostream dest(obj_file, EC, sys::fs::F_None);
+        raw_fd_ostream dest(obj_file.getFilename(), EC, sys::fs::F_None);
 
         if (EC) {
             errs() << "Could not open file: " << EC.message();
@@ -1392,7 +1393,7 @@ void llvm_compile(FileAST *root, const char *obj_file, double &codegenTime, doub
         bingenTime = timer.stopTimer();
     }
 
-    outs() << "Object generation [" << obj_file << "] completed, now linking...\n";
+    outs() << "Object generation [" << obj_file.getFilename() << "] completed, now linking...\n";
     outs().flush();
 
     {

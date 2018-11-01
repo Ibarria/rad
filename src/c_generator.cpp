@@ -671,14 +671,14 @@ void c_generator::generate_type(BaseAST * ast)
 }
 
 
-void c_generator::generate_c_file(const char * filename, FileAST * root)
+void c_generator::generate_c_file(FileObject &filename, FileAST * root)
 {
     CPU_SAMPLE("generate C");
 
 #ifdef WIN32
-    fopen_s(&output_file, filename, "w");
+    fopen_s(&output_file, filename.getFilename(), "w");
 #else
-    output_file = fopen(filename, "w");
+    output_file = fopen(filename.getFilename(), "w");
 #endif      
     ident = 0;
     last_filename = nullptr;

@@ -1,6 +1,7 @@
 #pragma once
 #include "AST.h"
 #include <stdio.h>
+#include "FileObject.h"
 
 class c_generator
 {
@@ -30,6 +31,6 @@ class c_generator
     void generate_function_call(FunctionCallAST *call);
     void generate_type(BaseAST *ast);
 public:
-    void generate_c_file(const char *filename, FileAST *root);
+    void generate_c_file(FileObject &filename, FileAST *root);
 };
 

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "FileObject.h"
 #include "Interpreter.h"
 #include "Parser.h"
 #include "Timer.h"
@@ -150,8 +151,10 @@ int main(int argc, char **argv)
     Parser p;
     int res;
 
+    FileObject main_source(root_file);
+
     p.interp = &interp;
-	FileAST *parsedFile = p.Parse(root_file, &interp.pool);
+	FileAST *parsedFile = p.Parse(main_source.getFilename(), &interp.pool);
 
     if (!parsedFile) {
         printf("Error during Lexical and Syntactic parsing:\n%s", p.errorStringBuffer);
@@ -176,17 +179,18 @@ int main(int argc, char **argv)
 
     astBuildTime = timer.stopTimer();
 
-    char *c_filename = getCfilename(root_file);
+    FileObject output_file(main_source);
 
     if (option_llvm) {
-        c_filename[strlen(c_filename) - 3] = 'o';
-        c_filename[strlen(c_filename) - 2] = 0;
-        llvm_compile(parsedFile, c_filename, codegenTime, binaryGenTime, linkTime, option_llvm_print);
+        output_file.setExtension("o");
+        llvm_compile(parsedFile, output_file, codegenTime, binaryGenTime, linkTime, option_llvm_print);
     } else if (option_c) {
         timer.startTimer();
 
+        output_file.setExtension("cpp");
+
         c_generator gen;
-        gen.generate_c_file(c_filename, parsedFile);
+        gen.generate_c_file(output_file, parsedFile);
 
         codegenTime = timer.stopTimer();
 
@@ -194,7 +198,7 @@ int main(int argc, char **argv)
 
         {
             CPU_SAMPLE("External Compile");
-            res = compile_c_into_binary(c_filename, parsedFile->imports);
+            res = compile_c_into_binary(output_file, parsedFile->imports);
         }
 
         binaryGenTime = timer.stopTimer();
