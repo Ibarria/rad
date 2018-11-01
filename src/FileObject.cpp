@@ -4,7 +4,9 @@
 const int path_separator = '\\';
 #define strdup _strdup
 #else
- #error "Fix includes for realpath"
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 const int path_separator = '/';
 #endif
 
@@ -29,7 +31,11 @@ FileObject::FileObject(const FileObject & other)
 
 void FileObject::setFile(const char * file)
 {
+#if defined(WIN32)
     auto res = GetFullPathNameA(file, sizeof(full_path), full_path, nullptr);
+#else 
+    auto res = (realpath(file, full_path) == full_path);
+#endif
     if (res < 1) assert(!"Issue finding path");
 }
 
