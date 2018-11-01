@@ -1,7 +1,7 @@
 
 OS = $(shell uname -s)
 
-target = bin/rapid
+target = bin/rad
 root_dir := ../
 root_dir := $(abspath $(root_dir))
 
@@ -49,20 +49,20 @@ bin:
 	mkdir -p bin
 
 $(target): $(SOURCES) bin 
-	clang $(CFLAGS) $(DYNCALL_INCLUDES) $(LLVM_INCLUDES) $(SOURCES) -o $(target) $(LFLAGS) $(LIBS) $(LLVM_ALL_FLAGS) $(DYNCALL_LIBS) 
+	g++ $(CFLAGS) $(DYNCALL_INCLUDES) $(LLVM_INCLUDES) $(SOURCES) -o $(target) $(LFLAGS) $(LIBS) $(LLVM_ALL_FLAGS) $(DYNCALL_LIBS) 
 #	clang $(CFLAGS) $(DYNCALL_INCLUDES) $(LLVM_INCLUDES) $(SOURCES) -o $(target) $(LFLAGS) $(LIBS) $(LLVM_LIBS) $(DYNCALL_LIBS) 
 
 dynlibs = modules/Basic.$(SOEXT)
 
 modules/Basic.$(SOEXT): modules/Basic.o
-	clang $(SOFLAGS) -o modules/Basic.$(SOEXT) modules/Basic.o
+	g++ $(SOFLAGS) -o modules/Basic.$(SOEXT) modules/Basic.o
 
 modules/Basic.o: modules/Basic.cpp
-	clang -g -fPIC -c modules/Basic.cpp -o modules/Basic.o
+	g++ -g -fPIC -c modules/Basic.cpp -o modules/Basic.o
 
 dlls: $(dynlibs)
 	@
 
 clean:
-	rm -f bin/rapid modules/*.o modules/*.so modules/*.dylib bin/*.dylib
-	rm -fR rapid.dSYM
+	rm -f bin/rad modules/*.o modules/*.so modules/*.dylib bin/*.dylib
+	rm -fR rad.dSYM
