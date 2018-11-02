@@ -2,6 +2,7 @@
 Debug/
 Release/
 modules/Basic\.dll
+modules/Basic\.so
 modules/Basic\.lib
 modules/Basic\.exp
 modules/Basic\.obj

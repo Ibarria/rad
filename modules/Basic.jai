@@ -6,22 +6,22 @@ func  :: () #foreign ;
 end   :: () #foreign ;
 
 // Memory functions, these ones come from the CRT
-_malloc :: (size: u64) -> * void #foreign ;
-_free   :: (ptr: * void) #foreign ;
+__rad_malloc :: (size: u64) -> * void #foreign ;
+__rad_free   :: (ptr: * void) #foreign ;
 
 malloc :: (size: u64) -> * void
 {
-	return _malloc(size);
+	return __rad_malloc(size);
 }
 
 free :: (ptr: * void) 
 {
-	_free(ptr);
+	__rad_free(ptr);
 }
 
-_abort :: () #foreign ;
+__rad_abort :: () #foreign ;
 
 assert :: (var: bool)
 {
-	if (!var) _abort();
+	if (!var) __rad_abort();
 }

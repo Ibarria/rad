@@ -8,8 +8,10 @@
 #include <windows.h>
 #define DLLEXPORT __declspec(dllexport)
 #else 
+#include <dlfcn.h>
 #include <stdarg.h>
 #include <unistd.h>
+#include <memory>
 #define DLLEXPORT 
 #define vprintf_s vprintf
 #endif
@@ -28,21 +30,25 @@ extern "C" DLLEXPORT void func()
     return;
 }
 
-extern "C" DLLEXPORT void * _malloc(unsigned long long size)
+// https://stackoverflow.com/questions/262439/create-a-wrapper-function-for-malloc-and-free-in-c
+extern "C" DLLEXPORT void * __rad_malloc(unsigned long long size)
 {
 #if defined(_WIN32)
     return HeapAlloc(GetProcessHeap(), 0, size);
 #else
-    return malloc(size);
+    void *(*libc_malloc)(size_t) = (void * (*) (size_t))dlsym(RTLD_NEXT, "malloc");
+    return libc_malloc(size);
 #endif
 }
 
-extern "C" DLLEXPORT void _free(void *ptr)
+extern "C" DLLEXPORT void __rad_free(void *ptr)
 {
 #if defined(_WIN32)
     HeapFree(GetProcessHeap(), 0, ptr);
 #else
-    free(ptr);
+    void (*libc_free)(void*) = (void (*) (void *))dlsym(RTLD_NEXT, "free");
+    printf("free\n");
+    libc_free(ptr);
 #endif
 }
 
@@ -131,7 +137,7 @@ extern "C" DLLEXPORT void end()
 #endif	
 }
 
-extern "C" DLLEXPORT void _abort()
+extern "C" DLLEXPORT void __rad_abort()
 {
 #if defined(_WIN32)
     __debugbreak();

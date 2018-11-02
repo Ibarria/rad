@@ -3,6 +3,6 @@ EXPORTS
   print
   func
   end
-  _malloc
-  _free
-  _abort
+  __rad_malloc
+  __rad_free
+  __rad_abort

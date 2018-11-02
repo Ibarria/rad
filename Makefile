@@ -36,7 +36,7 @@ endif
 ifeq ($(OS), Linux)
   LFLAGS += -Lbin -Ldyncall/lib/linux -L$(root_dir)/llvm/debug/lib 
 # -Wl,-search_paths_first -Wl,-headerpad_max_install_names
-  SOFLAGS += -shared
+  SOFLAGS += -shared -ldl
   SOEXT = so
 endif
 

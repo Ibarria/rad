@@ -72,8 +72,28 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
 
     return exit_code;
 #elif defined(PLATFORM_LINUX)
-    printf("Unimplemented on Linux\n");
-    return -1;
+    char cmd_line[512] = {};
+    char outfile[64];
+    strncpy(outfile, obj_file.getFilename(), sizeof(outfile));
+
+    char *ext = strrchr(outfile, '.');
+    *ext = 0;
+
+    u32 chars_written = sprintf(cmd_line, "clang %s -g -o %s -ldl -lstdc++", obj_file, outfile);
+
+    auto it = imports.begin();
+    char *line_ptr = cmd_line + chars_written;
+    while (!imports.isEnd(it)) {
+        if (it.entry) {
+            chars_written = sprintf(line_ptr, " modules/%s.so", it.entry->key());
+            line_ptr = line_ptr + chars_written;
+        }
+        it = imports.next(it);
+    }
+
+    int exit_code = system(cmd_line);
+
+    return exit_code;
 #elif defined(PLATFORM_MACOS)
     char cmd_line[512] = {};
     char outfile[64];
