@@ -43,6 +43,7 @@ void Profiler::exportJson(const char * filename)
         fprintf(f, "\n");        
     }
     fprintf(f, "]\n}\n");
+	fclose(f);
 }
 
 

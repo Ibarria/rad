@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src/c2.cpp">
+    <ClCompile Include="src/rad.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src/FileData.cpp">
@@ -144,7 +144,7 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <None Include="test\first.c2">
+    <None Include="test\first.rad">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="README.md">

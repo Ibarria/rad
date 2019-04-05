@@ -9,7 +9,7 @@
     <LocalDebuggerCommandArguments>
     </LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <LocalDebuggerCommand>C:\code\c2\output.exe</LocalDebuggerCommand>
+    <LocalDebuggerCommand>C:\code\rad\output.exe</LocalDebuggerCommand>
     <LocalDebuggerWorkingDirectory>$(ProjectDir)\modules</LocalDebuggerWorkingDirectory>
   </PropertyGroup>
 </Project>
