@@ -1,4 +1,4 @@
-// c2.cpp : Defines the entry point for the console application.
+// rad.cpp : Defines the entry point for the console application.
 //
 
 #define MAJOR_V 0
@@ -41,9 +41,9 @@ bool option_c = false;
 void usage()
 {
 	// show usage and version
-	printf(" c2 - experimental compiler, v%d.%d\n", MAJOR_V, MINOR_V);
+	printf(" rad - experimental compiler, v%d.%d\n", MAJOR_V, MINOR_V);
 	printf("\nUsage:\n");
-	printf("c2 [options] <source file>\n");
+	printf("rad [options] <source file>\n");
     printf("\tOptions:\n");
     printf("\t-backend:[LLVM|C|NULL]\n");
     printf("\t\tLLVM: use the llvm backend[DEFAULT]\n");
