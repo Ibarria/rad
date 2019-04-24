@@ -11,7 +11,6 @@ all: $(target)
 	@
 
 SOURCES += $(wildcard src/*.cpp)
-LLVM_SOURCES += src/llvm_builder.cpp llvm_backend/llvm_backend.cpp src/Timer.cpp
 LLVM_INCLUDES += -I$(root_dir)/llvm/debug/include -I$(root_dir)/llvm/llvm-src/include -Isrc
 DYNCALL_INCLUDES += -Idyncall/include
 
@@ -40,25 +39,19 @@ ifeq ($(OS), Linux)
   SOEXT = so
 endif
 
-LLVM_LIB = llvm_backend.$(SOEXT)
-
-bin/$(LLVM_LIB): $(LLVM_SOURCES)
-	g++ $(CFLAGS) $(LLVM_INCLUDES) $(SOFLAGS) -g -fPIC $(LLVM_SOURCES) $(LLVM_LFLAGS) -o bin/$(LLVM_LIB) 
-
 bin:
 	mkdir -p bin
 
 $(target): $(SOURCES) bin 
-	g++ $(CFLAGS) $(DYNCALL_INCLUDES) $(LLVM_INCLUDES) $(SOURCES) -o $(target) $(LFLAGS) $(LIBS) $(LLVM_ALL_FLAGS) $(DYNCALL_LIBS) 
-#	clang $(CFLAGS) $(DYNCALL_INCLUDES) $(LLVM_INCLUDES) $(SOURCES) -o $(target) $(LFLAGS) $(LIBS) $(LLVM_LIBS) $(DYNCALL_LIBS) 
+	c++ $(CFLAGS) $(DYNCALL_INCLUDES) $(LLVM_INCLUDES) $(SOURCES) -o $(target) $(LFLAGS) $(LIBS) $(LLVM_ALL_FLAGS) $(DYNCALL_LIBS) 
 
 dynlibs = modules/Basic.$(SOEXT)
 
 modules/Basic.$(SOEXT): modules/Basic.o
-	g++ $(SOFLAGS) -o modules/Basic.$(SOEXT) modules/Basic.o
+	c++ $(SOFLAGS) -o modules/Basic.$(SOEXT) modules/Basic.o
 
 modules/Basic.o: modules/Basic.cpp
-	g++ -g -fPIC -c modules/Basic.cpp -o modules/Basic.o
+	c++ -g -fPIC -c modules/Basic.cpp -o modules/Basic.o
 
 dlls: $(dynlibs)
 	@
