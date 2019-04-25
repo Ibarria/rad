@@ -1140,7 +1140,7 @@ void Interpreter::printErrors()
     printf("%s", errorStringBuffer);
 }
 
-static char *WorkToStr[] = {
+static const char *WorkToStr[] = {
     "NOP",
     "TYPE",
     "TPOST",

@@ -42,7 +42,9 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
     // We need msvcrt here, otherwise we have to specify the /ENTRY:<entrypoint> and
     // the program takes a very long time to exit. We would have to build our own global
     // constructors, destructors and call ExitProcess at the end. Basically implementing a basic CRT
-    u32 chars_written = sprintf_s(cmd_line, "link.exe /nologo /DEBUG /subsystem:CONSOLE /NODEFAULTLIB %s kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", obj_file.getFilename());
+    u32 chars_written = sprintf_s(cmd_line, 
+        "link.exe /nologo /DEBUG /subsystem:CONSOLE /NODEFAULTLIB %s kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", 
+        obj_file.getFilename());
 
     auto it = imports.begin();
     char *line_ptr = cmd_line + chars_written;
@@ -79,7 +81,9 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
     char *ext = strrchr(outfile, '.');
     *ext = 0;
 
-    u32 chars_written = sprintf(cmd_line, "clang %s -g -o %s -ldl -lstdc++", obj_file, outfile);
+    u32 chars_written = sprintf(cmd_line, 
+        "clang %s -g -o %s -ldl -lstdc++", 
+        obj_file.getFilename(), outfile);
 
     auto it = imports.begin();
     char *line_ptr = cmd_line + chars_written;

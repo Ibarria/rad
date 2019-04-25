@@ -1,6 +1,8 @@
 .vs/
+.vscode/
 Debug/
 Release/
+build/
 modules/Basic\.dll
 modules/Basic\.so
 modules/Basic\.lib
