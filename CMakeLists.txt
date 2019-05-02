@@ -4,13 +4,17 @@ project(rad)
 
 file(GLOB SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp )
 
+if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set (CMAKE_INSTALL_PREFIX "$ENV{HOME}" CACHE PATH "default install path" FORCE )
+endif()
+
 if(CMAKE_BUILD_TYPE MATCHES DEBUG)
   message("In DEBUG mode")
-  set(LLVM_DIR /home/libarria/code/llvm/debug/lib/cmake/llvm )
+  set(LLVM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../llvm/debug/lib/cmake/llvm )
   set(RAD_LINK_FLAG " ")
 else()
   message("In Release mode ${CMAKE_BUILD_TYPE}")
-  set(LLVM_DIR /home/libarria/code/llvm/release/lib/cmake/llvm )
+  set(LLVM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../llvm/release/lib/cmake/llvm )
   set(RAD_LINK_FLAG "-s")
 endif()
 
@@ -45,4 +49,9 @@ target_link_libraries(rad PRIVATE stdc++ z rt tinfo curses xml2 m dl pthread )
 
 target_link_libraries(rad PRIVATE dyncall_s dynload_s)
 
+add_library(Basic SHARED modules/Basic.cpp)
+set_property(TARGET Basic PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+install(TARGETS rad DESTINATION bin)
+install(TARGETS Basic DESTINATION lib)
 

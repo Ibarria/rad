@@ -82,7 +82,7 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
     *ext = 0;
 
     u32 chars_written = sprintf(cmd_line, 
-        "clang %s -g -o %s -ldl -lstdc++", 
+        "clang %s -g -o %s -ldl -lstdc++",
         obj_file.getFilename(), outfile);
 
     auto it = imports.begin();

@@ -18,3 +18,4 @@ modules/vc140\.pdb
 *.dylib
 *.dSYM
 *DS_Store
+*.user
