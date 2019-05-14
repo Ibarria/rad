@@ -1,4 +1,4 @@
-#include "PoolAllocator.h"
+#include "Allocator.h"
 #ifdef WIN32
 # include <windows.h>
 #endif
@@ -91,6 +91,11 @@ void * PoolAllocator::alloc(u64 size)
     return allocateFromBlock(b, size);
 }
 
+void PoolAllocator::free(void* p)
+{
+	// Do nothing, pool allocator frees it all on destruction
+}
+
 bool PoolAllocator::isAddressInRange(void * p)
 {
     if ((p >= root_block.start_address) &&
@@ -98,4 +103,21 @@ bool PoolAllocator::isAddressInRange(void * p)
         return true;
     }
     return false;
+}
+
+void* MallocAllocator::alloc(u64 size) 
+{
+	return malloc(size);
+}
+
+void MallocAllocator::free(void* p)
+{
+	::free(p);
+}
+
+static MallocAllocator mAlloc;
+
+MallocAllocator* getMallocAllocator()
+{
+	return &mAlloc;
 }

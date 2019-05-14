@@ -1,7 +1,7 @@
 #pragma once
 
 #include "AST.h"
-#include "PoolAllocator.h"
+#include "Allocator.h"
 #include "Lexer.h"
 #include "Array.h"
 

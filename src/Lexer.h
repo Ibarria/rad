@@ -2,7 +2,7 @@
 
 #include "Token.h"
 #include "FileData.h"
-#include "PoolAllocator.h"
+#include "Allocator.h"
 #include "Array.h"
 
 class Lexer

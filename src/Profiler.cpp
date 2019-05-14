@@ -6,7 +6,7 @@ Profiler *g_prof = nullptr;
 
 Profiler::Profiler()
 {
-    entries.resize(1000);
+    entries.resize(10000);
     
     Timer t;
     t.startTimer();

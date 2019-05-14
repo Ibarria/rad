@@ -128,7 +128,7 @@
     <ClCompile Include="src/Interpreter.cpp" />
     <ClCompile Include="src/Lexer.cpp" />
     <ClCompile Include="src/Parser.cpp" />
-    <ClCompile Include="src/PoolAllocator.cpp" />
+    <ClCompile Include="src\Allocator.cpp" />
     <ClCompile Include="src/TextType.cpp" />
     <ClCompile Include="src/Timer.cpp" />
     <ClCompile Include="src/Token.cpp" />
@@ -143,6 +143,7 @@
     </ClCompile>
     <ClCompile Include="src\os.cpp" />
     <ClCompile Include="src\Profiler.cpp" />
+    <ClCompile Include="src\String.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src/Array.h" />
@@ -156,7 +157,7 @@
     <ClInclude Include="src/mytypes.h" />
     <ClInclude Include="src/os.h" />
     <ClInclude Include="src/Parser.h" />
-    <ClInclude Include="src/PoolAllocator.h" />
+    <ClInclude Include="src\Allocator.h" />
     <ClInclude Include="src/SrcLocation.h" />
     <ClInclude Include="src/TextType.h" />
     <ClInclude Include="src/Timer.h" />
@@ -166,6 +167,7 @@
     <ClInclude Include="src\Hash.h" />
     <ClInclude Include="src\llvm_builder.h" />
     <ClInclude Include="src\Profiler.h" />
+    <ClInclude Include="src\String.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Grammar.txt" />

@@ -1,6 +1,5 @@
 #include "Parser.h"
 #include "Lexer.h"
-#include "PoolAllocator.h"
 #include "Interpreter.h"
 #include <assert.h>
 #include <string.h>

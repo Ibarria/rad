@@ -1,7 +1,7 @@
 #pragma once
 #include "mytypes.h"
 #include "Array.h"
-#include "PoolAllocator.h"
+#include "Allocator.h"
 #include "bytecode_instructions.h"
 #include "AST.h"
 
