@@ -25,6 +25,7 @@ bool option_printBytecode = false;
 bool option_llvm = true;
 bool option_llvm_print = false;
 bool option_c = false;
+bool option_quiet = false;
 
 #ifndef WIN32
 # define sprintf_s  sprintf
@@ -55,6 +56,7 @@ void usage()
     printf("\t-bytecode: Print bytecode\n");
     printf("\t-printIR: Print llvm IR, this requires the llvm backend\n");
     printf("\t-seq: Print sequence numbers\n");
+	printf("\t-quiet: do not print compiler statistics on the screen\n");
 }
 
 void parseOptions(int argc, char **argv)
@@ -90,7 +92,9 @@ void parseOptions(int argc, char **argv)
             option_c = false;
             option_llvm = true;
             option_llvm_print = true;
-        } else {
+		} else if (!stricmp(argv[i], "-quiet")) {
+			option_quiet = true;
+		} else {
             root_file = argv[i];
         }
     }
@@ -183,7 +187,8 @@ int main(int argc, char **argv)
 
     if (option_llvm) {
         output_file.setExtension("o");
-        llvm_compile(parsedFile, output_file, codegenTime, binaryGenTime, linkTime, option_llvm_print);
+        llvm_compile(parsedFile, output_file, codegenTime, binaryGenTime, linkTime, 
+			option_llvm_print, option_quiet);
     } else if (option_c) {
         timer.startTimer();
 
@@ -209,24 +214,25 @@ int main(int argc, char **argv)
     }
 
 
-
-
     CPU_REPORT();
 
     EXPORT_JSON("trace.json");
 
-    printf("\n ******** Compile time statistics ******** \n");
-    printTime("     AST and inference stage", astBuildTime);    
-    if (option_llvm) {
-        printTime("LLVM ojbect generation stage", binaryGenTime);
-        printTime("         External Link stage", linkTime);
-    }
-    else if (option_c) {
-        printTime("     C code generation stage", codegenTime);
-        printTime("      External compile stage", binaryGenTime);
-    }
-    printf("---------------------------------------------\n");
-    printTime("          Total compile time", astBuildTime + codegenTime + binaryGenTime + linkTime);
+	if (!option_quiet) {
+		printf("\n ******** Compile time statistics ******** \n");
+		printTime("     AST and inference stage", astBuildTime);
+		if (option_llvm) {
+			printTime("LLVM ojbect generation stage", binaryGenTime);
+			printTime("         External Link stage", linkTime);
+		}
+		else if (option_c) {
+			printTime("     C code generation stage", codegenTime);
+			printTime("      External compile stage", binaryGenTime);
+		}
+		printf("---------------------------------------------\n");
+		printTime("          Total compile time", astBuildTime + codegenTime + binaryGenTime + linkTime);
+	}
+
     DELETE_PROFILER();
     return 0;
 }

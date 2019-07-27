@@ -1352,7 +1352,8 @@ xsaveopt                      - Support xsaveopt instructions.
 xsaves                        - Support xsaves instructions.
 */
 
-void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, double &bingenTime, double &linkTime, bool option_llvm_print)
+void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, double &bingenTime, double &linkTime, 
+	bool option_llvm_print, bool option_quiet )
 {   
     Timer timer;
 
@@ -1439,8 +1440,10 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
         bingenTime = timer.stopTimer();
     }
 
-    outs() << "Object generation [" << obj_file.getFilename() << "] completed, now linking...\n";
-    outs().flush();
+	if (!option_quiet) {
+		outs() << "Object generation [" << obj_file.getFilename() << "] completed, now linking...\n";
+		outs().flush();
+	}
 
     {
         CPU_SAMPLE("LLVM external link");
