@@ -23,7 +23,7 @@ main :: ()
     }
 
 
-    myvar.x = 0.0;  
+    myvar.x = 5.0;  
     myvar.y = 0.0;
     myvar.z = 0.0;
 
@@ -46,6 +46,7 @@ main :: ()
 
     fx = Apointer.x;
 
+	// This should print 5, the value of myvar.x, but prints 0 (bytecode only)
     print("The value of fx is %f\n", fx);
 }
 

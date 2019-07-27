@@ -175,18 +175,13 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />
-    <None Include="tests\arrays.rad" />
     <None Include="tests\entity.rad" />
-    <None Include="tests\factorial.rad" />
     <None Include="tests\first.rad" />
-    <None Include="tests\for_test.rad" />
     <None Include="tests\language.rad" />
     <None Include="tests\mini.rad" />
     <None Include="tests\new.rad" />
     <None Include="tests\open_bugs.rad" />
     <None Include="tests\pointers.rad" />
-    <None Include="tests\pointer_test.rad" />
-    <None Include="tests\run_test.rad" />
     <None Include="tests\struct_test.rad" />
     <None Include="tests\t.rad" />
     <None Include="tests\test_assignment_errors.rad" />

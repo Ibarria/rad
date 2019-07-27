@@ -22,16 +22,20 @@ def compare_files(file1, file2):
         print "Files", file1, file2, "differ!"
         return False
 
-def execute_test( exe, golddir, testdir, testname):
+def execute_test( radexe, golddir, testdir, testname):
     # Ensure a clean slate
     myremove('compileout.txt')
     myremove('runout.txt')
 
+    nameonly = os.path.splitext(testname)[0]
+
     # Start by compiling    
-    cmd = exe + " -quiet " + os.path.join(testdir, testname) 
+    cmd = radexe + " -quiet " + os.path.join(testdir, testname)
+    file = open('compileout.txt', 'w')
     with open('compileout.txt', 'w') as file:
         subprocess.call(cmd, stdout=file, stderr=subprocess.STDOUT, shell=True)
-    goldcomp = os.path.join(golddir, os.path.splitext(testname)[0] + '.cmptxt');
+    goldcomp = os.path.join(golddir, nameonly + '.cmptxt');
+    
     if os.path.exists( goldcomp ) :
         if not compare_files('compileout.txt', goldcomp):
             return False
@@ -39,7 +43,7 @@ def execute_test( exe, golddir, testdir, testname):
     runcmd = os.path.splitext(testname)[0] + ".exe"
     with open('runout.txt', 'w') as file:
         subprocess.call(runcmd, stdout=file, stderr=subprocess.STDOUT, shell=True)
-    goldrun = os.path.join(golddir, os.path.splitext(testname)[0] + '.runtxt');
+    goldrun = os.path.join(golddir, nameonly + '.runtxt');
     if not os.path.exists ( goldrun ):
         print "Could not find a gold for", testname
         return False
@@ -50,7 +54,9 @@ def execute_test( exe, golddir, testdir, testname):
     # clean up
     myremove('compileout.txt')
     myremove('runout.txt')
+    myremove(os.path.join(testdir,nameonly + ".o"))
     myremove(runcmd)
+    myremove(nameonly + ".pdb")
 
     return True
 
@@ -58,27 +64,33 @@ init()
 
 rundir = 'debug'
 if len(sys.argv) > 1:
-  print "First argument:", sys.argv[1]
+  print "Running in", sys.argv[1], "mode"
   rundir = sys.argv[1]
 
-exe = os.path.join(rundir, 'rad.exe')
+radexe = os.path.join(rundir, 'rad.exe')
+if not os.path.exists(radexe):
+    print "FATAL, could not find compiler:", radexe
+    sys.exit(1)
+
 testdir = 'sanity'
 golddir = 'golds'
+
+num_tests = 0
 
 for filename in os.listdir(testdir):
     if filename.endswith(".rad"): 
         print os.path.join(testdir, filename),
-        if not execute_test(exe, golddir, testdir, filename) :
+        if not execute_test(radexe, golddir, testdir, filename) :
             print "Failed, stopping..."            
             sys.exit(1)
         else:
-            print Fore.GREEN + "OK"
-            print Style.RESET_ALL
+            print Fore.GREEN + "OK" + Style.RESET_ALL
+            num_tests+=1
         continue
     else:
         continue
 
-print "All tests have run successfully"
+print "\nAll ", num_tests, "tests have run successfully"
 
 #with open('pyout.txt', 'w') as file:
 #    subprocess.call(exe, stdout=file, stderr=subprocess.STDOUT, shell=True)

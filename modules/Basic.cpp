@@ -69,9 +69,10 @@ extern "C" DLLEXPORT int print(char *data, unsigned long long size, ...)
     va_start(args, size);
 
     stbsp_vsnprintf(buffer, sizeof(buffer), data, args);
-    WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), buffer, _strlen(buffer), &dwRet, 0);
+	// I used to call WriteConsole here, but then redirection no longer works
+	WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buffer, _strlen(buffer), &dwRet, 0);
 
-    // int ret = vprintf_s(data, args);
+//    dwRet = vprintf_s(data, args);
     va_end(args);
 
     return dwRet;

@@ -48,19 +48,10 @@
   <ItemGroup>
     <None Include="README.md" />
     <None Include="test\first.rad" />
-    <None Include="tests\arrays.rad">
-      <Filter>Test Code</Filter>
-    </None>
     <None Include="tests\entity.rad">
       <Filter>Test Code</Filter>
     </None>
-    <None Include="tests\factorial.rad">
-      <Filter>Test Code</Filter>
-    </None>
     <None Include="tests\first.rad">
-      <Filter>Test Code</Filter>
-    </None>
-    <None Include="tests\for_test.rad">
       <Filter>Test Code</Filter>
     </None>
     <None Include="tests\language.rad">
@@ -75,13 +66,7 @@
     <None Include="tests\open_bugs.rad">
       <Filter>Test Code</Filter>
     </None>
-    <None Include="tests\pointer_test.rad">
-      <Filter>Test Code</Filter>
-    </None>
     <None Include="tests\pointers.rad">
-      <Filter>Test Code</Filter>
-    </None>
-    <None Include="tests\run_test.rad">
       <Filter>Test Code</Filter>
     </None>
     <None Include="tests\struct_test.rad">

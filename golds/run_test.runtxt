@@ -1,0 +1,5 @@
+Inside function, this is called from a GLOBAL #RUN
+
+
+This is a from #run: 66 -- 
+This is a from #run: [b 5] [c 33] [d 52] [e 15] -- 
