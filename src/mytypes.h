@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stdint.h>
+#include <inttypes.h>
+
 #if defined(_WINDOWS) || defined(_WIN32)
 #define PLATFORM_WINDOWS
 #elif defined(__linux__) || defined(__FreeBSD__)
@@ -13,21 +16,13 @@
 typedef signed char        s8;
 typedef signed short       s16;
 typedef int                s32;
-#if defined(PLATFORM_WINDOWS)
-typedef long long          s64;
-#else
-typedef long               s64;
-#endif
+typedef int64_t            s64;
 
 typedef unsigned char      u8;
 typedef unsigned short     u16;
 typedef unsigned int       u32;
-#if defined(PLATFORM_WINDOWS)
-#define U64FMT             "ll"
-typedef unsigned long long u64;
-#else
-#define U64FMT              "l"
-typedef unsigned long      u64;
-#endif
+#define U64FMT             PRIu64
+typedef uint64_t           u64;
+
 typedef float              f32;
 typedef double             f64;

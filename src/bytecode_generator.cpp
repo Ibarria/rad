@@ -382,7 +382,7 @@ void print_instruction(BCI *inst)
     if ((inst->opcode == BC_BINARY_OPERATION) || (inst->opcode == BC_UNARY_OPERATION)) {
         printf("operator: %s\n", TokenTypeToStr((TOKEN_TYPE)inst->big_const));
     } else {
-        printf("big_const: %" U64FMT "u | 0x%" U64FMT "X\n",
+        printf("big_const: %" PRIu64 " | 0x%" PRIX64 "\n",
             inst->big_const, inst->big_const);
     }
 }

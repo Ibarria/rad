@@ -1,0 +1,109 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="src/AST.cpp" />
+    <ClCompile Include="src/bytecode_generator.cpp" />
+    <ClCompile Include="src/rad.cpp" />
+    <ClCompile Include="src/c_generator.cpp" />
+    <ClCompile Include="src/FileData.cpp" />
+    <ClCompile Include="src/Interpreter.cpp" />
+    <ClCompile Include="src/Lexer.cpp" />
+    <ClCompile Include="src/Parser.cpp" />
+    <ClCompile Include="src\Allocator.cpp" />
+    <ClCompile Include="src/TextType.cpp" />
+    <ClCompile Include="src/Timer.cpp" />
+    <ClCompile Include="src/Token.cpp" />
+    <ClCompile Include="src\FileObject.cpp" />
+    <ClCompile Include="src\Hash.cpp" />
+    <ClCompile Include="src\llvm_backend.cpp" />
+    <ClCompile Include="src\llvm_builder.cpp" />
+    <ClCompile Include="src\os.cpp" />
+    <ClCompile Include="src\Profiler.cpp" />
+    <ClCompile Include="src\String.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src/Array.h" />
+    <ClInclude Include="src/AST.h" />
+    <ClInclude Include="src/bytecode_generator.h" />
+    <ClInclude Include="src/bytecode_instructions.h" />
+    <ClInclude Include="src/c_generator.h" />
+    <ClInclude Include="src/FileData.h" />
+    <ClInclude Include="src/Interpreter.h" />
+    <ClInclude Include="src/Lexer.h" />
+    <ClInclude Include="src/mytypes.h" />
+    <ClInclude Include="src/os.h" />
+    <ClInclude Include="src/Parser.h" />
+    <ClInclude Include="src\Allocator.h" />
+    <ClInclude Include="src/SrcLocation.h" />
+    <ClInclude Include="src/TextType.h" />
+    <ClInclude Include="src/Timer.h" />
+    <ClInclude Include="src/Token.h" />
+    <ClInclude Include="src/TokenType.h" />
+    <ClInclude Include="src\FileObject.h" />
+    <ClInclude Include="src\Hash.h" />
+    <ClInclude Include="src\llvm_builder.h" />
+    <ClInclude Include="src\Profiler.h" />
+    <ClInclude Include="src\String.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
+    <None Include="test\first.rad" />
+    <None Include="tests\arrays.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\entity.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\factorial.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\first.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\for_test.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\language.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\mini.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\new.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\open_bugs.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\pointer_test.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\pointers.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\run_test.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\struct_test.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\t.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\test_assignment_errors.rad">
+      <Filter>Test Code</Filter>
+    </None>
+    <None Include="tests\typecheck_test.rad">
+      <Filter>Test Code</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Grammar.txt" />
+    <Text Include="TODO.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Test Code">
+      <UniqueIdentifier>{2cd487a5-0651-4d4b-8bd4-2518f6b5ac75}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

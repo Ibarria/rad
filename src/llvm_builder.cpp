@@ -140,17 +140,17 @@ static void allocateVariable(VariableDeclarationAST *decl)
         Value *arraySize = nullptr;
         auto AllocA = TmpB.CreateAlloca(decl->specified_type->llvm_type, arraySize, decl->varname);
 
-        if (decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT) {
-            // codegen should be here because it is generated in the function definition generation
-            assert(decl->codegen);
-            if (decl->codegen->getType()->isPointerTy() && 
-                (isTypeArray(decl->specified_type) || isTypeStruct(decl->specified_type))) {
-                // if it is an argument and a pointer, there is no need to do a local copy from arguments
-                // for structs and arrays
-                return;
-            }
-            TmpB.CreateStore(decl->codegen, AllocA);
-        }
+		if (decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT) {
+			// codegen should be here because it is generated in the function definition generation
+			assert(decl->codegen);
+			if (decl->codegen->getType()->isPointerTy() &&
+				(isTypeArray(decl->specified_type) || isTypeStruct(decl->specified_type))) {
+				// if it is an argument and a pointer, there is no need to do a local copy from arguments
+				// for structs and arrays
+				return;
+			}
+			TmpB.CreateStore(decl->codegen, AllocA);
+		}
         decl->codegen = AllocA;
     }
 }
@@ -445,6 +445,15 @@ static void generateForStatement(ForStatementAST *forst)
     BasicBlock *for_entry = BasicBlock::Create(TheContext, "for_entry", lfunc);
     BasicBlock *for_block = BasicBlock::Create(TheContext, "for_block", lfunc);
     BasicBlock *for_after = BasicBlock::Create(TheContext, "for_after", lfunc);
+
+	if (forst->it->decl->definition) {
+		generateCode(forst->it->decl->definition);
+		Builder.CreateStore(forst->it->decl->definition->codegen, forst->it->decl->codegen);
+	}
+	if (forst->it_index->decl->definition) {
+		generateCode(forst->it_index->decl->definition);
+		Builder.CreateStore(forst->it_index->decl->definition->codegen, forst->it_index->decl->codegen);
+	}
 
     if (forst->is_array) {
         Builder.CreateBr(for_entry);

@@ -41,6 +41,7 @@ main :: ()
 
 	for val : 1 .. 5 print("Iterating Range by name %d\n", val);
 
+	
 	{
 		sa : [SIZE] u64;
 
@@ -77,6 +78,7 @@ main :: ()
 
 		for *myval: sa print("Iterating Value pointer Array %d\n", <<myval);		
 	}
+	
 
 	// @TODO: verify for loop works on arrays embedded in a struct
 	/*
