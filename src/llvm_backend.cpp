@@ -43,7 +43,7 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
     // the program takes a very long time to exit. We would have to build our own global
     // constructors, destructors and call ExitProcess at the end. Basically implementing a basic CRT
     u32 chars_written = sprintf_s(cmd_line, 
-        "link.exe /nologo /DEBUG /subsystem:CONSOLE /NODEFAULTLIB %s kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", 
+        "link.exe /nologo /DEBUG /INCREMENTAL:NO /subsystem:CONSOLE /NODEFAULTLIB %s kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", 
         obj_file.getFilename());
 
     auto it = imports.begin();
