@@ -1,0 +1,7 @@
+check_pointer: the pointer is null now
+check_pointer: the pointer is not null now
+The pointer is null now
+The pointer is not null now
+The value of fx is 5.000000
+The value of fy is 7.200000
+The value of fz is 24.130000

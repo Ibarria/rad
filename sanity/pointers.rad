@@ -17,6 +17,8 @@ main :: ()
 {
     myvar: Vector3;
     fx : float;
+    fy : float;
+    fz : float;
 
     print_position :: (entity : *Entity) {
         print("Position: (%f, %f, %f)\n", entity.position.x, entity.position.y, entity.position.z);
@@ -24,8 +26,8 @@ main :: ()
 
 
     myvar.x = 5.0;  
-    myvar.y = 0.0;
-    myvar.z = 0.0;
+    myvar.y = 7.2;
+    myvar.z = 24.13;
 
     a_val : s16;
 
@@ -45,9 +47,13 @@ main :: ()
     else print("The pointer is not null now\n");
 
     fx = Apointer.x;
+    fy = Apointer.y;
+    fz = Apointer.z;
 
-	// This should print 5, the value of myvar.x, but prints 0 (bytecode only)
+	// This should print 5, the value of myvar.x
     print("The value of fx is %f\n", fx);
+    print("The value of fy is %f\n", fy);
+    print("The value of fz is %f\n", fz);
 }
 
 check_pointer :: (p: *s16)

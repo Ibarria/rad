@@ -1535,7 +1535,13 @@ BCI *bytecode_generator::computeAddress(ExpressionAST * expr)
                     // update the register with the actual pointer to data
                     id_ptr = derefPointer(id_ptr, REGTYPE_POINTER);
                 }
-            }
+		    } else if ((id->decl->specified_type->ast_type == AST_POINTER_TYPE) &&
+				(id->next->ast_type == AST_STRUCT_ACCESS)) {
+
+				// If we have a pointer to struct and we try to access the struct, we need to 
+				// dereference the pointer first
+				id_ptr = derefPointer(id_ptr, REGTYPE_POINTER);
+			}
 
             auto offset = createLoadOffsetInstruction(id->next);
 
