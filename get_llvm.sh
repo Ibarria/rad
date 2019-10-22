@@ -17,7 +17,7 @@ cd ../../
 mkdir release
 mkdir debug
 #cd release
-#cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=lld -G "Unix Makefiles" -DLLVM_TARGETS_TO_BUILD="X86" ../llvm-src
+#cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=lld -G "Unix Makefiles" -DLLVM_TARGETS_TO_BUILD="X86" ../llvm-src/llvm
 
 # you might need these packages in linux:
 # libncurses-dev libxml2-dev python3-dev python3-pip python3-tk python3-lxml python3-six swig3.0 libedit-dev ninja-build 
