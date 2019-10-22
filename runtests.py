@@ -67,7 +67,7 @@ if len(sys.argv) > 1:
   print "Running in", sys.argv[1], "mode"
   rundir = sys.argv[1]
 
-radexe = os.path.join(rundir, 'rad.exe')
+radexe = os.path.join(rundir, 'rad')
 if not os.path.exists(radexe):
     print "FATAL, could not find compiler:", radexe
     sys.exit(1)

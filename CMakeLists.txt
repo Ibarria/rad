@@ -51,6 +51,7 @@ target_link_libraries(rad PRIVATE dyncall_s dynload_s)
 
 add_library(Basic SHARED modules/Basic.cpp)
 set_property(TARGET Basic PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_target_properties(Basic PROPERTIES PREFIX "")
 
 install(TARGETS rad DESTINATION bin)
 install(TARGETS Basic DESTINATION lib)

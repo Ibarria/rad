@@ -1294,7 +1294,7 @@ void Parser::parseImportDirective()
     // All modules are in the modules folder, with the extension
     // One day this will be a search path
     char fname[64];
-    sprintf_s(fname, "modules/%s.jai", t.string);
+    sprintf_s(fname, "modules/%s.rad", t.string);
     bool val;
     // This does the equivalent of pragma once, and also
     // records the libraries we opened (#import)

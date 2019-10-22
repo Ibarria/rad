@@ -621,11 +621,11 @@ void bytecode_generator::createLoadInstruction(VariableDeclarationAST *decl, s16
 external_library * bytecode_generator::findOrLoadLibrary(TextType filename)
 {
     char lib_name[128] = {};
-    // very hacky: to make the library name, replace 'jai' for 'dll' at the end of the string
+    // very hacky: to make the library name, replace 'rad' for 'dll' at the end of the string
     u64 l = strlen(filename);
     strcpy(lib_name, filename);
     assert(l >= 5);
-    assert(lib_name[l - 3] == 'j');  assert(lib_name[l - 2] == 'a'); assert(lib_name[l - 1] == 'i');
+    assert(lib_name[l - 3] == 'r');  assert(lib_name[l - 2] == 'a'); assert(lib_name[l - 1] == 'd');
     #if defined(PLATFORM_WINDOWS)
     lib_name[l - 3] = 'd'; lib_name[l - 2] = 'l'; lib_name[l - 1] = 'l';
     #elif defined(PLATFORM_LINUX)
