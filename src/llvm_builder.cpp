@@ -965,11 +965,13 @@ static void generateCode(BaseAST *ast)
             std::vector<Type *> struct_members;
             struct_members.push_back(Type::getInt8PtrTy(TheContext)); // the char *
             struct_members.push_back(Type::getInt64Ty(TheContext)); // the size
-            dtype->llvm_type = StructType::create(TheContext, struct_members, "Jai_string");
+            dtype->llvm_type = StructType::create(TheContext, struct_members, "Rad_string");
+
             break;
         }
         case BASIC_TYPE_VOID: {
             dtype->llvm_type = Type::getVoidTy(TheContext);
+			dtype->debug_type = DBuilder->createUnspecifiedType("void");
             return;
         }
         default:
@@ -1360,7 +1362,7 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     CPU_SAMPLE("LLVM compile");
 
     timer.startTimer();
-    TheModule = new Module("jai", TheContext);
+    TheModule = new Module("rad", TheContext);
     
     // Initialize the target registry etc.
     InitializeAllTargetInfos();
@@ -1390,7 +1392,8 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
 
     DBuilder = new DIBuilder(*TheModule);
     // the 1 here is just a hack, we have to define some language
-    DICompileUnit *TheCU = DBuilder->createCompileUnit(1, DBuilder->createFile(obj_file.getFilename(), "."), "C2 compiler", 0, "", 0);
+    DICompileUnit *TheCU = DBuilder->createCompileUnit(1, DBuilder->createFile(obj_file.getFilename(), "."), "RAD compiler", 0, "", 0);
+	
     // look for the malloc and free calls (which new depends on)
     for (auto decl : root->global_scope.decls) {
         if (!strcmp(decl->varname, "malloc")) {
