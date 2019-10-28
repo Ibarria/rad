@@ -57,6 +57,18 @@ struct TextTypeHashFunc {
     }
 };
 
+template <u32 size>
+struct CharPTypeHashFunc {
+	u32 operator()(const char *key) const
+	{
+		const char* s;
+		u32 len = 0;
+		s = key;
+		while (*s) { len++; s++; }
+		return murmur3_32((const u8*)key, len, 0x3245AAFF);
+	}
+};
+
 template <class Key>
 struct KeyComp {
     bool operator()(const Key &key1, const Key &key2) const
@@ -78,6 +90,21 @@ struct TextTypeComp {
         }
         return *t1 == *t2;
     }
+};
+
+struct CharPTypeComp {
+	bool operator()(const char * text1, const char * text2)
+	{
+		const char* t1, * t2;
+		t1 = text1;
+		t2 = text2;
+		while (*t1 && *t2) {
+			if (*t1 != *t2) return false;
+			t1++;
+			t2++;
+		}
+		return *t1 == *t2;
+	}
 };
 
 template <class Key, class Value, u32 size, 
@@ -210,3 +237,4 @@ public:
 };
 
 typedef Hash<TextType, bool, 21, TextTypeHashFunc<21>, TextTypeComp> ImportsHash;
+typedef Hash<const char*, TextType, 21, CharPTypeHashFunc<21>, CharPTypeComp> TextTypeHash;
