@@ -1514,6 +1514,8 @@ FileAST * Parser::ParseInternal(FileAST *fast)
     } else {
         file_inst = new (pool) FileAST;
         file_inst->global_scope.parent = nullptr;
+        file_inst->scope = &file_inst->global_scope;            
+        file_inst->filename = CreateTextType(pool, lex->getFileData()->getFilename());
     }
      
     top_level_ast = file_inst;

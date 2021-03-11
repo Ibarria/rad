@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!python
 
 import sys
 import os
@@ -19,7 +19,7 @@ def compare_files(file1, file2):
     if f1str == f2str :
         return True
     else:
-        print "Files", file1, file2, "differ!"
+        print("Files", file1, file2, "differ!")
         return False
 
 def execute_test( radexe, golddir, testdir, testname):
@@ -45,7 +45,7 @@ def execute_test( radexe, golddir, testdir, testname):
         subprocess.call(runcmd, stdout=file, stderr=subprocess.STDOUT, shell=True)
     goldrun = os.path.join(golddir, nameonly + '.runtxt');
     if not os.path.exists ( goldrun ):
-        print "Could not find a gold for", testname
+        print("Could not find a gold for", testname)
         return False
 
     if not compare_files('runout.txt', goldrun):
@@ -64,12 +64,12 @@ init()
 
 rundir = 'debug'
 if len(sys.argv) > 1:
-  print "Running in", sys.argv[1], "mode"
+  print("Running in", sys.argv[1], "mode")
   rundir = sys.argv[1]
 
 radexe = os.path.join(rundir, 'rad.exe')
 if not os.path.exists(radexe):
-    print "FATAL, could not find compiler:", radexe
+    print("FATAL, could not find compiler:", radexe)
     sys.exit(1)
 
 testdir = 'sanity'
@@ -79,18 +79,18 @@ num_tests = 0
 
 for filename in os.listdir(testdir):
     if filename.endswith(".rad"): 
-        print os.path.join(testdir, filename),
+        print(os.path.join(testdir, filename)),
         if not execute_test(radexe, golddir, testdir, filename) :
-            print "Failed, stopping..."            
+            print("Failed, stopping...")
             sys.exit(1)
         else:
-            print Fore.GREEN + "OK" + Style.RESET_ALL
+            print(Fore.GREEN + "OK" + Style.RESET_ALL)
             num_tests+=1
         continue
     else:
         continue
 
-print "\nAll ", num_tests, "tests have run successfully"
+print("\nAll ", num_tests, "tests have run successfully")
 
 #with open('pyout.txt', 'w') as file:
 #    subprocess.call(exe, stdout=file, stderr=subprocess.STDOUT, shell=True)

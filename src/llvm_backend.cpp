@@ -20,6 +20,21 @@
 # define vsprintf_s vsnprintf
 # define strncpy_s  strncpy
 # define stricmp    strcasecmp
+#else
+struct Find_Result {
+    int windows_sdk_version;   // Zero if no Windows SDK found.
+
+    wchar_t* windows_sdk_root = NULL;
+    wchar_t* windows_sdk_um_library_path = NULL;
+    wchar_t* windows_sdk_ucrt_library_path = NULL;
+
+    wchar_t* vs_exe_path = NULL;
+    wchar_t* vs_library_path = NULL;
+};
+
+Find_Result find_visual_studio_and_windows_sdk();
+
+void free_resources(Find_Result* result);
 #endif
 
 
@@ -27,14 +42,16 @@
 int link_object(FileObject &obj_file, ImportsHash &imports)
 {
 #if defined(PLATFORM_WINDOWS)
-    STARTUPINFOA si;
+    STARTUPINFO si;
     PROCESS_INFORMATION pi;
-    char cmd_line[512] = {};
+    static const int CMD_SIZE = 4096;
+    wchar_t cmd_line[CMD_SIZE] = {};
 
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
+    Find_Result vspath = find_visual_studio_and_windows_sdk();
     //GetCurrentDirectoryA(sizeof(cmd_line), cmd_line);
     //printf("Debug current directory: %s\n", cmd_line);
     //cmd_line[0] = 0;
@@ -42,15 +59,17 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
     // We need msvcrt here, otherwise we have to specify the /ENTRY:<entrypoint> and
     // the program takes a very long time to exit. We would have to build our own global
     // constructors, destructors and call ExitProcess at the end. Basically implementing a basic CRT
-    u32 chars_written = sprintf_s(cmd_line, 
-        "link.exe /nologo /DEBUG /INCREMENTAL:NO /subsystem:CONSOLE /NODEFAULTLIB %s kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", 
+    u32 chars_written = swprintf_s(cmd_line, CMD_SIZE,
+        L"\"%s\\link.exe\" /nologo /DEBUG /INCREMENTAL:NO /subsystem:CONSOLE /NODEFAULTLIB "
+        L"/LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" %hs kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", 
+        vspath.vs_exe_path, vspath.vs_library_path, vspath.windows_sdk_root, vspath.windows_sdk_ucrt_library_path, vspath.windows_sdk_um_library_path,
         obj_file.getFilename());
 
     auto it = imports.begin();
-    char *line_ptr = cmd_line + chars_written;
+    wchar_t *line_ptr = cmd_line + chars_written;
     while (!imports.isEnd(it)) {
         if (it.entry) {
-            chars_written = sprintf(line_ptr, " modules\\%s.lib", it.entry->key());
+            chars_written = swprintf(line_ptr, CMD_SIZE - chars_written, L" modules\\%hs.lib", it.entry->key());
             line_ptr = line_ptr + chars_written;
         }
         it = imports.next(it);
@@ -58,8 +77,8 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
 
     //printf("Debug command line: %s\n", cmd_line);
 
-    if (!CreateProcessA(NULL, cmd_line, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-        printf("Process creation failed (%d)\n", GetLastError());
+    if (!CreateProcessW(NULL, cmd_line, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+        printf("Process creation [%ls] failed (%d)\n", cmd_line, GetLastError());
         return -1;
     }
 
@@ -68,6 +87,7 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
 
     DWORD exit_code;
     GetExitCodeProcess(pi.hProcess, &exit_code);
+
     // Close process and thread handles. 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
