@@ -1,0 +1,11 @@
+// Entity complex test
+// #import "Basic"
+
+e: Entity;
+
+Entity :: struct { x: u32; }
+
+main :: ()
+{
+  e.x = 1;
+}

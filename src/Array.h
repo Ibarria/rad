@@ -60,6 +60,9 @@ public:
     u32 total_size() const { return num_elems; }
 
     T& getNextFree() {
+        if (used_elems + 1 >= num_elems) {
+            resize(num_elems * 5);
+        }
         return elems[used_elems++];
     }
 

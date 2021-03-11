@@ -1,3 +1,5 @@
+#pragma warning(disable: 4530)
+
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
@@ -28,18 +30,30 @@
 #include "Profiler.h"
 #include "os.h"
 
+#include <filesystem>
+
+// from Parser.cpp
+DirectTypeAST* getBuiltInType(TOKEN_TYPE tktype);
+
+namespace fs = std::filesystem;
+
 using namespace llvm;
 
 // function on llvm_backend.cpp
 int link_object(FileObject &obj_file, ImportsHash &imports);
 
 // These should be wrapped in some kinda class... some day
+// Will be needed for multithreading
 static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 static Module *TheModule = nullptr;
 static DIBuilder *DBuilder = nullptr;
+static DICompileUnit* RootCU = nullptr;
 
 static Function *llvm_function = nullptr;
+
+typedef Hash<TextType, DIFile*, 21, TextTypeHashFunc<21>, TextTypeComp> DIFilesHash;
+static DIFilesHash filesHash;
 
 // Statics for the llvm type, to make code more readable
 static Type *llvm_u32;
@@ -50,8 +64,42 @@ static Type *llvm_u64;
 static VariableDeclarationAST* decl_malloc = nullptr;
 static VariableDeclarationAST* decl_free = nullptr;
 
-
 static void generateCode(BaseAST *ast);
+
+static void emitLocation(BaseAST* ast)
+{
+    if (!ast) return Builder.SetCurrentDebugLocation(DebugLoc());
+    if (ast->line_num == 0) return Builder.SetCurrentDebugLocation(DebugLoc());
+    DIScope* dscope = nullptr;
+    if (ast->scope == nullptr) {
+        dscope = RootCU;
+    } else {
+        assert(ast->scope->debug_scope);
+        dscope = ast->scope->debug_scope;
+    }
+    if (ast->ast_type == AST_STATEMENT_BLOCK) {
+        auto* stmt = (StatementBlockAST*)ast;
+        dscope = stmt->block_scope.debug_scope;
+    }
+    Builder.SetCurrentDebugLocation(DebugLoc::get(ast->line_num, 0, dscope));
+}
+
+static DIFile* getOrCreateDFile(BaseAST* ast)
+{
+    DIFile* root_file = nullptr;
+    if (filesHash.get(ast->filename, root_file)) {
+        return root_file;
+    }
+
+    fs::path p = ast->filename;
+    auto folder = p.parent_path();
+    auto fname = p.filename();
+    
+    root_file = DBuilder->createFile(fname.string(), folder.string());
+    filesHash.put(ast->filename, root_file);
+
+    return root_file;
+}
 
 static void printBasicBlock(BasicBlock *bb)
 {    
@@ -91,6 +139,12 @@ static void generateFunctionPrototype(VariableDeclarationAST *decl)
     auto llvm_type = (llvm::FunctionType *)decl->specified_type->llvm_type;
     Function *llvm_func = Function::Create(llvm_type, Function::ExternalLinkage,
         decl->varname, TheModule);
+    // Got these for main from looking at clang
+    llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
+    llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoRecurse);
+    llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoUnwind);
+    llvm_func->addFnAttr(llvm::Attribute::AttrKind::OptimizeNone);
+    llvm_func->addFnAttr(llvm::Attribute::AttrKind::UWTable);
 
     // ensure llvm knows the name of arguments
     u32 idx = 0;
@@ -134,6 +188,9 @@ static void allocateVariable(VariableDeclarationAST *decl)
         auto gv = new GlobalVariable(*TheModule, decl->specified_type->llvm_type, isConstant, 
             GlobalValue::LinkOnceAnyLinkage, initializer, decl->varname);
         decl->codegen = gv;
+        // The last true parameter indicates if this is a static (local to unit or not)
+        auto* dgv = DBuilder->createGlobalVariableExpression(decl->scope->debug_scope, decl->varname, decl->varname,
+            getOrCreateDFile(decl), decl->line_num, decl->specified_type->debug_type, true);
     } else {
         IRBuilder<> TmpB(&llvm_function->getEntryBlock(),
                  llvm_function->getEntryBlock().begin());
@@ -152,6 +209,12 @@ static void allocateVariable(VariableDeclarationAST *decl)
 			TmpB.CreateStore(decl->codegen, AllocA);
 		}
         decl->codegen = AllocA;
+        // The last true parameter indicates if this is a static (local to unit or not)
+        auto* dlv = DBuilder->createAutoVariable(decl->scope->debug_scope, decl->varname, 
+            getOrCreateDFile(decl), decl->line_num, decl->specified_type->debug_type);
+        DBuilder->insertDeclare(decl->codegen, dlv, DBuilder->createExpression(),
+            DebugLoc::get(decl->line_num, decl->char_num, decl->scope->debug_scope),
+            Builder.GetInsertBlock());
     }
 }
 
@@ -308,6 +371,7 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
 
         assert(func_decl);
         Function *llvm_func = (Function *)decl->codegen;
+        DISubroutineType* llvm_type = (DISubroutineType*)decl->specified_type->debug_type;
 
         if (!isGlobalDeclaration(decl)) {
             // save the current block where we are inserting
@@ -327,11 +391,25 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
         Function *old_func = llvm_function;
         llvm_function = llvm_func;
 
+        DISubprogram* dsp = DBuilder->createFunction(decl->scope->debug_scope, decl->varname, StringRef(),
+            getOrCreateDFile(decl), decl->line_num, llvm_type, func_decl->function_body->line_num, 
+            DINode::FlagPrototyped, DISubprogram::SPFlagDefinition);
+        llvm_function->setSubprogram(dsp);
+
+        // We copy this so the function body has the scope of the function
+        func_decl->function_body->block_scope.debug_scope = dsp;
+        
+//        printf("Creating DebugLexical block %p from parent scope %p, For function %s scope %d:%d\n",
+//            dsp, decl->scope->debug_scope, decl->varname, decl->line_num, decl->char_num);
+
         generateCode(func_decl->function_body);
 
         if (isVoidType(ft->return_type)) {
             Builder.CreateRetVoid();
         }
+
+        // Debugging
+        // printFunction(llvm_func);
 
         verifyFunction(*llvm_func);
         llvm_function = old_func;
@@ -437,6 +515,11 @@ static void generateIfStatement(IfStatementAST *ifst)
 
 static void generateForStatement(ForStatementAST *forst)
 {
+    forst->for_scope.debug_scope = DBuilder->createLexicalBlock(forst->scope->debug_scope,
+        getOrCreateDFile(forst), forst->line_num, forst->char_num);
+//    printf("Creating DebugLexical block %p from parent scope %p, For scope %d:%d\n",
+//        forst->for_scope.debug_scope, forst->scope->debug_scope, forst->line_num, forst->char_num);
+
     for (auto decl : forst->for_scope.decls) {
         allocateVariable(decl);
     }
@@ -702,6 +785,8 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
 
 static void generateCode(BaseAST *ast)
 {
+    emitLocation(ast);
+
     switch (ast->ast_type)
     {
     case AST_FILE: {
@@ -732,6 +817,17 @@ static void generateCode(BaseAST *ast)
 
         if (stmt_block->codegen) return;
 
+        if (stmt_block->block_scope.debug_scope == nullptr) {
+            // A normal block would not have a debug scope, but this block is the body of a function, 
+            // then we want to use the function debug scope
+            stmt_block->block_scope.debug_scope = DBuilder->createLexicalBlock(stmt_block->scope->debug_scope,
+                getOrCreateDFile(stmt_block), stmt_block->line_num, stmt_block->char_num);
+//            printf("Creating DebugLexical block %p from parent scope %p, Statement scope %d:%d\n",
+//                stmt_block->block_scope.debug_scope, stmt_block->scope->debug_scope, stmt_block->line_num, stmt_block->char_num);
+        }
+        // It is important that we set the debug location to that of this statement block (could be a function)
+        // Otherwise, it would use the parent and that is not valid
+        Builder.SetCurrentDebugLocation(DebugLoc::get(stmt_block->line_num, 0, stmt_block->block_scope.debug_scope));
         for (auto decl : stmt_block->block_scope.decls) {
             allocateVariable(decl);
         }
@@ -755,6 +851,7 @@ static void generateCode(BaseAST *ast)
         auto ret_stmt = (ReturnStatementAST *)ast;
         if (ret_stmt->ret != nullptr) {
             generateCode(ret_stmt->ret);
+            emitLocation(ret_stmt);
             Builder.CreateRet(ret_stmt->ret->codegen);
         } else {
             Builder.CreateRetVoid();
@@ -775,7 +872,7 @@ static void generateCode(BaseAST *ast)
             ArgsV.push_back(arg->codegen);
         }
         // The function call should not have a name if the return value is void
-        auto llvm_call = Builder.CreateCall(funcall->fundef->var_decl->codegen, ArgsV);
+        auto llvm_call = Builder.CreateCall((llvm::Function *)funcall->fundef->var_decl->codegen, ArgsV);
         funcall->codegen = llvm_call;
         break;
     }
@@ -823,12 +920,15 @@ static void generateCode(BaseAST *ast)
         auto assign = (AssignmentAST *)ast;
         // This can work for identifiers but not for arrays or structs
         generateCode(assign->rhs);
+        llvm::Value* store_val = nullptr;
         if (assign->lhs->ast_type == AST_IDENTIFIER) {
             auto id = (IdentifierAST *)assign->lhs;
-            Builder.CreateStore(assign->rhs->codegen, generateIdentifierCode(id));
+            store_val = generateIdentifierCode(id);
         } else {
-            Builder.CreateStore(assign->rhs->codegen, generateAssignLHSCode(assign->lhs));
+            store_val = generateAssignLHSCode(assign->lhs);
         }
+        emitLocation(assign);
+        Builder.CreateStore(assign->rhs->codegen, store_val);
         break;
     }
     case AST_VARIABLE_DECLARATION: {
@@ -854,15 +954,16 @@ static void generateCode(BaseAST *ast)
     case AST_FUNCTION_TYPE: {
         auto ftype = (FunctionTypeAST *)ast;
         std::vector<Type *> func_args;
-        std::vector<DIType *> debug_args;
+        std::vector<Metadata *> debug_args;
         generateCode(ftype->return_type);
         // Extend this to support functions that return arrays or structs
         assert(!isTypeArray(ftype->return_type) && !isTypeStruct(ftype->return_type));
-        if (isVoidType(ftype->return_type)) {
-            debug_args.push_back(nullptr);
-        } else {
-            debug_args.push_back(ftype->return_type->debug_type);
-        }
+        debug_args.push_back(ftype->return_type->debug_type);
+        //if (isVoidType(ftype->return_type)) {
+        //    debug_args.push_back(nullptr);
+        //} else {
+        //    debug_args.push_back(ftype->return_type->debug_type);
+        //}
 
         for (auto arg : ftype->arguments) {
             generateCode(arg->specified_type);
@@ -881,6 +982,8 @@ static void generateCode(BaseAST *ast)
             ftype->hasVariableArguments);
 
         ftype->llvm_type = llvm_ft;
+        ftype->debug_type = DBuilder->createSubroutineType(DBuilder->getOrCreateTypeArray(debug_args));
+
         break;
     }
     case AST_DIRECT_TYPE: {
@@ -965,11 +1068,31 @@ static void generateCode(BaseAST *ast)
             std::vector<Type *> struct_members;
             struct_members.push_back(Type::getInt8PtrTy(TheContext)); // the char *
             struct_members.push_back(Type::getInt64Ty(TheContext)); // the size
-            dtype->llvm_type = StructType::create(TheContext, struct_members, "Jai_string");
+            dtype->llvm_type = StructType::create(TheContext, struct_members, "Rad_string");
+            // Ok, this is rather complicated. For debug struct types in llvm, is needed to 
+            // first create the container object, but without members. 
+            auto* composite_type = DBuilder->createStructType(dtype->scope->debug_scope, "Rad_string",
+                getOrCreateDFile(dtype), dtype->line_num, 128, 0, DINode::FlagZero, nullptr,
+                DINodeArray());
+            // Now we create the elements
+            std::vector<Metadata*> debug_struct_members;
+            DirectTypeAST* s8type = getBuiltInType(TK_S8);
+            if (s8type->debug_type == nullptr) generateCode(s8type);
+            debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "data", nullptr, 0, 64, 0, 0,
+                DINode::FlagZero, DBuilder->createPointerType(s8type->debug_type, 64)));
+            DirectTypeAST* s64type = getBuiltInType(TK_S64);
+            if (s64type->debug_type == nullptr) generateCode(s64type);
+            debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "count", nullptr, 0, 64, 0, 64,
+                DINode::FlagZero, s64type->debug_type));
+            // Create the array the way they like it, and replace the arrays           
+            DBuilder->replaceArrays(composite_type, DBuilder->getOrCreateArray(debug_struct_members));
+            dtype->debug_type = composite_type;
+
             break;
         }
         case BASIC_TYPE_VOID: {
             dtype->llvm_type = Type::getVoidTy(TheContext);
+            dtype->debug_type = DBuilder->createUnspecifiedType("void");
             return;
         }
         default:
@@ -989,7 +1112,10 @@ static void generateCode(BaseAST *ast)
             // shortcut pointers to structs
             if (stype->llvm_type) {
                 ptype->llvm_type = stype->llvm_type->getPointerTo();
+                ptype->debug_type = DBuilder->createPointerType(stype->debug_type, 64);
             } else {
+                // Should we ever get here? We need to know what type we point to here...
+                assert(!"We should not be here, the type should have been resolved!");
                 Type *tp = StructType::create(TheContext, stype->decl->varname);
                 stype->llvm_type = tp;
                 ptype->llvm_type = tp->getPointerTo();
@@ -998,6 +1124,8 @@ static void generateCode(BaseAST *ast)
             generateCode(dtype);
             assert(dtype->llvm_type != nullptr);
             ptype->llvm_type = getLlvmPointer(dtype);
+            // Musings, should there be a centralize unique pointer type for a given type?
+            ptype->debug_type = DBuilder->createPointerType(dtype->debug_type, 64);
         }
         break;
     }
@@ -1008,37 +1136,92 @@ static void generateCode(BaseAST *ast)
         assert(atype->array_of_type->llvm_type != nullptr);
         if (isStaticArray(atype)) {
             atype->llvm_type = ArrayType::get(atype->array_of_type->llvm_type, atype->num_elems);
+            SmallVector<Metadata*, 1> subrange;
+            subrange.push_back(
+                DBuilder->getOrCreateSubrange(0, atype->num_elems - 1));
+            atype->debug_type = DBuilder->createArrayType(atype->num_elems, 0, 
+                atype->array_of_type->debug_type, DBuilder->getOrCreateArray(subrange));
         } else {
             // common parts for sized and dynamic arrays
             std::vector<Type *> array_members;
+            u64 internal_struct_size = 128; // .data and count
             array_members.push_back(getLlvmPointer(atype->array_of_type)); // .data
             array_members.push_back(Type::getInt64Ty(TheContext)); // This is .count
             const char *llvm_name = "SizedArray";
             if (isDynamicArray(atype)) {
                 array_members.push_back(Type::getInt64Ty(TheContext)); // This is .reserved_size                
                 llvm_name = "DynamicArray";
+                internal_struct_size += 64;
             }
             atype->llvm_type = StructType::create(TheContext, array_members, llvm_name);
+
+            // Ok, this is rather complicated. For debug struct types in llvm, is needed to 
+            // first create the container object, but without members. 
+            auto* composite_type = DBuilder->createStructType(atype->scope->debug_scope, llvm_name,
+                getOrCreateDFile(atype), atype->line_num, internal_struct_size, 0, DINode::FlagZero, nullptr,
+                DINodeArray());
+            // Now we create the elements
+            SmallVector<Metadata*, 3> debug_struct_members;
+            debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "data", nullptr, 0, 64, 0, 0,
+                DINode::FlagZero, DBuilder->createPointerType(atype->array_of_type->debug_type, 64)));
+            DirectTypeAST* s64type = getBuiltInType(TK_S64);
+            if (s64type->debug_type == nullptr) generateCode(s64type);
+            debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "count", nullptr, 0, 64, 0, 64,
+                DINode::FlagZero, s64type->debug_type));
+            if (isDynamicArray(atype)) {
+                debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "reserved_size", nullptr, 
+                    0, 64, 0, 128, DINode::FlagZero, s64type->debug_type));
+            }
+            // Create the array the way they like it, and replace the arrays           
+            DBuilder->replaceArrays(composite_type, DBuilder->getOrCreateArray(debug_struct_members));
+            atype->debug_type = composite_type;
         }
         break;
     }
     case AST_STRUCT_TYPE: {
         auto stype = (StructTypeAST *)ast;
         std::vector<Type *> struct_members;
+
         if (stype->llvm_type) {
+            // how does this play with debug types?
             auto llvm_stype = static_cast<StructType *>(stype->llvm_type);
-            if (!llvm_stype->isOpaque()) break;
+            if (!llvm_stype->isOpaque()) {
+                assert(stype->debug_type);
+                break;
+            }
         }
+
+        // This poses a problem. In llvm, the correct way to get the size in bits is using the built
+        // llvm type with Layout, but since we generate llvm and debug types at the same time, if we
+        // had a struct with a pointer to itself, this would fail. We could assume we know the type size in bits
+        // to get past this, or do dual traversal, one for llvm and one for debug types
+        // For now, we use our size and no alignments
+        auto& Layout = TheModule->getDataLayout();
+        auto composite_type = DBuilder->createStructType(stype->scope->debug_scope, stype->decl->varname,
+            getOrCreateDFile(stype), stype->line_num, stype->size_in_bytes * 8,
+            0, DINode::FlagZero, nullptr, DINodeArray());
+        stype->debug_type = composite_type;
+
+        std::vector<Metadata*> debug_struct_members;
+        u64 offset = 0;
         for (auto decl : stype->struct_scope.decls) {
             generateCode(decl->specified_type);
             struct_members.push_back(decl->specified_type->llvm_type);
+            debug_struct_members.push_back(DBuilder->createMemberType(composite_type, decl->varname,
+                getOrCreateDFile(decl), decl->line_num, Layout.getTypeSizeInBits(decl->specified_type->llvm_type),
+                Layout.getABITypeAlign(decl->specified_type->llvm_type).value(), offset,
+                DINode::FlagZero, decl->specified_type->debug_type));
+            offset += Layout.getTypeSizeInBits(decl->specified_type->llvm_type);
         }
         if (stype->llvm_type) {
             auto llvm_stype = static_cast<StructType *>(stype->llvm_type);
             llvm_stype->setBody(struct_members);
+            
         } else {
             stype->llvm_type = StructType::create(TheContext, struct_members, stype->decl->varname);
         }
+
+        DBuilder->replaceArrays(composite_type, DBuilder->getOrCreateArray(debug_struct_members));
         break;
     }
     case AST_RUN_DIRECTIVE: {
@@ -1049,7 +1232,7 @@ static void generateCode(BaseAST *ast)
         auto lit = (LiteralAST *)run->new_ast;
 
         generateCode(lit);
-        run->codegen = lit->codegen;
+        run->codegen = lit->codegen;        
         break;
     }
     case AST_CAST: {
@@ -1140,7 +1323,7 @@ static void generateCode(BaseAST *ast)
             if (!decl_malloc->codegen) generateCode(decl_malloc);
             std::vector<Value *> ArgsV;
             ArgsV.push_back(ConstantInt::get(llvm_u64, ptype->points_to_type->size_in_bytes));
-            auto llvm_call = Builder.CreateCall(decl_malloc->codegen, ArgsV);
+            auto llvm_call = Builder.CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV);
             // And now we need a cast
             nast->codegen = Builder.CreatePointerCast(llvm_call, ptype->llvm_type);
         } else {
@@ -1154,7 +1337,7 @@ static void generateCode(BaseAST *ast)
             if (!decl_malloc->codegen) generateCode(decl_malloc);
             std::vector<Value *> ArgsV;
             ArgsV.push_back(ConstantInt::get(llvm_u64, atype->size_in_bytes));
-            auto llvm_call = Builder.CreateCall(decl_malloc->codegen, ArgsV);
+            auto llvm_call = Builder.CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV);
             // And now we need a cast
             nast->codegen = Builder.CreatePointerCast(llvm_call, atype->array_of_type->llvm_type->getPointerTo());
         }
@@ -1352,6 +1535,7 @@ xsaveopt                      - Support xsaveopt instructions.
 xsaves                        - Support xsaves instructions.
 */
 
+
 void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, double &bingenTime, double &linkTime, 
 	bool option_llvm_print, bool option_quiet )
 {   
@@ -1359,8 +1543,11 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
 
     CPU_SAMPLE("LLVM compile");
 
+    fs::path p = root->filename;
+    auto fname = p.filename();
+
     timer.startTimer();
-    TheModule = new Module("jai", TheContext);
+    TheModule = new Module(fname.string(), TheContext);
     
     // Initialize the target registry etc.
     InitializeAllTargetInfos();
@@ -1371,6 +1558,10 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
 
     auto TargetTriple = sys::getDefaultTargetTriple();
     TheModule->setTargetTriple(TargetTriple);
+    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Warning, "CodeView", 1);
+    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Warning, "Debug Info Version", 3);
+    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Error, "wchar_size", 2);
+    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Max, "PIC Level", 2);
 
     std::string Error;
     auto Target = TargetRegistry::lookupTarget(TargetTriple, Error);
@@ -1389,8 +1580,14 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     llvm_u64 = Type::getInt64Ty(TheContext);
 
     DBuilder = new DIBuilder(*TheModule);
+
+    DIFile* root_file = getOrCreateDFile(root);
+
     // the 1 here is just a hack, we have to define some language
-    DICompileUnit *TheCU = DBuilder->createCompileUnit(1, DBuilder->createFile(obj_file.getFilename(), "."), "C2 compiler", 0, "", 0);
+    RootCU = DBuilder->createCompileUnit(30, root_file, "RAD compiler", 0, "", 0);
+    root->scope->debug_scope = RootCU;
+//    printf("Creating DebugLexical / RootCU %p \n", RootCU);
+
     // look for the malloc and free calls (which new depends on)
     for (auto decl : root->global_scope.decls) {
         if (!strcmp(decl->varname, "malloc")) {
@@ -1405,11 +1602,6 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
 
     codegenTime = timer.stopTimer();
 
-#if 0
-    TheModule->print(outs(), nullptr);
-    outs().flush();
-#endif
-
     timer.startTimer();
 
     {
@@ -1423,7 +1615,7 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
         }
 
         legacy::PassManager pass;
-        auto FileType = TargetMachine::CGFT_ObjectFile;
+        auto FileType = llvm::CGFT_ObjectFile;
 
         if (TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
             errs() << "TheTargetMachine can't emit a file of this type";
@@ -1432,6 +1624,11 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
         }
 
         DBuilder->finalize();
+
+#if 1
+        TheModule->print(outs(), nullptr);
+        outs().flush();
+#endif
 
         pass.run(*TheModule);
 
@@ -1448,7 +1645,10 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     {
         CPU_SAMPLE("LLVM external link");
         timer.startTimer();
-        link_object(obj_file, root->imports);
+        int retcode = link_object(obj_file, root->imports);
+        if (retcode != 0) {
+            printf("Error, compilation failed!!!\n\n");
+        }
         linkTime = timer.stopTimer();
     }
 

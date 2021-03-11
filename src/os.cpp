@@ -312,7 +312,7 @@ int compile_c_into_binary(FileObject &filename, ImportsHash &imports)
     }
 
     if (!CreateProcessA(NULL, cmd_line, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-        printf("Process creation failed (%d)\n", GetLastError());
+        printf("Process creation [%s] failed (%d)\n", cmd_line, GetLastError());
         return -1;
     }
 

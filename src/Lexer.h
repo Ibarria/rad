@@ -18,8 +18,8 @@ class Lexer
     void getNextTokenInternal(Token &tok);
     bool parseStringToken(char *input, Token &tok);
     void parseNumber(Token &tok, char c);
-    PoolAllocator *pool;
-    TextType filename;
+    PoolAllocator *pool = nullptr;
+    TextType filename = nullptr;
 public:
 	Lexer();
 	~Lexer();

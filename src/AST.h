@@ -19,7 +19,7 @@ struct bytecode_function;
 struct interp_deps;
 struct BCI;
 
-namespace llvm { class Value; class Type; class DIType; class DISubprogram; }
+namespace llvm { class Value; class Type; class DIType; class DISubprogram; class DIScope; }
 
 #pragma pack(push, 4)
 
@@ -28,6 +28,7 @@ struct Scope {
     Array<VariableDeclarationAST *>decls;
     Array<TypeAST *>def_types;
     FunctionDefinitionAST *current_function = nullptr;
+    llvm::DIScope* debug_scope = nullptr;
 };
 
 enum BasicType {
@@ -76,8 +77,8 @@ struct BaseAST
     BaseAST() { ast_type = AST_UNKNOWN; }
     TextType filename = nullptr;
     Scope *scope = nullptr;
-    u32 line_num = 0;
-    u32 char_num = 0;
+    u32 line_num = 0;  // line number of the file where this element starts
+    u32 char_num = 0;  // column or character in the line where this element starts
 	u64 s = 0; // This is a unique ID for this AST element
 };
 
@@ -250,7 +251,7 @@ struct NullPtrTypeAST : TypeAST
 struct StructDefinitionAST : DefinitionAST 
 {
     StructDefinitionAST() { ast_type = AST_STRUCT_DEFINITION; needsSemiColon = false; }
-    StructTypeAST *struct_type;
+    StructTypeAST *struct_type = nullptr;
 };
 
 #define DECL_FLAG_IS_CONSTANT          0x01
