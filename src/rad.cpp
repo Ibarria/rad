@@ -26,6 +26,7 @@ bool option_llvm = true;
 bool option_llvm_print = false;
 bool option_c = false;
 bool option_quiet = false;
+bool option_show_help = false;
 
 #ifndef WIN32
 # define sprintf_s  sprintf
@@ -57,6 +58,7 @@ void usage()
     printf("\t-printIR: Print llvm IR, this requires the llvm backend\n");
     printf("\t-seq: Print sequence numbers\n");
 	printf("\t-quiet: do not print compiler statistics on the screen\n");
+    printf("\t-h, --help: Print this help\n");
 }
 
 void parseOptions(int argc, char **argv)
@@ -92,13 +94,15 @@ void parseOptions(int argc, char **argv)
             option_c = false;
             option_llvm = true;
             option_llvm_print = true;
-		} else if (!stricmp(argv[i], "-quiet")) {
-			option_quiet = true;
+        } else if (!stricmp(argv[i], "-quiet")) {
+            option_quiet = true;
+        } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            option_show_help = true;
 		} else {
             root_file = argv[i];
         }
     }
-    if (!root_file) {
+    if (!root_file || option_show_help) {
 		usage();
 		exit(0);
 	}

@@ -1641,7 +1641,8 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
 
         DBuilder->finalize();
 
-#if 1
+#if 0
+        // we can do this with the parameter to print llvm
         TheModule->print(outs(), nullptr);
         outs().flush();
 #endif

@@ -95,15 +95,12 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
     return exit_code;
 #elif defined(PLATFORM_LINUX)
     char cmd_line[512] = {};
-    char outfile[64];
-    strncpy(outfile, obj_file.getFilename(), sizeof(outfile));
-
-    char *ext = strrchr(outfile, '.');
-    *ext = 0;
+    FileObject outfile(obj_file.getName());
+    outfile.setExtension("");
 
     u32 chars_written = sprintf(cmd_line, 
         "clang %s -g -o %s -ldl -lstdc++",
-        obj_file.getFilename(), outfile);
+        obj_file.getFilename(), outfile.getFilename());
 
     auto it = imports.begin();
     char *line_ptr = cmd_line + chars_written;
