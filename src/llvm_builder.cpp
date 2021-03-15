@@ -30,12 +30,17 @@
 #include "Profiler.h"
 #include "os.h"
 
-#include <filesystem>
+#if PLATFORM_WINDOWS
+ #include <filesystem>
+ namespace fs = std::filesystem;
+#else
+ #include <experimental/filesystem>
+ namespace fs = std::experimental::filesystem;
+#endif
 
 // from Parser.cpp
 DirectTypeAST* getBuiltInType(TOKEN_TYPE tktype);
 
-namespace fs = std::filesystem;
 
 using namespace llvm;
 
