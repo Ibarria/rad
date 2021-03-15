@@ -30,7 +30,7 @@
 #include "Profiler.h"
 #include "os.h"
 
-#if PLATFORM_WINDOWS
+#ifdef PLATFORM_WINDOWS
  #include <filesystem>
  namespace fs = std::filesystem;
 #else
@@ -86,7 +86,11 @@ static void emitLocation(BaseAST* ast)
         auto* stmt = (StatementBlockAST*)ast;
         dscope = stmt->block_scope.debug_scope;
     }
-    Builder.SetCurrentDebugLocation(DebugLoc::get(ast->line_num, 0, dscope));
+    unsigned int col = 0;
+#ifdef PLATFORM_LINUX
+    col = ast->char_num;
+#endif    
+    Builder.SetCurrentDebugLocation(DebugLoc::get(ast->line_num, col, dscope));
 }
 
 static DIFile* getOrCreateDFile(BaseAST* ast)
@@ -1563,9 +1567,16 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
 
     auto TargetTriple = sys::getDefaultTargetTriple();
     TheModule->setTargetTriple(TargetTriple);
+    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Max, "Dwarf Version", 4);
     TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Warning, "CodeView", 1);
     TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Warning, "Debug Info Version", 3);
-    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Error, "wchar_size", 2);
+    unsigned int wchar_size = 0;
+#ifdef PLATFORM_WINDOWS
+    wchar_size = 2;
+#else // PLATFORM_LINUX
+    wchar_size = 4;
+#endif                
+    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Error, "wchar_size", wchar_size);
     TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Max, "PIC Level", 2);
 
     std::string Error;
