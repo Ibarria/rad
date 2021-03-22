@@ -7,6 +7,7 @@ const int path_separator = '\\';
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 const int path_separator = '/';
 #endif
 
@@ -33,10 +34,15 @@ void FileObject::setFile(const char * file)
 {
 #if defined(WIN32)
     auto res = GetFullPathNameA(file, sizeof(full_path), full_path, nullptr);
+    if (res < 1) {
+        strncpy(full_path, file, sizeof(full_path));
+    }
 #else 
-    auto res = (realpath(file, full_path) == full_path);
+    char *otherpath = realpath(file, full_path);
+    if (otherpath != full_path) {
+        strncpy(full_path, file, sizeof(full_path));
+    }
 #endif
-    if (res < 1) assert(!"Issue finding path");
 }
 
 char * FileObject::getFilename()
@@ -53,7 +59,7 @@ void FileObject::setExtension(const char * extension)
 {
     char *p = full_path + strlen(full_path);
     while ((*p != '.') && (p != full_path)) p--;
-    p++;
+    if (extension && *extension != 0) p++;
     while (*extension) {
         *p = *extension;
         p++; extension++;
