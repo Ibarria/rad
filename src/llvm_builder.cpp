@@ -45,7 +45,7 @@ DirectTypeAST* getBuiltInType(TOKEN_TYPE tktype);
 using namespace llvm;
 
 // function on llvm_backend.cpp
-int link_object(FileObject &obj_file, ImportsHash &imports);
+int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_name);
 
 // These should be wrapped in some kinda class... some day
 // Will be needed for multithreading
@@ -1546,7 +1546,7 @@ xsaves                        - Support xsaves instructions.
 
 
 void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, double &bingenTime, double &linkTime, 
-	bool option_llvm_print, bool option_quiet )
+	bool option_llvm_print, bool option_quiet, const char* output_name)
 {   
     Timer timer;
 
@@ -1662,9 +1662,11 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     {
         CPU_SAMPLE("LLVM external link");
         timer.startTimer();
-        int retcode = link_object(obj_file, root->imports);
+        int retcode = link_object(obj_file, root->imports, output_name);
         if (retcode != 0) {
             printf("Error, compilation failed!!!\n\n");
+        } else {
+            fs::remove(obj_file.getFilename());
         }
         linkTime = timer.stopTimer();
     }

@@ -27,6 +27,7 @@ bool option_llvm_print = false;
 bool option_c = false;
 bool option_quiet = false;
 bool option_show_help = false;
+char* option_output_name = nullptr;
 
 #ifndef WIN32
 # define sprintf_s  sprintf
@@ -47,6 +48,7 @@ void usage()
 	printf("\nUsage:\n");
 	printf("rad [options] <source file>\n");
     printf("\tOptions:\n");
+    printf("\t-o <name> : name the final executable with that name\n");
     printf("\t-backend:[LLVM|C|NULL]\n");
     printf("\t\tLLVM: use the llvm backend[DEFAULT]\n");
     printf("\t\tC: use the C backend\n");
@@ -67,6 +69,12 @@ void parseOptions(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-tokens")) {
             option_printTokens = true;
+        } else if (!strcmp(argv[i], "-o")) {
+            if (i + 1 >= argc) {
+                printf("Error, the '-o' option requires an argument\n");
+                exit(-1);
+            }
+            option_output_name = argv[++i];
         } else if (!strcmp(argv[i], "-ast2")) {
             option_printAST2 = true;
         } else if (!strcmp(argv[i], "-ast")) {
@@ -192,7 +200,7 @@ int main(int argc, char **argv)
     if (option_llvm) {
         output_file.setExtension("o");
         llvm_compile(parsedFile, output_file, codegenTime, binaryGenTime, linkTime, 
-			option_llvm_print, option_quiet);
+			option_llvm_print, option_quiet, option_output_name);
     } else if (option_c) {
         timer.startTimer();
 

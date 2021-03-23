@@ -39,13 +39,14 @@ void free_resources(Find_Result* result);
 
 
 
-int link_object(FileObject &obj_file, ImportsHash &imports)
+int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_name)
 {
 #if defined(PLATFORM_WINDOWS)
     STARTUPINFO si;
     PROCESS_INFORMATION pi;
     static const int CMD_SIZE = 4096;
     wchar_t cmd_line[CMD_SIZE] = {};
+    wchar_t out_cmd[512] = {};
 
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
@@ -56,14 +57,18 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
     //printf("Debug current directory: %s\n", cmd_line);
     //cmd_line[0] = 0;
 
+    if (output_name) {
+        swprintf_s(out_cmd, sizeof(out_cmd) / sizeof(out_cmd[0]), L"/OUT:%hs", output_name);
+    }
+
     // We need msvcrt here, otherwise we have to specify the /ENTRY:<entrypoint> and
     // the program takes a very long time to exit. We would have to build our own global
     // constructors, destructors and call ExitProcess at the end. Basically implementing a basic CRT
     u32 chars_written = swprintf_s(cmd_line, CMD_SIZE,
         L"\"%s\\link.exe\" /nologo /DEBUG /INCREMENTAL:NO /subsystem:CONSOLE /NODEFAULTLIB "
-        L"/LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" %hs kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", 
+        L"/LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" %s %hs kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", 
         vspath.vs_exe_path, vspath.vs_library_path, vspath.windows_sdk_root, vspath.windows_sdk_ucrt_library_path, vspath.windows_sdk_um_library_path,
-        obj_file.getFilename());
+        out_cmd, obj_file.getFilename());
 
     auto it = imports.begin();
     wchar_t *line_ptr = cmd_line + chars_written;
@@ -75,7 +80,7 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
         it = imports.next(it);
     }
 
-    //printf("Debug command line: %s\n", cmd_line);
+    printf("Debug command line: %S\n", cmd_line);
 
     if (!CreateProcessW(NULL, cmd_line, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
         printf("Process creation [%ls] failed (%d)\n", cmd_line, GetLastError());
@@ -95,8 +100,12 @@ int link_object(FileObject &obj_file, ImportsHash &imports)
     return exit_code;
 #elif defined(PLATFORM_LINUX)
     char cmd_line[512] = {};
-    FileObject outfile(obj_file.getName());
-    outfile.setExtension("");
+    FileObject outfile; 
+    if (output_name) outfile.setFile(output_name);
+    else {
+        outfile.setFile(obj_file.getName());
+        outfile.setExtension("");
+    }
 
     u32 chars_written = sprintf(cmd_line, 
         "clang %s -g -o %s -ldl -lstdc++",
