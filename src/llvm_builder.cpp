@@ -1135,9 +1135,7 @@ static void generateCode(BaseAST *ast)
         }
         case BASIC_TYPE_VOID: {
             dtype->llvm_type = Type::getVoidTy(TheContext);
-            if (DBuilder) {
-                dtype->debug_type = DBuilder->createUnspecifiedType("void");
-            }
+            // void for debug types can be just nullptr (for return functions)
             return;
         }
         default:
