@@ -11,6 +11,7 @@
 #include <dlfcn.h>
 #include <stdarg.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 #include <memory>
 #define DLLEXPORT 
 #define vprintf_s vprintf
@@ -130,11 +131,11 @@ extern "C" BOOL WINAPI DllMain(
 #endif 
 extern "C" DLLEXPORT void end()
 {
+    // TODO: Extend with an error code
 #if defined(_WIN32)
-    // print("Calling exit process now\n", 10);
     ExitProcess(0);
 #else
-	_exit(0);
+	syscall(SYS_exit, 0);
 #endif	
 }
 
@@ -144,6 +145,6 @@ extern "C" DLLEXPORT void __rad_abort()
     __debugbreak();
     end();
 #else
-    abort();
+    end();
 #endif  
 }

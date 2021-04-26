@@ -17,4 +17,12 @@ main :: ()
 	// declare the variable, but for some reason, the function call is issued
 	// after the variable declaration section (llvm allows stores in there, and that creates a backwards cycle)
 	x1 := add (2, 1);
+
+
+    // This fails because the 5 is interpreted as a u64, and then there are incompatible types
+    // doing an addition
+	i : s64;
+	j : s64 = 6;
+	i = 5 + j;
 }
+

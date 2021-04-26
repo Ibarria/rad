@@ -65,8 +65,9 @@ int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_n
     // the program takes a very long time to exit. We would have to build our own global
     // constructors, destructors and call ExitProcess at the end. Basically implementing a basic CRT
     u32 chars_written = swprintf_s(cmd_line, CMD_SIZE,
-        L"\"%s\\link.exe\" /nologo %hs /INCREMENTAL:NO /subsystem:CONSOLE /NODEFAULTLIB "
-        L"/LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" %s %hs kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib", 
+        L"\"%s\\link.exe\" /nologo %hs /INCREMENTAL:NO /subsystem:CONSOLE /NODEFAULTLIB /ENTRY:_start "
+        L"/LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" %s %hs kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib"
+        L" modules\\start_win.obj", 
         vspath.vs_exe_path, option_debug_info ? "/DEBUG" : "", vspath.vs_library_path, vspath.windows_sdk_root, vspath.windows_sdk_ucrt_library_path, vspath.windows_sdk_um_library_path,
         out_cmd, obj_file.getFilename());
 
