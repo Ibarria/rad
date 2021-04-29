@@ -20,6 +20,10 @@ FileObject::~FileObject()
 {
 }
 
+FileObject::FileObject()
+{
+}
+
 FileObject::FileObject(const char * file)
 {
     setFile(file);

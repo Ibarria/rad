@@ -109,8 +109,8 @@ int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_n
     }
 
     u32 chars_written = sprintf(cmd_line, 
-        "clang %s %s -o %s -ldl -lstdc++",
-        obj_file.getFilename(), output_debug_info ? "-g" : "", outfile.getFilename());
+        "clang %s %s -o %s -ldl -lstdc++ -nodefaultlibs",
+        obj_file.getFilename(), option_debug_info ? "-g" : "", outfile.getFilename());
 
     auto it = imports.begin();
     char *line_ptr = cmd_line + chars_written;
