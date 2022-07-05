@@ -19,7 +19,7 @@ struct bytecode_function;
 struct interp_deps;
 struct BCI;
 
-namespace llvm { class Value; class Type; class DIType; class DISubprogram; class DIScope; }
+namespace llvm { class Value; class Type; class DIType; class DISubprogram; class DIScope; class BasicBlock; }
 
 #pragma pack(push, 4)
 
@@ -167,6 +167,8 @@ struct FunctionDefinitionAST : DefinitionAST
     VariableDeclarationAST *var_decl = nullptr; // so that we can find the name of the function
     bytecode_function *bc_function = nullptr;
     llvm::DISubprogram *llvm_sp = nullptr;
+    llvm::Value *llret_alloc = nullptr; // stores the return value mem location on llvm
+    llvm::BasicBlock* llret_block = nullptr; // block where we do the return
     u32 size_in_bytes = 8;
     bool being_generated = false;
 };

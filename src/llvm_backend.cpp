@@ -81,7 +81,11 @@ int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_n
         it = imports.next(it);
     }
 
-    printf("Debug command line: %S\n", cmd_line);
+    // TODO: Always include basic. It would be better if we checked if basic was there already or not
+    chars_written = swprintf(line_ptr, CMD_SIZE - chars_written, L" modules\\Basic.lib");
+    line_ptr = line_ptr + chars_written;
+
+    // printf("Debug command line: %S\n", cmd_line);
 
     if (!CreateProcessW(NULL, cmd_line, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
         printf("Process creation [%ls] failed (%d)\n", cmd_line, GetLastError());

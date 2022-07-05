@@ -21,13 +21,13 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -73,13 +73,12 @@
       <DiagnosticsFormat>Caret</DiagnosticsFormat>
       <BufferSecurityCheck>
       </BufferSecurityCheck>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>kernel32.lib;user32.lib;libdyncall_s.lib;libdynload_s.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;LLVMXRay.lib;LLVMWindowsManifest.lib;LLVMTestingSupport.lib;LLVMTableGen.lib;LLVMSymbolize.lib;LLVMDebugInfoPDB.lib;LLVMOrcJIT.lib;LLVMOrcError.lib;LLVMJITLink.lib;LLVMObjectYAML.lib;LLVMMIRParser.lib;LLVMMCA.lib;LLVMLTO.lib;LLVMPasses.lib;LLVMCoroutines.lib;LLVMObjCARCOpts.lib;LLVMipo.lib;LLVMInstrumentation.lib;LLVMVectorize.lib;LLVMLinker.lib;LLVMIRReader.lib;LLVMAsmParser.lib;LLVMFrontendOpenMP.lib;LLVMExtensions.lib;LLVMLineEditor.lib;LLVMLibDriver.lib;LLVMInterpreter.lib;gtest_main.lib;gtest.lib;LLVMFuzzMutate.lib;LLVMMCJIT.lib;LLVMExecutionEngine.lib;LLVMRuntimeDyld.lib;LLVMDWARFLinker.lib;LLVMDlltoolDriver.lib;LLVMOption.lib;LLVMDebugInfoGSYM.lib;LLVMCoverage.lib;LLVMX86Disassembler.lib;LLVMX86AsmParser.lib;LLVMX86CodeGen.lib;LLVMCFGuard.lib;LLVMGlobalISel.lib;LLVMSelectionDAG.lib;LLVMAsmPrinter.lib;LLVMDebugInfoDWARF.lib;LLVMCodeGen.lib;LLVMTarget.lib;LLVMScalarOpts.lib;LLVMInstCombine.lib;LLVMAggressiveInstCombine.lib;LLVMTransformUtils.lib;LLVMBitWriter.lib;LLVMAnalysis.lib;LLVMProfileData.lib;LLVMObject.lib;LLVMTextAPI.lib;LLVMMCParser.lib;LLVMBitReader.lib;LLVMCore.lib;LLVMRemarks.lib;LLVMBitstreamReader.lib;LLVMX86Desc.lib;LLVMMCDisassembler.lib;LLVMMC.lib;LLVMDebugInfoCodeView.lib;LLVMDebugInfoMSF.lib;LLVMBinaryFormat.lib;LLVMX86Info.lib;LLVMSupport.lib;LLVMDemangle.lib
-;LTO.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;libdyncall_s.lib;libdynload_s.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;LTO.lib;LLVMWindowsManifest.lib;LLVMXRay.lib;LLVMLibDriver.lib;LLVMDlltoolDriver.lib;LLVMCoverage.lib;LLVMLineEditor.lib;LLVMX86TargetMCA.lib;LLVMX86Disassembler.lib;LLVMX86AsmParser.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Info.lib;LLVMOrcJIT.lib;LLVMMCJIT.lib;LLVMJITLink.lib;LLVMInterpreter.lib;LLVMExecutionEngine.lib;LLVMRuntimeDyld.lib;LLVMOrcTargetProcess.lib;LLVMOrcShared.lib;LLVMDWP.lib;LLVMSymbolize.lib;LLVMDebugInfoPDB.lib;LLVMDebugInfoGSYM.lib;LLVMOption.lib;LLVMObjectYAML.lib;LLVMMCA.lib;LLVMMCDisassembler.lib;LLVMLTO.lib;LLVMPasses.lib;LLVMCFGuard.lib;LLVMCoroutines.lib;LLVMObjCARCOpts.lib;LLVMipo.lib;LLVMVectorize.lib;LLVMLinker.lib;LLVMInstrumentation.lib;LLVMFrontendOpenMP.lib;LLVMFrontendOpenACC.lib;LLVMExtensions.lib;LLVMDWARFLinker.lib;LLVMGlobalISel.lib;LLVMMIRParser.lib;LLVMAsmPrinter.lib;LLVMDebugInfoMSF.lib;LLVMSelectionDAG.lib;LLVMCodeGen.lib;LLVMIRReader.lib;LLVMAsmParser.lib;LLVMInterfaceStub.lib;LLVMFileCheck.lib;LLVMFuzzMutate.lib;LLVMTarget.lib;LLVMScalarOpts.lib;LLVMInstCombine.lib;LLVMAggressiveInstCombine.lib;LLVMTransformUtils.lib;LLVMBitWriter.lib;LLVMAnalysis.lib;LLVMProfileData.lib;LLVMDebugInfoDWARF.lib;LLVMObject.lib;LLVMTextAPI.lib;LLVMMCParser.lib;LLVMMC.lib;LLVMDebugInfoCodeView.lib;LLVMBitReader.lib;LLVMCore.lib;LLVMRemarks.lib;LLVMBitstreamReader.lib;LLVMBinaryFormat.lib;LLVMTableGen.lib;LLVMSupport.lib;LLVMDemangle.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -180,6 +179,14 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />
+    <None Include="sanity\arrays.rad" />
+    <None Include="sanity\factorial.rad" />
+    <None Include="sanity\for_test.rad" />
+    <None Include="sanity\pointers.rad" />
+    <None Include="sanity\pointer_test.rad" />
+    <None Include="sanity\run_test.rad" />
+    <None Include="sanity\struct_test.rad" />
+    <None Include="sanity\typecheck_test.rad" />
     <None Include="tests\entity.rad" />
     <None Include="tests\first.rad" />
     <None Include="tests\language.rad" />

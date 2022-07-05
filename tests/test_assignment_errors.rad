@@ -1,5 +1,5 @@
 
-#import "modules/basic.jai"
+#import "modules/basic.rad"
 
 
 main :: ()

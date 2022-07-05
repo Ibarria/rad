@@ -26,6 +26,6 @@ main::()
 
 	u = factorial(10);
 
-	print("Factorial of 10 is %d\n", u);
+	print("Factorial of 10 is %zu\n", u);
 	
 }

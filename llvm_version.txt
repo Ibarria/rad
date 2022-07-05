@@ -17,8 +17,15 @@ Last Changed Date: 2018-05-21 05:43:54 -0700 (Mon, 21 May 2018)
 * Changed to using git, and using tag for 8.0.0
 * 03/06/2021 : updated to 11.1.0
 
+1) Clone llvm
+	git clone https://github.com/llvm/llvm-project.git llvm
+
+2) Checkout tag
+	git checkout llvmorg-14.0.6
+
+
 LLVM Build command (for Mac): cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="X86" ../llvm
-LLVM Build command (for Windows) cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="lld;clang;lldb;libcxx;clang-tools-extra;libcxxabi" -G "Visual Studio 16 2019" -A x64 -Thost=x64 -DLLVM_TARGETS_TO_BUILD="X86" -DLLVM_USE_CRT_DEBUG=MTd -DLLVM_USE_CRT_RELEASE=MT ..\llvm
+LLVM Build command (for Windows) cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="lld;clang;lldb;libcxx;clang-tools-extra" -G "Visual Studio 17 2022" -A x64 -Thost=x64 -DLLVM_TARGETS_TO_BUILD="X86" -DLLVM_USE_CRT_DEBUG=MTd -DLLVM_USE_CRT_RELEASE=MT ..\llvm
 LLVM Build command (for Linux)  cmake -DCMAKE_BUILD_TYPE=Relwithdebinfo -DLLVM_ENABLE_PROJECTS="lld;clang;lldb;libcxx;clang-tools-extra;libcxxabi" -DLLVM_TARGETS_TO_BUILD="X86" -G "Ninja" ../llvm-src/llvm
 
 When updating llvm, is possible the list of libraries has changed. Find `llvm-config` (in the bin folder of llvm):

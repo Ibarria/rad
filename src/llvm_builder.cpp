@@ -4,6 +4,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -16,7 +17,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/TargetRegistry.h"
+#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
@@ -92,7 +93,7 @@ static void emitLocation(BaseAST* ast)
 #ifdef PLATFORM_LINUX
     col = ast->char_num;
 #endif    
-    Builder.SetCurrentDebugLocation(DebugLoc::get(ast->line_num, col, dscope));
+    Builder.SetCurrentDebugLocation(llvm::DILocation::get(TheContext, ast->line_num, col, dscope));
 }
 
 static DIFile* getOrCreateDFile(BaseAST* ast)
@@ -229,9 +230,41 @@ static void allocateVariable(VariableDeclarationAST *decl)
             auto* dlv = DBuilder->createAutoVariable(decl->scope->debug_scope, decl->varname,
                 getOrCreateDFile(decl), decl->line_num, decl->specified_type->debug_type);
             DBuilder->insertDeclare(decl->codegen, dlv, DBuilder->createExpression(),
-                DebugLoc::get(decl->line_num, decl->char_num, decl->scope->debug_scope),
+                llvm::DILocation::get(TheContext, decl->line_num, decl->char_num, decl->scope->debug_scope),
                 Builder.GetInsertBlock());
         }
+    }
+}
+
+static llvm::Type* getIdentifierType(IdentifierAST* id) 
+{
+    if (id->next != nullptr) {
+        // this is the case of an ARRAY or STRUCT access, we need to return the type inside
+        BaseAST* loop_ast = id->next;
+        llvm::Type* rType = nullptr;
+        while (loop_ast != nullptr) {
+            switch (loop_ast->ast_type) {
+                case AST_ARRAY_ACCESS: {
+                    auto loop_aa = (ArrayAccessAST*)loop_ast;
+                    ArrayTypeAST* atype = (ArrayTypeAST*)getDefinedType(loop_aa->prev);
+                    assert(atype->ast_type == AST_ARRAY_TYPE);
+                    rType = loop_aa->access_type->llvm_type;
+                    loop_ast = loop_aa->next;
+                    break;
+                }
+                case AST_STRUCT_ACCESS: {
+                    auto loop_sac = (StructAccessAST*)loop_ast;
+                    rType = loop_sac->decl->specified_type->llvm_type;
+                    loop_ast = loop_sac->next;
+                    break;
+                }
+                default:
+                    assert(!"We should never get here!");
+            }
+        }
+        return rType;
+    } else {
+        return id->decl->specified_type->llvm_type;
     }
 }
 
@@ -244,13 +277,14 @@ static Value *generateIdentifierCode(IdentifierAST *id)
         BaseAST *loop_ast = id->next;
         Value *variable = decl->codegen;
         Value *val = ConstantInt::get(llvm_u32, 0);
+        llvm::Type* ltype = decl->specified_type->llvm_type;
         idx.push_back(val);
 
         if (isTypePointer(id->decl->specified_type)) {
             // if our AST says we have a pointer, in llvm we have a pointer to pointer.
             // before we can compute anything, we need to dereference the pointer
-            Value *gep = Builder.CreateGEP(variable, idx);
-            Value *deref_ptr = Builder.CreateLoad(gep);
+            Value *gep = Builder.CreateGEP(decl->specified_type->llvm_type, variable, idx);
+            Value *deref_ptr = Builder.CreateLoad(decl->specified_type->llvm_type, gep);
             variable = deref_ptr;
             // We do not clear indices here, as indices should just have a single deref
             // idx.clear();
@@ -268,9 +302,10 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                         // and then compute the GEP. Thus, one more level of indirection
                         idx.push_back(ConstantInt::get(Type::getInt32Ty(TheContext), 0));
                         // In this situation, llvm asks we load the pointer
-                        Value *gep = Builder.CreateGEP(variable, idx);
-                        Value *array_pointer = Builder.CreateLoad(gep);
+                        Value *gep = Builder.CreateGEP(decl->specified_type->llvm_type, variable, idx);
+                        Value *array_pointer = Builder.CreateLoad(getLlvmPointer(loop_aa->access_type), gep);
                         variable = array_pointer;
+                        ltype = loop_aa->access_type->llvm_type;
                         idx.clear();
                     }
                     generateCode(loop_aa->array_exp);
@@ -298,10 +333,14 @@ static Value *generateIdentifierCode(IdentifierAST *id)
         }
         printf("\ndeclaration: ");
         variable->print(outs(), true);
-
+        printf("\ndecl: ");
+        id->decl->specified_type->llvm_type->print(outs(), true);
+        printf("\nltype: ");
+        ltype->print(outs(), true);
+        printf("\n");
 #endif 
         Value *gep = Builder.CreateGEP(
-            // decl->specified_type->llvm_type, 
+            ltype, 
             variable, idx);
         return gep;
     } else {
@@ -340,7 +379,7 @@ static Value *computeArrayDataPtr(IdentifierAST * array)
         // If array is a simple identifier, it is a pointer in llvm that needs an extra index for GEP
         if (array->next == nullptr) idx.push_back(llvm_zero);
         idx.push_back(llvm_zero);
-        Value *gep = Builder.CreateGEP(array_val, idx);
+        Value *gep = Builder.CreateGEP(arType->array_of_type->llvm_type, array_val, idx);
         return gep;
     }
 }
@@ -363,7 +402,7 @@ static Value *computeArrayCount(IdentifierAST * array)
     if (array->next == nullptr) idx.push_back(llvm_zero);
     Value *llvm_one = ConstantInt::get(llvm_u32, 1);
     idx.push_back(llvm_one);
-    Value *gep = Builder.CreateGEP(array_val, idx);
+    Value *gep = Builder.CreateGEP(arType->array_of_type->llvm_type, array_val, idx);
     return gep;
 }
 
@@ -406,6 +445,7 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
 
         Function *old_func = llvm_function;
         llvm_function = llvm_func;
+        func_decl->llret_block = BasicBlock::Create(TheContext, "retblock");
 
         if (DBuilder) {
             DISubroutineType* llvm_type = (DISubroutineType*)decl->specified_type->debug_type;
@@ -420,15 +460,40 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
             //        printf("Creating DebugLexical block %p from parent scope %p, For function %s scope %d:%d\n",
             //            dsp, decl->scope->debug_scope, decl->varname, decl->line_num, decl->char_num);
         }
-        
+
+        if (!isVoidType(ft->return_type)) {
+            // We need to declare a local variable of the return type
+            generateCode(ft->return_type);
+            Value* arraySize = nullptr;
+            auto retalloc = Builder.CreateAlloca(ft->return_type->llvm_type, arraySize, "retval");
+            func_decl->llret_alloc = retalloc;
+
+            if (DBuilder) {
+                // The last true parameter indicates if this is a static (local to unit or not)
+                auto* dlv = DBuilder->createAutoVariable(decl->scope->debug_scope, "retval",
+                    getOrCreateDFile(decl), decl->line_num, ft->return_type->debug_type);
+                DBuilder->insertDeclare(retalloc, dlv, DBuilder->createExpression(),
+                    llvm::DILocation::get(TheContext, decl->line_num, decl->char_num, decl->scope->debug_scope),
+                    Builder.GetInsertBlock());
+            }
+        }
+
         generateCode(func_decl->function_body);
 
+        Builder.CreateBr(func_decl->llret_block);
+        llvm_func->getBasicBlockList().push_back(func_decl->llret_block);
+        Builder.SetInsertPoint(func_decl->llret_block);
         if (isVoidType(ft->return_type)) {
             Builder.CreateRetVoid();
+        } else {
+            auto local_ret = Builder.CreateLoad(ft->return_type->llvm_type, func_decl->llret_alloc);
+            Builder.CreateRet(local_ret);
         }
 
         // Debugging
+        // printf("\n***************** FUNC %s ****************\n", decl->varname);
         // printFunction(llvm_func);
+        // printf("\n***************** FUNC ****************\n");
 
         verifyFunction(*llvm_func);
         llvm_function = old_func;
@@ -507,9 +572,12 @@ static void generateIfStatement(IfStatementAST *ifst)
 
     Function *lfunc = Builder.GetInsertBlock()->getParent();
 
-    BasicBlock *then_block = BasicBlock::Create(TheContext, "then", lfunc);
-    BasicBlock *else_block = BasicBlock::Create(TheContext, "else");
-    BasicBlock *merge_block = BasicBlock::Create(TheContext, "ifcont");
+    BasicBlock *then_block = BasicBlock::Create(TheContext, "if.then", lfunc);
+    BasicBlock *merge_block = BasicBlock::Create(TheContext, "if.end");
+    BasicBlock* else_block = merge_block;
+    if (ifst->else_branch) {
+        BasicBlock* else_block = BasicBlock::Create(TheContext, "if.else");
+    }
 
     Builder.CreateCondBr(cond, then_block, else_block);
 
@@ -521,12 +589,13 @@ static void generateIfStatement(IfStatementAST *ifst)
     Builder.CreateBr(merge_block);
     then_block = Builder.GetInsertBlock();
 
-    llvm_function->getBasicBlockList().push_back(else_block);
-    Builder.SetInsertPoint(else_block);
-    if (ifst->else_branch) generateCode(ifst->else_branch);
-
-    Builder.CreateBr(merge_block);
-    else_block = Builder.GetInsertBlock();
+    if (ifst->else_branch) {
+        llvm_function->getBasicBlockList().push_back(else_block);
+        Builder.SetInsertPoint(else_block);
+        generateCode(ifst->else_branch);
+        Builder.CreateBr(merge_block);
+        else_block = Builder.GetInsertBlock();
+    }
 
     llvm_function->getBasicBlockList().push_back(merge_block);
     Builder.SetInsertPoint(merge_block);
@@ -564,7 +633,7 @@ static void generateForStatement(ForStatementAST *forst)
         Builder.SetInsertPoint(for_entry);
 
         Value *array_count = computeArrayCount(forst->arr);
-        Value *it_index = Builder.CreateLoad(forst->it_index->decl->codegen, forst->it_index->name);
+        Value *it_index = Builder.CreateLoad(forst->it_index->decl->specified_type->llvm_type, forst->it_index->decl->codegen, forst->it_index->name);
         Value *for_check = Builder.CreateICmpUGT(it_index, array_count);
 
         Builder.CreateCondBr(for_check, for_after, for_block);
@@ -572,15 +641,17 @@ static void generateForStatement(ForStatementAST *forst)
 
         // load it with the correct value
         Value *array_ptr = computeArrayDataPtr(forst->arr);
+        auto arType = (ArrayTypeAST*)forst->arr->expr_type;
+
         std::vector<Value *> idx;
         Value *llvm_zero = ConstantInt::get(llvm_u64, 0);
         idx.push_back(llvm_zero);
         idx.push_back(it_index);
-        Value *it_ptr = Builder.CreateGEP(array_ptr, idx, forst->it->name);
+        Value *it_ptr = Builder.CreateGEP(arType->array_of_type->llvm_type, array_ptr, idx, forst->it->name);
         if (forst->is_it_ptr) {
             Builder.CreateStore(it_ptr, forst->it->decl->codegen);
         } else {
-            Value *it_val = Builder.CreateLoad(it_ptr);
+            Value *it_val = Builder.CreateLoad(forst->it->decl->specified_type->llvm_type, it_ptr);
             Builder.CreateStore(it_val, forst->it->decl->codegen);
         }
 
@@ -589,8 +660,8 @@ static void generateForStatement(ForStatementAST *forst)
 
         // Do the loop increment, and then inconditional jump
         Value *llvm_one = ConstantInt::get(llvm_u64, 1);
-        Value *it_index_val = Builder.CreateLoad(generateIdentifierCode(forst->it_index), forst->it_index->name);
-        Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one);
+        Value *it_index_val = Builder.CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
+        Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one, "inc");
         Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
 
         Builder.CreateBr(for_entry);
@@ -602,7 +673,7 @@ static void generateForStatement(ForStatementAST *forst)
         Builder.CreateBr(for_entry);
         Builder.SetInsertPoint(for_entry);
 
-        Value *it_val = Builder.CreateLoad(generateIdentifierCode(forst->it), forst->it->name);
+        Value *it_val = Builder.CreateLoad(getIdentifierType(forst->it), generateIdentifierCode(forst->it), forst->it->name);
         Value *for_check;
         assert(forst->end->expr_type->ast_type == AST_DIRECT_TYPE);
         auto dtype = (DirectTypeAST *)forst->end->expr_type;
@@ -618,13 +689,13 @@ static void generateForStatement(ForStatementAST *forst)
         generateCode(forst->loop_block);
 
         // increment the it, it_index. It could have changed
-        it_val = Builder.CreateLoad(generateIdentifierCode(forst->it), forst->it->name);
+        it_val = Builder.CreateLoad(getIdentifierType(forst->it), generateIdentifierCode(forst->it), forst->it->name);
         Value *llvm_one = ConstantInt::get(llvm_u64, 1);
-        Value *it_inc = Builder.CreateAdd(it_val, llvm_one);
+        Value *it_inc = Builder.CreateAdd(it_val, llvm_one, "inc");
         Builder.CreateStore(it_inc, forst->it->decl->codegen);
 
-        Value *it_index_val = Builder.CreateLoad(generateIdentifierCode(forst->it_index), forst->it_index->name);
-        Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one);
+        Value *it_index_val = Builder.CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
+        Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one, "inc");
         Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
 
         Builder.CreateBr(for_entry);
@@ -769,7 +840,7 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
         if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
             assert(!"Pointers and booleans cannot be multiplied!");
         } else if (isTypeInteger(binop->lhs->expr_type) || isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateMul(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = Builder.CreateMul(binop->lhs->codegen, binop->rhs->codegen, "mul");
         } else {
             assert(!"Type not supported for division!");
         }
@@ -779,9 +850,9 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
         if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
             assert(!"Pointers and booleans cannot be divided!");
         } else if (isTypeInteger(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateUDiv(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = Builder.CreateUDiv(binop->lhs->codegen, binop->rhs->codegen, "udiv");
         } else if (isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateFDiv(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = Builder.CreateFDiv(binop->lhs->codegen, binop->rhs->codegen, "fdiv");
         } else {
             assert(!"Type not supported for division!");
         }
@@ -792,11 +863,11 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
         break;
     }
     case TK_PLUS: {
-        binop->codegen = Builder.CreateAdd(binop->lhs->codegen, binop->rhs->codegen);
+        binop->codegen = Builder.CreateAdd(binop->lhs->codegen, binop->rhs->codegen, "add");
         break;
     }
     case TK_MINUS: {
-        binop->codegen = Builder.CreateSub(binop->lhs->codegen, binop->rhs->codegen);
+        binop->codegen = Builder.CreateSub(binop->lhs->codegen, binop->rhs->codegen, "sub");
         break;
     }
     default:
@@ -849,7 +920,7 @@ static void generateCode(BaseAST *ast)
             }
             // It is important that we set the debug location to that of this statement block (could be a function)
             // Otherwise, it would use the parent and that is not valid
-            Builder.SetCurrentDebugLocation(DebugLoc::get(stmt_block->line_num, 0, stmt_block->block_scope.debug_scope));
+            Builder.SetCurrentDebugLocation(llvm::DILocation::get(TheContext, stmt_block->line_num, 0, stmt_block->block_scope.debug_scope));
         }
 
         for (auto decl : stmt_block->block_scope.decls) {
@@ -876,10 +947,9 @@ static void generateCode(BaseAST *ast)
         if (ret_stmt->ret != nullptr) {
             generateCode(ret_stmt->ret);
             emitLocation(ret_stmt);
-            Builder.CreateRet(ret_stmt->ret->codegen);
-        } else {
-            Builder.CreateRetVoid();
-        }
+            Builder.CreateStore(ret_stmt->ret->codegen, ret_stmt->scope->current_function->llret_alloc);
+        } 
+        Builder.CreateBr(ret_stmt->scope->current_function->llret_block);
         break;
     }
     case AST_FUNCTION_DEFINITION: {
@@ -902,7 +972,7 @@ static void generateCode(BaseAST *ast)
     }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
-        id->codegen = Builder.CreateLoad(generateIdentifierCode(id), id->name);
+        id->codegen = Builder.CreateLoad(getIdentifierType(id), generateIdentifierCode(id), id->name);
         break;
     }
     case AST_LITERAL: {
@@ -920,12 +990,12 @@ static void generateCode(BaseAST *ast)
         switch (unop->op) {
         case TK_LSHIFT: {
             generateCode(unop->expr);
-            unop->codegen = Builder.CreateLoad(unop->expr->codegen);
+            unop->codegen = Builder.CreateLoad(unop->expr->expr_type->llvm_type, unop->expr->codegen);
             break;
         }
         case TK_BANG: {
             generateCode(unop->expr);
-            unop->codegen = Builder.CreateNot(unop->expr->codegen);
+            unop->codegen = Builder.CreateNot(unop->expr->codegen, "not");
             break;
         }
         case TK_STAR: {
@@ -1331,7 +1401,7 @@ static void generateCode(BaseAST *ast)
                     dstType->array_of_type->llvm_type->getPointerTo());
                 // And then do a store
                 Value *local_data = Builder.CreateGEP(
-                    // decl->specified_type->llvm_type, 
+                    cast->dstType->llvm_type,
                     local_array, idx);
                 Builder.CreateStore(array_data_ptr, local_data);
                 
@@ -1341,7 +1411,7 @@ static void generateCode(BaseAST *ast)
                 idx.push_back(val_zero);
                 idx.push_back(val_one);
                 Value *local_count = Builder.CreateGEP(
-                    // decl->specified_type->llvm_type, 
+                    cast->dstType->llvm_type,
                     local_array, idx);
                 Builder.CreateStore(count, local_count);
                 cast->codegen = local_array;
@@ -1374,7 +1444,7 @@ static void generateCode(BaseAST *ast)
             if (!decl_malloc->codegen) generateCode(decl_malloc);
             std::vector<Value *> ArgsV;
             ArgsV.push_back(ConstantInt::get(llvm_u64, ptype->points_to_type->size_in_bytes));
-            auto llvm_call = Builder.CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV);
+            auto llvm_call = Builder.CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV, "call");
             // And now we need a cast
             nast->codegen = Builder.CreatePointerCast(llvm_call, ptype->llvm_type);
         } else {
@@ -1388,7 +1458,7 @@ static void generateCode(BaseAST *ast)
             if (!decl_malloc->codegen) generateCode(decl_malloc);
             std::vector<Value *> ArgsV;
             ArgsV.push_back(ConstantInt::get(llvm_u64, atype->size_in_bytes));
-            auto llvm_call = Builder.CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV);
+            auto llvm_call = Builder.CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV, "call");
             // And now we need a cast
             nast->codegen = Builder.CreatePointerCast(llvm_call, atype->array_of_type->llvm_type->getPointerTo());
         }
@@ -1666,7 +1736,7 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
 
     {
         std::error_code EC;
-        raw_fd_ostream dest(obj_file.getFilename(), EC, sys::fs::F_None);
+        raw_fd_ostream dest(obj_file.getFilename(), EC);
 
         if (EC) {
             errs() << "Could not open file: " << EC.message();
@@ -1687,7 +1757,7 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
 
 #if 0
         // we can do this with the parameter to print llvm
-        TheModule->print(outs(), nullptr);
+        TheModule->print(outs(), nullptr, false, true);
         outs().flush();
 #endif
 
@@ -1716,7 +1786,7 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     }
 
     if (option_llvm_print) {
-        TheModule->print(outs(), nullptr);
+        TheModule->print(outs(), nullptr, false, true);
         outs().flush();
     }
 }

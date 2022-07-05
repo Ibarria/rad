@@ -82,6 +82,30 @@
     <None Include="tests\typecheck_test.rad">
       <Filter>Test Code</Filter>
     </None>
+    <None Include="sanity\arrays.rad">
+      <Filter>Sanity Tests</Filter>
+    </None>
+    <None Include="sanity\factorial.rad">
+      <Filter>Sanity Tests</Filter>
+    </None>
+    <None Include="sanity\for_test.rad">
+      <Filter>Sanity Tests</Filter>
+    </None>
+    <None Include="sanity\pointer_test.rad">
+      <Filter>Sanity Tests</Filter>
+    </None>
+    <None Include="sanity\pointers.rad">
+      <Filter>Sanity Tests</Filter>
+    </None>
+    <None Include="sanity\run_test.rad">
+      <Filter>Sanity Tests</Filter>
+    </None>
+    <None Include="sanity\struct_test.rad">
+      <Filter>Sanity Tests</Filter>
+    </None>
+    <None Include="sanity\typecheck_test.rad">
+      <Filter>Sanity Tests</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Grammar.txt" />
@@ -90,6 +114,9 @@
   <ItemGroup>
     <Filter Include="Test Code">
       <UniqueIdentifier>{2cd487a5-0651-4d4b-8bd4-2518f6b5ac75}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Sanity Tests">
+      <UniqueIdentifier>{764f11a1-19db-4afc-95b6-c75364341c67}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

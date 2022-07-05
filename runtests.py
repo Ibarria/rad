@@ -2,6 +2,7 @@
 
 import sys
 import os
+import platform
 import subprocess
 from colorama import init, Fore, Style 
   
@@ -67,7 +68,11 @@ if len(sys.argv) > 1:
   print("Running in", sys.argv[1], "mode")
   rundir = sys.argv[1]
 
-radexe = os.path.join(rundir, 'rad')
+compiler_bin = 'rad'
+if platform.system() == "Windows":
+    compiler_bin = 'rad.exe'
+
+radexe = os.path.join(rundir, compiler_bin)
 if not os.path.exists(radexe):
     print("FATAL, could not find compiler:", radexe)
     sys.exit(1)
