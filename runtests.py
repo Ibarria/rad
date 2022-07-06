@@ -99,7 +99,7 @@ for filename in os.listdir(testdir):
         continue
 
 print("\n", num_ok_tests, "tests have run successfully ", num_bad_tests, " have failed")
-print("Failed tests ", bad_tests)
+if num_bad_tests > 0: print("Failed tests ", bad_tests)
 
 #with open('pyout.txt', 'w') as file:
 #    subprocess.call(exe, stdout=file, stderr=subprocess.STDOUT, shell=True)

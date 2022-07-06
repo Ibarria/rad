@@ -20,7 +20,6 @@ Iterating Basic Array 6
 Iterating Basic Array 7
 Iterating Basic Array 8
 Iterating Basic Array 9
-Iterating Basic Array 10
 For value array iteration:
 Iterating Value Array 0
 Iterating Value Array 1
@@ -32,7 +31,6 @@ Iterating Value Array 6
 Iterating Value Array 7
 Iterating Value Array 8
 Iterating Value Array 9
-Iterating Value Array 10
 For value, index array iteration:
 Iterating Value, Index Array 0
 Iterating Value, Index Array 1
@@ -44,9 +42,7 @@ Iterating Value, Index Array 6
 Iterating Value, Index Array 7
 Iterating Value, Index Array 8
 Iterating Value, Index Array 9
-Iterating Value, Index Array 10
 For value pointer array iteration:
-Iterating Value pointer Array 523
 Iterating Value pointer Array 523
 Iterating Value pointer Array 523
 Iterating Value pointer Array 523
