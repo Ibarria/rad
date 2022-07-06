@@ -86,13 +86,13 @@ bad_tests = []
 
 for filename in os.listdir(testdir):
     if filename.endswith(".rad"): 
-        print(os.path.join(testdir, filename)),
+        print(os.path.join(testdir, filename), end = "")
         if not execute_test(radexe, golddir, testdir, filename) :
-            print(Fore.RED + "FAILED" + Style.RESET_ALL)
+            print(Fore.RED + " FAILED" + Style.RESET_ALL)
             num_bad_tests+=1
             bad_tests.append(filename)
         else:
-            print(Fore.GREEN + "OK" + Style.RESET_ALL)
+            print(Fore.GREEN + " OK" + Style.RESET_ALL)
             num_ok_tests+=1
         continue
     else:
@@ -100,6 +100,7 @@ for filename in os.listdir(testdir):
 
 print("\n", num_ok_tests, "tests have run successfully ", num_bad_tests, " have failed")
 if num_bad_tests > 0: print("Failed tests ", bad_tests)
+else: print(Fore.GREEN + " ALL TESTS PASSED" + Style.RESET_ALL)
 
 #with open('pyout.txt', 'w') as file:
 #    subprocess.call(exe, stdout=file, stderr=subprocess.STDOUT, shell=True)
