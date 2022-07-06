@@ -646,7 +646,7 @@ static void generateForStatement(ForStatementAST *forst)
 
         Value *array_count = computeArrayCount(forst->arr);
         Value *it_index1 = Builder.CreateLoad(forst->it_index->decl->specified_type->llvm_type, forst->it_index->decl->codegen, forst->it_index->name);
-        Value *for_check = Builder.CreateICmpUGT(it_index1, array_count);
+        Value *for_check = Builder.CreateICmpUGE(it_index1, array_count);
 
         Builder.CreateCondBr(for_check, for_after, for_block);
         Builder.SetInsertPoint(for_block);
@@ -1791,12 +1791,13 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
         CPU_SAMPLE("LLVM external link");
         timer.startTimer();
         int retcode = link_object(obj_file, root->imports, output_name, option_debug_info);
+        linkTime = timer.stopTimer();
         if (retcode != 0) {
             printf("Error, compilation failed!!!\n\n");
+            return;
         } else {
             fs::remove(obj_file.getFilename());
         }
-        linkTime = timer.stopTimer();
     }
 
     if (option_llvm_print) {
