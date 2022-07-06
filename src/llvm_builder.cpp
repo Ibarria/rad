@@ -276,9 +276,11 @@ static Value *generateIdentifierCode(IdentifierAST *id)
         auto decl = id->decl;
         BaseAST *loop_ast = id->next;
         Value *variable = decl->codegen;
+        TypeAST* currentType = decl->specified_type;
         Value *val = ConstantInt::get(llvm_u32, 0);
         llvm::Type* ltype = decl->specified_type->llvm_type;
         idx.push_back(val);
+        Value* gep = nullptr;
 
         if (isTypePointer(id->decl->specified_type)) {
             // if our AST says we have a pointer, in llvm we have a pointer to pointer.
@@ -286,6 +288,9 @@ static Value *generateIdentifierCode(IdentifierAST *id)
             Value *gep = Builder.CreateGEP(decl->specified_type->llvm_type, variable, idx);
             Value *deref_ptr = Builder.CreateLoad(decl->specified_type->llvm_type, gep);
             variable = deref_ptr;
+            PointerTypeAST* ptype = (PointerTypeAST*)id->decl->specified_type;
+            currentType = ptype->points_to_type;
+            generateCode(currentType);
             // We do not clear indices here, as indices should just have a single deref
             // idx.clear();
         }
@@ -302,7 +307,7 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                         // and then compute the GEP. Thus, one more level of indirection
                         idx.push_back(ConstantInt::get(Type::getInt32Ty(TheContext), 0));
                         // In this situation, llvm asks we load the pointer
-                        Value *gep = Builder.CreateGEP(decl->specified_type->llvm_type, variable, idx);
+                        Value *gep = Builder.CreateGEP(currentType->llvm_type, variable, idx);
                         Value *array_pointer = Builder.CreateLoad(getLlvmPointer(loop_aa->access_type), gep);
                         variable = array_pointer;
                         ltype = loop_aa->access_type->llvm_type;
@@ -316,6 +321,8 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                 case AST_STRUCT_ACCESS: {
                     auto loop_sac = (StructAccessAST *)loop_ast;
                     val = ConstantInt::get(llvm_u32, loop_sac->decl->llvm_index);
+                    ltype = currentType->llvm_type;
+                    currentType = loop_sac->decl->specified_type;
                     idx.push_back(val);
                     loop_ast = loop_sac->next;
                     break;
@@ -323,25 +330,30 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                 default:
                     assert(!"We should never get here!");
             }
-        }
 
 #if 0
-        printf("\nGetIdentifier code for %s on %d:%d", id->name, id->line_num, id->char_num);
-        printf("\nIndices: ");
-        for (auto v : idx) {
-            v->print(outs(), true);
-        }
-        printf("\ndeclaration: ");
-        variable->print(outs(), true);
-        printf("\ndecl: ");
-        id->decl->specified_type->llvm_type->print(outs(), true);
-        printf("\nltype: ");
-        ltype->print(outs(), true);
-        printf("\n");
+            printf("\nGetIdentifier code for %s on %d:%d", id->name, id->line_num, id->char_num);
+            printf("\nIndices: ");
+            for (auto v : idx) {
+                v->print(outs(), true);
+            }
+            printf("\ndeclaration: ");
+            variable->print(outs(), true);
+            printf("\ncurrentType: ");
+            currentType->llvm_type->print(outs(), true);
+            printf("\nltype: ");
+            ltype->print(outs(), true);
+            printf("\n");
 #endif 
-        Value *gep = Builder.CreateGEP(
-            ltype, 
-            variable, idx);
+
+            gep = Builder.CreateGEP(
+                ltype,
+                variable, idx);
+            idx.clear();
+            idx.push_back(ConstantInt::get(llvm_u32, 0));
+            variable = gep;
+        }
+
         return gep;
     } else {
         return id->decl->codegen;
@@ -576,7 +588,7 @@ static void generateIfStatement(IfStatementAST *ifst)
     BasicBlock *merge_block = BasicBlock::Create(TheContext, "if.end");
     BasicBlock* else_block = merge_block;
     if (ifst->else_branch) {
-        BasicBlock* else_block = BasicBlock::Create(TheContext, "if.else");
+        else_block = BasicBlock::Create(TheContext, "if.else");
     }
 
     Builder.CreateCondBr(cond, then_block, else_block);
@@ -633,8 +645,8 @@ static void generateForStatement(ForStatementAST *forst)
         Builder.SetInsertPoint(for_entry);
 
         Value *array_count = computeArrayCount(forst->arr);
-        Value *it_index = Builder.CreateLoad(forst->it_index->decl->specified_type->llvm_type, forst->it_index->decl->codegen, forst->it_index->name);
-        Value *for_check = Builder.CreateICmpUGT(it_index, array_count);
+        Value *it_index1 = Builder.CreateLoad(forst->it_index->decl->specified_type->llvm_type, forst->it_index->decl->codegen, forst->it_index->name);
+        Value *for_check = Builder.CreateICmpUGT(it_index1, array_count);
 
         Builder.CreateCondBr(for_check, for_after, for_block);
         Builder.SetInsertPoint(for_block);
@@ -644,10 +656,11 @@ static void generateForStatement(ForStatementAST *forst)
         auto arType = (ArrayTypeAST*)forst->arr->expr_type;
 
         std::vector<Value *> idx;
+        Value* it_index2 = Builder.CreateLoad(forst->it_index->decl->specified_type->llvm_type, forst->it_index->decl->codegen, forst->it_index->name);
         Value *llvm_zero = ConstantInt::get(llvm_u64, 0);
         idx.push_back(llvm_zero);
-        idx.push_back(it_index);
-        Value *it_ptr = Builder.CreateGEP(arType->array_of_type->llvm_type, array_ptr, idx, forst->it->name);
+        idx.push_back(it_index2);
+        Value *it_ptr = Builder.CreateGEP(arType->llvm_type, array_ptr, idx, forst->it->name);
         if (forst->is_it_ptr) {
             Builder.CreateStore(it_ptr, forst->it->decl->codegen);
         } else {
@@ -990,7 +1003,9 @@ static void generateCode(BaseAST *ast)
         switch (unop->op) {
         case TK_LSHIFT: {
             generateCode(unop->expr);
-            unop->codegen = Builder.CreateLoad(unop->expr->expr_type->llvm_type, unop->expr->codegen);
+            assert(unop->expr->expr_type->ast_type == AST_POINTER_TYPE);
+            PointerTypeAST* pt = (PointerTypeAST*)unop->expr->expr_type;
+            unop->codegen = Builder.CreateLoad(pt->points_to_type->llvm_type, unop->expr->codegen);
             break;
         }
         case TK_BANG: {
@@ -1227,8 +1242,7 @@ static void generateCode(BaseAST *ast)
                 ptype->llvm_type = stype->llvm_type->getPointerTo();
                 if (DBuilder) ptype->debug_type = DBuilder->createPointerType(stype->debug_type, 64);
             } else {
-                // Should we ever get here? We need to know what type we point to here...
-                assert(!"We should not be here, the type should have been resolved!");
+                // When a struct has a self reference pointer, we are in this case
                 Type *tp = StructType::create(TheContext, stype->decl->varname);
                 stype->llvm_type = tp;
                 ptype->llvm_type = tp->getPointerTo();

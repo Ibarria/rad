@@ -80,22 +80,23 @@ if not os.path.exists(radexe):
 testdir = 'sanity'
 golddir = 'golds'
 
-num_tests = 0
+num_ok_tests = 0
+num_bad_tests = 0;
 
 for filename in os.listdir(testdir):
     if filename.endswith(".rad"): 
         print(os.path.join(testdir, filename)),
         if not execute_test(radexe, golddir, testdir, filename) :
-            print("Failed, stopping...")
-            sys.exit(1)
+            print(Fore.RED + "FAILED" + Style.RESET_ALL)
+            num_bad_tests+=1
         else:
             print(Fore.GREEN + "OK" + Style.RESET_ALL)
-            num_tests+=1
+            num_ok_tests+=1
         continue
     else:
         continue
 
-print("\nAll ", num_tests, "tests have run successfully")
+print("\n", num_ok_tests, "tests have run successfully ", num_bad_tests, " have failed")
 
 #with open('pyout.txt', 'w') as file:
 #    subprocess.call(exe, stdout=file, stderr=subprocess.STDOUT, shell=True)
