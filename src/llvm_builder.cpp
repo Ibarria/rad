@@ -960,9 +960,9 @@ static void generateCode(BaseAST *ast)
         if (ret_stmt->ret != nullptr) {
             generateCode(ret_stmt->ret);
             emitLocation(ret_stmt);
-            Builder.CreateStore(ret_stmt->ret->codegen, ret_stmt->scope->current_function->llret_alloc);
+            Builder.CreateStore(ret_stmt->ret->codegen, findEnclosingFunction(ret_stmt)->llret_alloc);
         } 
-        Builder.CreateBr(ret_stmt->scope->current_function->llret_block);
+        Builder.CreateBr(findEnclosingFunction(ret_stmt)->llret_block);
         break;
     }
     case AST_FUNCTION_DEFINITION: {

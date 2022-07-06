@@ -630,5 +630,6 @@ inline TypeAST *getDefinedType(VarReferenceAST *ast)
 }
 
 const char *AstClassTypeToStr(AST_CLASS_TYPE atype);
+FunctionDefinitionAST* findEnclosingFunction(BaseAST* ast);
 
 // Update all AST_IDENTIFIER to be possible to have a next

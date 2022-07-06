@@ -867,9 +867,9 @@ TypeCheckError Interpreter::checkTypesAllowLiteralAndCast(ExpressionAST **expr, 
     return TCH_OK;
 }
 
-static FunctionDefinitionAST * findEnclosingFunction(StatementAST * stmt)
+FunctionDefinitionAST * findEnclosingFunction(BaseAST * ast)
 {
-    Scope *scope = stmt->scope;
+    Scope *scope = ast->scope;
     do {
         if (scope->current_function) return scope->current_function;
         scope = scope->parent;
