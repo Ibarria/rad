@@ -39,9 +39,14 @@ def execute_test( radexe, golddir, testdir, testname):
     
     if os.path.exists( goldcomp ) :
         if not compare_files('compileout.txt', goldcomp):
+            print("Failed ", testname, " because of compileout")
             return False
     # run the executable
-    runcmd = os.path.splitext(testname)[0] + ".exe"
+    runcmd = os.path.splitext(testname)[0]
+    if platform.system() == "Windows":
+        runcmd = runcmd + ".exe"
+    else:
+        runcmd = "./" + runcmd
     with open('runout.txt', 'w') as file:
         subprocess.call(runcmd, stdout=file, stderr=subprocess.STDOUT, shell=True)
     goldrun = os.path.join(golddir, nameonly + '.runtxt');
