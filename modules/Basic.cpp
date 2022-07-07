@@ -48,7 +48,7 @@ extern "C" DLLEXPORT void __rad_free(void *ptr)
     HeapFree(GetProcessHeap(), 0, ptr);
 #else
     void (*libc_free)(void*) = (void (*) (void *))dlsym(RTLD_NEXT, "free");
-    printf("free\n");
+    // printf("free\n");
     libc_free(ptr);
 #endif
 }
@@ -60,7 +60,7 @@ int _strlen(const char *s)
     return r;
 }
 
-extern "C" DLLEXPORT int print(char *data, unsigned long long size, ...)
+extern "C" DLLEXPORT int print(const char *data, uint64_t size, ...)
 {
 #if defined(_WIN32)
     DWORD dwRet;
@@ -78,13 +78,13 @@ extern "C" DLLEXPORT int print(char *data, unsigned long long size, ...)
 
     return dwRet;
 #else
-	int ret = 0;
-    char buffer[256];
-
     va_list args;
     va_start(args, size);
 
-    vsprintf(buffer, data, args);
+	int ret = 0;
+    char buffer[256];
+
+    stbsp_vsnprintf(buffer, sizeof(buffer), data, args);
 	ret = write(1, buffer, strlen(buffer));
 
     // int ret = vprintf_s(data, args);

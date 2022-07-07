@@ -1,4 +1,4 @@
-#!python
+#!/usr/bin/env python3
 
 import sys
 import os
@@ -91,7 +91,7 @@ bad_tests = []
 
 for filename in os.listdir(testdir):
     if filename.endswith(".rad"): 
-        print(os.path.join(testdir, filename), end = "")
+        print("%-40s" % os.path.join(testdir, filename), end = " ")
         if not execute_test(radexe, golddir, testdir, filename) :
             print(Fore.RED + " FAILED" + Style.RESET_ALL)
             num_bad_tests+=1
