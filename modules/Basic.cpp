@@ -78,13 +78,13 @@ extern "C" DLLEXPORT int print(const char *data, uint64_t size, ...)
 
     return dwRet;
 #else
-	int ret = 0;
-    char buffer[256];
-
     va_list args;
     va_start(args, size);
 
-    vsprintf(buffer, data, args);
+	int ret = 0;
+    char buffer[256];
+
+    stbsp_vsnprintf(buffer, sizeof(buffer), data, args);
 	ret = write(1, buffer, strlen(buffer));
 
     // int ret = vprintf_s(data, args);
