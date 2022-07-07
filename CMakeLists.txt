@@ -21,7 +21,7 @@ else()
   set(RAD_LINK_FLAG "-s")
 endif()
 
-find_package(LLVM 11.1.0 REQUIRED CONFIG)
+find_package(LLVM 14.0.5 REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 message("LLVM_INCLUDE_DIRS=${LLVM_INCLUDE_DIRS}")
