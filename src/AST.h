@@ -275,6 +275,7 @@ struct VariableDeclarationAST : StatementAST
     DefinitionAST *definition = nullptr;
     u32 flags = 0;
     u32 llvm_index = -1; // This is only used for llvm on structs, to know the order inside a struct for GEP
+                         // Also, it is used for argument counter on debug llvm
     u64 bc_offset = 0; // This can be memory offset for global variables or register offset for arguments
     interp_deps *deps = nullptr; // only applicable for global variables
 };

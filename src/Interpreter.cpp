@@ -1291,6 +1291,7 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         auto funtype = (FunctionTypeAST *)ast;
         for (u32 i = 0; i < funtype->arguments.size(); i++) {
             traversePostfixAST(PPC(funtype->arguments[i]), deps);
+            funtype->arguments[i]->llvm_index = i + 1;
         }
         traversePostfixAST(PPC(funtype->return_type), deps);
 

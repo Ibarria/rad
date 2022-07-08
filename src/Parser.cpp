@@ -893,6 +893,10 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
     if (!success) {
         return nullptr;
     }
+    for (auto& arg : fundef->declaration->arguments) {
+        arg->scope = &fundef->function_body->block_scope;
+        arg->specified_type->scope = arg->scope;
+    }
     return fundef;
 }
 

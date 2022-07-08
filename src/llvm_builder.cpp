@@ -48,18 +48,29 @@ using namespace llvm;
 // function on llvm_backend.cpp
 int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_name, bool option_debug_info);
 
+typedef Hash<TextType, DIFile*, 21, TextTypeHashFunc<21>, TextTypeComp> DIFilesHash;
+
 // These should be wrapped in some kinda class... some day
 // Will be needed for multithreading
-static LLVMContext TheContext;
-static IRBuilder<> Builder(TheContext);
-static Module *TheModule = nullptr;
-static DIBuilder *DBuilder = nullptr;
-static DICompileUnit* RootCU = nullptr;
+struct LLVMInfo {
+    std::unique_ptr<LLVMContext> TheContext;
+    std::unique_ptr<IRBuilder<>> Builder;
+    std::unique_ptr<Module> TheModule;
+    std::unique_ptr<DIBuilder> DBuilder;
+    DICompileUnit* RootCU = nullptr;
+    Function* llvm_function = nullptr;
+    DIFilesHash filesHash;
+    std::vector<DIScope*>dscope_vec;
 
-static Function *llvm_function = nullptr;
+    DIFile* getOrCreateDFile(BaseAST* ast);
+    DIScope* getDebugScope();
+    void pushDebugScope(DIScope* ds);
+    void popDebugScope();
+    DIScope* getGlobalDebugScope() { return RootCU; }
+    void emitLocation(BaseAST* ast);
+};
 
-typedef Hash<TextType, DIFile*, 21, TextTypeHashFunc<21>, TextTypeComp> DIFilesHash;
-static DIFilesHash filesHash;
+static LLVMInfo llinfo;
 
 // Statics for the llvm type, to make code more readable
 static Type *llvm_u32;
@@ -72,47 +83,59 @@ static VariableDeclarationAST* decl_free = nullptr;
 
 static void generateCode(BaseAST *ast);
 
-static void emitLocation(BaseAST* ast)
+void LLVMInfo::pushDebugScope(DIScope* ds) 
 {
-    if (!DBuilder) return;
-
-    if (!ast) return Builder.SetCurrentDebugLocation(DebugLoc());
-    if (ast->line_num == 0) return Builder.SetCurrentDebugLocation(DebugLoc());
-    DIScope* dscope = nullptr;
-    if (ast->scope == nullptr) {
-        dscope = RootCU;
-    } else {
-        assert(ast->scope->debug_scope);
-        dscope = ast->scope->debug_scope;
-    }
-    if (ast->ast_type == AST_STATEMENT_BLOCK) {
-        auto* stmt = (StatementBlockAST*)ast;
-        dscope = stmt->block_scope.debug_scope;
-    }
-    unsigned int col = 0;
-#ifdef PLATFORM_LINUX
-    col = ast->char_num;
-#endif    
-    Builder.SetCurrentDebugLocation(llvm::DILocation::get(TheContext, ast->line_num, col, dscope));
+    dscope_vec.push_back(ds);
 }
 
-static DIFile* getOrCreateDFile(BaseAST* ast)
+void LLVMInfo::popDebugScope()
+{
+    dscope_vec.pop_back();
+}
+
+DIFile* LLVMInfo::getOrCreateDFile(BaseAST* ast)
 {
     if (!DBuilder) return nullptr;
 
     DIFile* root_file = nullptr;
-    if (filesHash.get(ast->filename, root_file)) {
+    TextType filename = ast->filename;
+
+    if (ast->filename == nullptr) {
+        filename = (TextType)"./internal.rad";
+    }
+
+    if (filesHash.get(filename, root_file)) {
         return root_file;
     }
 
-    fs::path p = ast->filename;
+    fs::path p = filename;
     auto folder = p.parent_path();
     auto fname = p.filename();
-    
+
     root_file = DBuilder->createFile(fname.string(), folder.string());
-    filesHash.put(ast->filename, root_file);
+    filesHash.put(filename, root_file);
 
     return root_file;
+}
+
+DIScope* LLVMInfo::getDebugScope() {
+    if (dscope_vec.empty()) return nullptr;
+    return dscope_vec.back();
+}
+
+void LLVMInfo::emitLocation(BaseAST* ast)
+{
+    if (!DBuilder) return;
+
+    if (!ast) return Builder->SetCurrentDebugLocation(DebugLoc());
+    if (ast->line_num == 0) return Builder->SetCurrentDebugLocation(DebugLoc());
+    DIScope* dscope = getDebugScope();
+    if (dscope == nullptr) dscope = getOrCreateDFile(ast);
+    unsigned int col = 0;
+#ifdef PLATFORM_LINUX
+    col = ast->char_num;
+#endif    
+    Builder->SetCurrentDebugLocation(llvm::DILocation::get(dscope->getContext(), ast->line_num, col, dscope));
 }
 
 static void printBasicBlock(BasicBlock *bb)
@@ -132,9 +155,19 @@ static void printFunction(Function *f)
 static PointerType *getLlvmPointer(TypeAST *type)
 {
     if (isVoidType(type)) {
-        return Type::getInt8PtrTy(TheContext);
+        return Type::getInt8PtrTy(*llinfo.TheContext);
     } else {
         return type->llvm_type->getPointerTo();
+    }
+}
+
+static llvm::DIType* getLlvmDebugPointer(TypeAST* type)
+{
+    if (isVoidType(type)) {
+        return llinfo.DBuilder->createPointerType(llinfo.DBuilder->createBasicType("u8", 8, dwarf::DW_ATE_unsigned), 64);
+    } else {
+        assert(type->debug_type != nullptr);
+        return llinfo.DBuilder->createPointerType(type->debug_type, 64);
     }
 }
 
@@ -152,7 +185,7 @@ static void generateFunctionPrototype(VariableDeclarationAST *decl)
     generateCode(decl->specified_type);
     auto llvm_type = (llvm::FunctionType *)decl->specified_type->llvm_type;
     Function *llvm_func = Function::Create(llvm_type, Function::ExternalLinkage,
-        decl->varname, TheModule);
+        decl->varname, *llinfo.TheModule);
     // Got these for main from looking at clang
     llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
     llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoRecurse);
@@ -199,17 +232,18 @@ static void allocateVariable(VariableDeclarationAST *decl)
                 initializer = Constant::getNullValue(decl->specified_type->llvm_type);
             }
         }
-        auto gv = new GlobalVariable(*TheModule, decl->specified_type->llvm_type, isConstant, 
+        auto gv = new GlobalVariable(*llinfo.TheModule, decl->specified_type->llvm_type, isConstant,
             GlobalValue::LinkOnceAnyLinkage, initializer, decl->varname);
         decl->codegen = gv;
         // The last true parameter indicates if this is a static (local to unit or not)
-        if (DBuilder) {
-            auto* dgv = DBuilder->createGlobalVariableExpression(decl->scope->debug_scope, decl->varname, decl->varname,
-                getOrCreateDFile(decl), decl->line_num, decl->specified_type->debug_type, true);
+        if (llinfo.DBuilder) {
+            auto* dgv = llinfo.DBuilder->createGlobalVariableExpression(llinfo.getGlobalDebugScope(), decl->varname, decl->varname,
+                llinfo.getOrCreateDFile(decl), decl->line_num, decl->specified_type->debug_type, false);
+            gv->addDebugInfo(dgv);
         }
     } else {
-        IRBuilder<> TmpB(&llvm_function->getEntryBlock(),
-                 llvm_function->getEntryBlock().begin());
+        IRBuilder<> TmpB(&llinfo.llvm_function->getEntryBlock(),
+            llinfo.llvm_function->getEntryBlock().begin());
         Value *arraySize = nullptr;
         auto AllocA = TmpB.CreateAlloca(decl->specified_type->llvm_type, arraySize, decl->varname);
 
@@ -225,13 +259,20 @@ static void allocateVariable(VariableDeclarationAST *decl)
 			TmpB.CreateStore(decl->codegen, AllocA);
 		}
         decl->codegen = AllocA;
-        if (DBuilder) {
-            // The last true parameter indicates if this is a static (local to unit or not)
-            auto* dlv = DBuilder->createAutoVariable(decl->scope->debug_scope, decl->varname,
-                getOrCreateDFile(decl), decl->line_num, decl->specified_type->debug_type);
-            DBuilder->insertDeclare(decl->codegen, dlv, DBuilder->createExpression(),
-                llvm::DILocation::get(TheContext, decl->line_num, decl->char_num, decl->scope->debug_scope),
-                Builder.GetInsertBlock());
+        if (llinfo.DBuilder) {
+            llvm::DILocalVariable* dlv;
+            auto* dbg_scope = llinfo.getDebugScope();
+            if (decl->flags & DECL_FLAG_IS_FUNCTION_ARGUMENT) {
+                dlv = llinfo.DBuilder->createParameterVariable(dbg_scope, decl->varname, decl->llvm_index,
+                    llinfo.getOrCreateDFile(decl), decl->line_num, decl->specified_type->debug_type);
+            } else {
+                // The last true parameter indicates if this is a static (local to unit or not)
+                dlv = llinfo.DBuilder->createAutoVariable(dbg_scope, decl->varname,
+                    llinfo.getOrCreateDFile(decl), decl->line_num, decl->specified_type->debug_type);
+            }
+            llinfo.DBuilder->insertDeclare(decl->codegen, dlv, llinfo.DBuilder->createExpression(),
+                llvm::DILocation::get(dbg_scope->getContext(), decl->line_num, decl->char_num, dbg_scope),
+                llinfo.Builder->GetInsertBlock());
         }
     }
 }
@@ -285,8 +326,8 @@ static Value *generateIdentifierCode(IdentifierAST *id)
         if (isTypePointer(id->decl->specified_type)) {
             // if our AST says we have a pointer, in llvm we have a pointer to pointer.
             // before we can compute anything, we need to dereference the pointer
-            Value *gep = Builder.CreateGEP(decl->specified_type->llvm_type, variable, idx);
-            Value *deref_ptr = Builder.CreateLoad(decl->specified_type->llvm_type, gep);
+            Value *gep = llinfo.Builder->CreateGEP(decl->specified_type->llvm_type, variable, idx);
+            Value *deref_ptr = llinfo.Builder->CreateLoad(decl->specified_type->llvm_type, gep);
             variable = deref_ptr;
             PointerTypeAST* ptype = (PointerTypeAST*)id->decl->specified_type;
             currentType = ptype->points_to_type;
@@ -305,10 +346,10 @@ static Value *generateIdentifierCode(IdentifierAST *id)
                         // Sized and Dynamic arrays are implemented as a struct, meaning there
                         // is a pointer. Whenever there is a pointer, llvm requires to load it
                         // and then compute the GEP. Thus, one more level of indirection
-                        idx.push_back(ConstantInt::get(Type::getInt32Ty(TheContext), 0));
+                        idx.push_back(ConstantInt::get(Type::getInt32Ty(*llinfo.TheContext), 0));
                         // In this situation, llvm asks we load the pointer
-                        Value *gep = Builder.CreateGEP(currentType->llvm_type, variable, idx);
-                        Value *array_pointer = Builder.CreateLoad(getLlvmPointer(loop_aa->access_type), gep);
+                        Value *gep = llinfo.Builder->CreateGEP(currentType->llvm_type, variable, idx);
+                        Value *array_pointer = llinfo.Builder->CreateLoad(getLlvmPointer(loop_aa->access_type), gep);
                         variable = array_pointer;
                         ltype = loop_aa->access_type->llvm_type;
                         idx.clear();
@@ -346,7 +387,7 @@ static Value *generateIdentifierCode(IdentifierAST *id)
             printf("\n");
 #endif 
 
-            gep = Builder.CreateGEP(
+            gep = llinfo.Builder->CreateGEP(
                 ltype,
                 variable, idx);
             idx.clear();
@@ -391,7 +432,7 @@ static Value *computeArrayDataPtr(IdentifierAST * array)
         // If array is a simple identifier, it is a pointer in llvm that needs an extra index for GEP
         if (array->next == nullptr) idx.push_back(llvm_zero);
         idx.push_back(llvm_zero);
-        Value *gep = Builder.CreateGEP(arType->array_of_type->llvm_type, array_val, idx);
+        Value *gep = llinfo.Builder->CreateGEP(arType->array_of_type->llvm_type, array_val, idx);
         return gep;
     }
 }
@@ -414,7 +455,7 @@ static Value *computeArrayCount(IdentifierAST * array)
     if (array->next == nullptr) idx.push_back(llvm_zero);
     Value *llvm_one = ConstantInt::get(llvm_u32, 1);
     idx.push_back(llvm_one);
-    Value *gep = Builder.CreateGEP(arType->array_of_type->llvm_type, array_val, idx);
+    Value *gep = llinfo.Builder->CreateGEP(arType->array_of_type->llvm_type, array_val, idx);
     return gep;
 }
 
@@ -442,7 +483,7 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
 
         if (!isGlobalDeclaration(decl)) {
             // save the current block where we are inserting
-            oldBlock = Builder.GetInsertBlock();
+            oldBlock = llinfo.Builder->GetInsertBlock();
         }
 
         u32 arg_index = 0;
@@ -452,23 +493,24 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
         }
         // If it is not foreign, we should do the body here
         // Create a new basic block to start insertion into.
-        BasicBlock *BB = BasicBlock::Create(TheContext, "entry", llvm_func);
-        Builder.SetInsertPoint(BB);
+        BasicBlock *BB = BasicBlock::Create(*llinfo.TheContext, "entry", llvm_func);
+        llinfo.Builder->SetInsertPoint(BB);
 
-        Function *old_func = llvm_function;
-        llvm_function = llvm_func;
-        func_decl->llret_block = BasicBlock::Create(TheContext, "retblock");
+        Function *old_func = llinfo.llvm_function;
+        llinfo.llvm_function = llvm_func;
+        func_decl->llret_block = BasicBlock::Create(*llinfo.TheContext, "retblock");
 
-        if (DBuilder) {
+        if (llinfo.DBuilder) {
             DISubroutineType* llvm_type = (DISubroutineType*)decl->specified_type->debug_type;
-            DISubprogram* dsp = DBuilder->createFunction(decl->scope->debug_scope, decl->varname, StringRef(),
-                getOrCreateDFile(decl), decl->line_num, llvm_type, func_decl->function_body->line_num,
+            DISubprogram* dsp = llinfo.DBuilder->createFunction(llinfo.getDebugScope(), decl->varname, StringRef(),
+                llinfo.getOrCreateDFile(decl), decl->line_num, llvm_type, func_decl->function_body->line_num,
                 DINode::FlagPrototyped, DISubprogram::SPFlagDefinition);
-            llvm_function->setSubprogram(dsp);
+            llinfo.llvm_function->setSubprogram(dsp);
 
             // We copy this so the function body has the scope of the function
             func_decl->function_body->block_scope.debug_scope = dsp;
-
+            llinfo.Builder->SetCurrentDebugLocation(llvm::DILocation::get(*llinfo.TheContext, func_decl->line_num, func_decl->char_num, dsp));
+            llinfo.pushDebugScope(dsp);
             //        printf("Creating DebugLexical block %p from parent scope %p, For function %s scope %d:%d\n",
             //            dsp, decl->scope->debug_scope, decl->varname, decl->line_num, decl->char_num);
         }
@@ -477,30 +519,32 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
             // We need to declare a local variable of the return type
             generateCode(ft->return_type);
             Value* arraySize = nullptr;
-            auto retalloc = Builder.CreateAlloca(ft->return_type->llvm_type, arraySize, "retval");
+            auto retalloc = llinfo.Builder->CreateAlloca(ft->return_type->llvm_type, arraySize, "retval");
             func_decl->llret_alloc = retalloc;
 
-            if (DBuilder) {
+            if (llinfo.DBuilder) {
                 // The last true parameter indicates if this is a static (local to unit or not)
-                auto* dlv = DBuilder->createAutoVariable(decl->scope->debug_scope, "retval",
-                    getOrCreateDFile(decl), decl->line_num, ft->return_type->debug_type);
-                DBuilder->insertDeclare(retalloc, dlv, DBuilder->createExpression(),
-                    llvm::DILocation::get(TheContext, decl->line_num, decl->char_num, decl->scope->debug_scope),
-                    Builder.GetInsertBlock());
+                auto* dlv = llinfo.DBuilder->createAutoVariable(llinfo.getDebugScope(), "retval",
+                    llinfo.getOrCreateDFile(decl), decl->line_num, ft->return_type->debug_type);
+                llinfo.DBuilder->insertDeclare(retalloc, dlv, llinfo.DBuilder->createExpression(),
+                    llvm::DILocation::get(*llinfo.TheContext, decl->line_num, decl->char_num, llinfo.getDebugScope()),
+                    llinfo.Builder->GetInsertBlock());
             }
         }
 
         generateCode(func_decl->function_body);
 
-        Builder.CreateBr(func_decl->llret_block);
+        llinfo.Builder->CreateBr(func_decl->llret_block);
         llvm_func->getBasicBlockList().push_back(func_decl->llret_block);
-        Builder.SetInsertPoint(func_decl->llret_block);
+        llinfo.Builder->SetInsertPoint(func_decl->llret_block);
         if (isVoidType(ft->return_type)) {
-            Builder.CreateRetVoid();
+            llinfo.Builder->CreateRetVoid();
         } else {
-            auto local_ret = Builder.CreateLoad(ft->return_type->llvm_type, func_decl->llret_alloc);
-            Builder.CreateRet(local_ret);
+            auto local_ret = llinfo.Builder->CreateLoad(ft->return_type->llvm_type, func_decl->llret_alloc);
+            llinfo.Builder->CreateRet(local_ret);
         }
+        
+        if (llinfo.DBuilder) llinfo.popDebugScope();
 
         // Debugging
         // printf("\n***************** FUNC %s ****************\n", decl->varname);
@@ -508,10 +552,10 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
         // printf("\n***************** FUNC ****************\n");
 
         verifyFunction(*llvm_func);
-        llvm_function = old_func;
+        llinfo.llvm_function = old_func;
 
         if (oldBlock) {
-            Builder.SetInsertPoint(oldBlock);
+            llinfo.Builder->SetInsertPoint(oldBlock);
         }
 
         break;
@@ -525,7 +569,7 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
         if (!decl->definition) return;
 
         generateCode(decl->definition);
-        Builder.CreateStore(decl->definition->codegen, decl->codegen);
+        llinfo.Builder->CreateStore(decl->definition->codegen, decl->codegen);
 
         break;
     }
@@ -539,7 +583,7 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
         if (!decl->definition) return;
 
         generateCode(decl->definition);
-        Builder.CreateStore(decl->definition->codegen, decl->codegen);
+        llinfo.Builder->CreateStore(decl->definition->codegen, decl->codegen);
 
         break;
     }
@@ -557,15 +601,15 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
             Value *val = ConstantInt::get(llvm_u32, 0);
             idx.push_back(val);
 //            idx.push_back(val);
-            Value *gep = Builder.CreateGEP(decl->llvm_storage, idx);
-            Builder.CreateStore(gep, decl->codegen);
+            Value *gep = llinfo.Builder->CreateGEP(decl->llvm_storage, idx);
+            llinfo.Builder->CreateStore(gep, decl->codegen);
             */
         }
 
         if (!decl->definition) return;
 
         generateCode(decl->definition);
-        Builder.CreateStore(decl->definition->codegen, decl->codegen);
+        llinfo.Builder->CreateStore(decl->definition->codegen, decl->codegen);
 
         break;
     }
@@ -580,44 +624,45 @@ static void generateIfStatement(IfStatementAST *ifst)
     generateCode(ifst->condition);
 
     Value *cond = ifst->condition->codegen;
-    cond = Builder.CreateICmpEQ(cond, ConstantInt::getTrue(TheContext), "if_cond");
+    cond = llinfo.Builder->CreateICmpEQ(cond, ConstantInt::getTrue(*llinfo.TheContext), "if_cond");
 
-    Function *lfunc = Builder.GetInsertBlock()->getParent();
+    Function *lfunc = llinfo.Builder->GetInsertBlock()->getParent();
 
-    BasicBlock *then_block = BasicBlock::Create(TheContext, "if.then", lfunc);
-    BasicBlock *merge_block = BasicBlock::Create(TheContext, "if.end");
+    BasicBlock *then_block = BasicBlock::Create(*llinfo.TheContext, "if.then", lfunc);
+    BasicBlock *merge_block = BasicBlock::Create(*llinfo.TheContext, "if.end");
     BasicBlock* else_block = merge_block;
     if (ifst->else_branch) {
-        else_block = BasicBlock::Create(TheContext, "if.else");
+        else_block = BasicBlock::Create(*llinfo.TheContext, "if.else");
     }
 
-    Builder.CreateCondBr(cond, then_block, else_block);
+    llinfo.Builder->CreateCondBr(cond, then_block, else_block);
 
-    Builder.SetInsertPoint(then_block);
+    llinfo.Builder->SetInsertPoint(then_block);
 
     generateCode(ifst->then_branch);
     Value *then_val = ifst->then_branch->codegen;
 
-    Builder.CreateBr(merge_block);
-    then_block = Builder.GetInsertBlock();
+    llinfo.Builder->CreateBr(merge_block);
+    then_block = llinfo.Builder->GetInsertBlock();
 
     if (ifst->else_branch) {
-        llvm_function->getBasicBlockList().push_back(else_block);
-        Builder.SetInsertPoint(else_block);
+        llinfo.llvm_function->getBasicBlockList().push_back(else_block);
+        llinfo.Builder->SetInsertPoint(else_block);
         generateCode(ifst->else_branch);
-        Builder.CreateBr(merge_block);
-        else_block = Builder.GetInsertBlock();
+        llinfo.Builder->CreateBr(merge_block);
+        else_block = llinfo.Builder->GetInsertBlock();
     }
 
-    llvm_function->getBasicBlockList().push_back(merge_block);
-    Builder.SetInsertPoint(merge_block);
+    llinfo.llvm_function->getBasicBlockList().push_back(merge_block);
+    llinfo.Builder->SetInsertPoint(merge_block);
 }
 
 static void generateForStatement(ForStatementAST *forst)
 {
-    if (DBuilder) {
-        forst->for_scope.debug_scope = DBuilder->createLexicalBlock(forst->scope->debug_scope,
-            getOrCreateDFile(forst), forst->line_num, forst->char_num);
+    if (llinfo.DBuilder) {
+        forst->for_scope.debug_scope = llinfo.DBuilder->createLexicalBlock(llinfo.getDebugScope(),
+            llinfo.getOrCreateDFile(forst), forst->line_num, forst->char_num);
+        llinfo.pushDebugScope(forst->for_scope.debug_scope);
     }
 //    printf("Creating DebugLexical block %p from parent scope %p, For scope %d:%d\n",
 //        forst->for_scope.debug_scope, forst->scope->debug_scope, forst->line_num, forst->char_num);
@@ -626,46 +671,46 @@ static void generateForStatement(ForStatementAST *forst)
         allocateVariable(decl);
     }
 
-    Function *lfunc = Builder.GetInsertBlock()->getParent();
-    BasicBlock *for_entry = BasicBlock::Create(TheContext, "for_entry", lfunc);
-    BasicBlock *for_block = BasicBlock::Create(TheContext, "for_block", lfunc);
-    BasicBlock *for_after = BasicBlock::Create(TheContext, "for_after", lfunc);
+    Function *lfunc = llinfo.Builder->GetInsertBlock()->getParent();
+    BasicBlock *for_entry = BasicBlock::Create(*llinfo.TheContext, "for_entry", lfunc);
+    BasicBlock *for_block = BasicBlock::Create(*llinfo.TheContext, "for_block", lfunc);
+    BasicBlock *for_after = BasicBlock::Create(*llinfo.TheContext, "for_after", lfunc);
 
 	if (forst->it->decl->definition) {
 		generateCode(forst->it->decl->definition);
-		Builder.CreateStore(forst->it->decl->definition->codegen, forst->it->decl->codegen);
+		llinfo.Builder->CreateStore(forst->it->decl->definition->codegen, forst->it->decl->codegen);
 	}
 	if (forst->it_index->decl->definition) {
 		generateCode(forst->it_index->decl->definition);
-		Builder.CreateStore(forst->it_index->decl->definition->codegen, forst->it_index->decl->codegen);
+		llinfo.Builder->CreateStore(forst->it_index->decl->definition->codegen, forst->it_index->decl->codegen);
 	}
 
     if (forst->is_array) {
-        Builder.CreateBr(for_entry);
-        Builder.SetInsertPoint(for_entry);
+        llinfo.Builder->CreateBr(for_entry);
+        llinfo.Builder->SetInsertPoint(for_entry);
 
         Value *array_count = computeArrayCount(forst->arr);
-        Value *it_index1 = Builder.CreateLoad(forst->it_index->decl->specified_type->llvm_type, forst->it_index->decl->codegen, forst->it_index->name);
-        Value *for_check = Builder.CreateICmpUGE(it_index1, array_count);
+        Value *it_index1 = llinfo.Builder->CreateLoad(forst->it_index->decl->specified_type->llvm_type, forst->it_index->decl->codegen, forst->it_index->name);
+        Value *for_check = llinfo.Builder->CreateICmpUGE(it_index1, array_count);
 
-        Builder.CreateCondBr(for_check, for_after, for_block);
-        Builder.SetInsertPoint(for_block);
+        llinfo.Builder->CreateCondBr(for_check, for_after, for_block);
+        llinfo.Builder->SetInsertPoint(for_block);
 
         // load it with the correct value
         Value *array_ptr = computeArrayDataPtr(forst->arr);
         auto arType = (ArrayTypeAST*)forst->arr->expr_type;
 
         std::vector<Value *> idx;
-        Value* it_index2 = Builder.CreateLoad(forst->it_index->decl->specified_type->llvm_type, forst->it_index->decl->codegen, forst->it_index->name);
+        Value* it_index2 = llinfo.Builder->CreateLoad(forst->it_index->decl->specified_type->llvm_type, forst->it_index->decl->codegen, forst->it_index->name);
         Value *llvm_zero = ConstantInt::get(llvm_u64, 0);
         idx.push_back(llvm_zero);
         idx.push_back(it_index2);
-        Value *it_ptr = Builder.CreateGEP(arType->llvm_type, array_ptr, idx, forst->it->name);
+        Value *it_ptr = llinfo.Builder->CreateGEP(arType->llvm_type, array_ptr, idx, forst->it->name);
         if (forst->is_it_ptr) {
-            Builder.CreateStore(it_ptr, forst->it->decl->codegen);
+            llinfo.Builder->CreateStore(it_ptr, forst->it->decl->codegen);
         } else {
-            Value *it_val = Builder.CreateLoad(forst->it->decl->specified_type->llvm_type, it_ptr);
-            Builder.CreateStore(it_val, forst->it->decl->codegen);
+            Value *it_val = llinfo.Builder->CreateLoad(forst->it->decl->specified_type->llvm_type, it_ptr);
+            llinfo.Builder->CreateStore(it_val, forst->it->decl->codegen);
         }
 
         // Do the actual loop code
@@ -673,46 +718,49 @@ static void generateForStatement(ForStatementAST *forst)
 
         // Do the loop increment, and then inconditional jump
         Value *llvm_one = ConstantInt::get(llvm_u64, 1);
-        Value *it_index_val = Builder.CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
-        Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one, "inc");
-        Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
+        Value *it_index_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
+        Value *it_index_inc = llinfo.Builder->CreateAdd(it_index_val, llvm_one, "inc");
+        llinfo.Builder->CreateStore(it_index_inc, forst->it_index->decl->codegen);
 
-        Builder.CreateBr(for_entry);
-        Builder.SetInsertPoint(for_after);
+        llinfo.Builder->CreateBr(for_entry);
+        llinfo.Builder->SetInsertPoint(for_after);
     } else {
         generateCode(forst->end);
         Value *end_val = forst->end->codegen;
 
-        Builder.CreateBr(for_entry);
-        Builder.SetInsertPoint(for_entry);
+        llinfo.Builder->CreateBr(for_entry);
+        llinfo.Builder->SetInsertPoint(for_entry);
 
-        Value *it_val = Builder.CreateLoad(getIdentifierType(forst->it), generateIdentifierCode(forst->it), forst->it->name);
+        Value *it_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it), generateIdentifierCode(forst->it), forst->it->name);
         Value *for_check;
         assert(forst->end->expr_type->ast_type == AST_DIRECT_TYPE);
         auto dtype = (DirectTypeAST *)forst->end->expr_type;
         if (dtype->isSigned) {
-            for_check = Builder.CreateICmpSGT(it_val, end_val);
+            for_check = llinfo.Builder->CreateICmpSGT(it_val, end_val);
         } else {
-            for_check = Builder.CreateICmpUGT(it_val, end_val);
+            for_check = llinfo.Builder->CreateICmpUGT(it_val, end_val);
         }
 
-        Builder.CreateCondBr(for_check, for_after, for_block);
-        Builder.SetInsertPoint(for_block);
+        llinfo.Builder->CreateCondBr(for_check, for_after, for_block);
+        llinfo.Builder->SetInsertPoint(for_block);
         // Do the actual loop code
         generateCode(forst->loop_block);
 
         // increment the it, it_index. It could have changed
-        it_val = Builder.CreateLoad(getIdentifierType(forst->it), generateIdentifierCode(forst->it), forst->it->name);
+        it_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it), generateIdentifierCode(forst->it), forst->it->name);
         Value *llvm_one = ConstantInt::get(llvm_u64, 1);
-        Value *it_inc = Builder.CreateAdd(it_val, llvm_one, "inc");
-        Builder.CreateStore(it_inc, forst->it->decl->codegen);
+        Value *it_inc = llinfo.Builder->CreateAdd(it_val, llvm_one, "inc");
+        llinfo.Builder->CreateStore(it_inc, forst->it->decl->codegen);
 
-        Value *it_index_val = Builder.CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
-        Value *it_index_inc = Builder.CreateAdd(it_index_val, llvm_one, "inc");
-        Builder.CreateStore(it_index_inc, forst->it_index->decl->codegen);
+        Value *it_index_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
+        Value *it_index_inc = llinfo.Builder->CreateAdd(it_index_val, llvm_one, "inc");
+        llinfo.Builder->CreateStore(it_index_inc, forst->it_index->decl->codegen);
 
-        Builder.CreateBr(for_entry);
-        Builder.SetInsertPoint(for_after);
+        llinfo.Builder->CreateBr(for_entry);
+        llinfo.Builder->SetInsertPoint(for_after);
+    }
+    if (llinfo.DBuilder) {
+        llinfo.popDebugScope();
     }
 }
 
@@ -740,7 +788,7 @@ static void generateLiteral(LiteralAST *lit)
         break;
     }
     case BASIC_TYPE_STRING: {
-        auto llvm_str = (Constant *)Builder.CreateGlobalStringPtr(lit->str);
+        auto llvm_str = (Constant *)llinfo.Builder->CreateGlobalStringPtr(lit->str);
         auto llvm_sz = ConstantInt::get(llvm_u64, strlen(lit->str));
         std::vector<Constant *> members;
         members.push_back(llvm_str);
@@ -762,9 +810,9 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
     case TK_EQ: {
         if (isTypeInteger(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type) ||
             isTypePointer(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateICmpEQ(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateICmpEQ(binop->lhs->codegen, binop->rhs->codegen);
         } else if (isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateFCmpOEQ(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateFCmpOEQ(binop->lhs->codegen, binop->rhs->codegen);
         } else {
             assert(!"Type not supported for EQ comparison!");
         }
@@ -772,16 +820,16 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
     }
     case TK_LEQ: {
         if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
         } else if (isTypeInteger(binop->lhs->expr_type)) {
             auto dt = (DirectTypeAST *)binop->lhs->expr_type;
             if (dt->isSigned) {
-                binop->codegen = Builder.CreateICmpSLE(binop->lhs->codegen, binop->rhs->codegen);
+                binop->codegen = llinfo.Builder->CreateICmpSLE(binop->lhs->codegen, binop->rhs->codegen);
             } else {
-                binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
+                binop->codegen = llinfo.Builder->CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
             }
         } else if (isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateFCmpOLE(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateFCmpOLE(binop->lhs->codegen, binop->rhs->codegen);
         } else {
             assert(!"Type not supported for LEQ comparison!");
         }
@@ -789,16 +837,16 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
     }
     case TK_GEQ: {
         if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateICmpULE(binop->lhs->codegen, binop->rhs->codegen);
         } else if (isTypeInteger(binop->lhs->expr_type)) {
             auto dt = (DirectTypeAST *)binop->lhs->expr_type;
             if (dt->isSigned) {
-                binop->codegen = Builder.CreateICmpSGE(binop->lhs->codegen, binop->rhs->codegen);
+                binop->codegen = llinfo.Builder->CreateICmpSGE(binop->lhs->codegen, binop->rhs->codegen);
             } else {
-                binop->codegen = Builder.CreateICmpUGE(binop->lhs->codegen, binop->rhs->codegen);
+                binop->codegen = llinfo.Builder->CreateICmpUGE(binop->lhs->codegen, binop->rhs->codegen);
             }
         } else if (isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateFCmpOGE(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateFCmpOGE(binop->lhs->codegen, binop->rhs->codegen);
         } else {
             assert(!"Type not supported for GEQ comparison!");
         }
@@ -807,9 +855,9 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
     case TK_NEQ: {
         if (isTypeInteger(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type) ||
             isTypePointer(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateICmpNE(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateICmpNE(binop->lhs->codegen, binop->rhs->codegen);
         } else if (isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateFCmpONE(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateFCmpONE(binop->lhs->codegen, binop->rhs->codegen);
         } else {
             assert(!"Type not supported for NEQ comparison!");
         }
@@ -817,16 +865,16 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
     }
     case TK_LT: {
         if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
         } else if (isTypeInteger(binop->lhs->expr_type)) {
             auto dt = (DirectTypeAST *)binop->lhs->expr_type;
             if (dt->isSigned) {
-                binop->codegen = Builder.CreateICmpSLT(binop->lhs->codegen, binop->rhs->codegen);
+                binop->codegen = llinfo.Builder->CreateICmpSLT(binop->lhs->codegen, binop->rhs->codegen);
             } else {
-                binop->codegen = Builder.CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
+                binop->codegen = llinfo.Builder->CreateICmpULT(binop->lhs->codegen, binop->rhs->codegen);
             }
         } else if (isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateFCmpOLT(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateFCmpOLT(binop->lhs->codegen, binop->rhs->codegen);
         } else {
             assert(!"Type not supported for LT comparison!");
         }
@@ -834,16 +882,16 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
     }
     case TK_GT: {
         if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
         } else if (isTypeInteger(binop->lhs->expr_type)) {
             auto dt = (DirectTypeAST *)binop->lhs->expr_type;
             if (dt->isSigned) {
-                binop->codegen = Builder.CreateICmpSGT(binop->lhs->codegen, binop->rhs->codegen);
+                binop->codegen = llinfo.Builder->CreateICmpSGT(binop->lhs->codegen, binop->rhs->codegen);
             } else {
-                binop->codegen = Builder.CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
+                binop->codegen = llinfo.Builder->CreateICmpUGT(binop->lhs->codegen, binop->rhs->codegen);
             }
         } else if (isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateFCmpOGT(binop->lhs->codegen, binop->rhs->codegen);
+            binop->codegen = llinfo.Builder->CreateFCmpOGT(binop->lhs->codegen, binop->rhs->codegen);
         } else {
             assert(!"Type not supported for GT comparison!");
         }
@@ -853,7 +901,7 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
         if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
             assert(!"Pointers and booleans cannot be multiplied!");
         } else if (isTypeInteger(binop->lhs->expr_type) || isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateMul(binop->lhs->codegen, binop->rhs->codegen, "mul");
+            binop->codegen = llinfo.Builder->CreateMul(binop->lhs->codegen, binop->rhs->codegen, "mul");
         } else {
             assert(!"Type not supported for division!");
         }
@@ -863,9 +911,9 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
         if (isTypePointer(binop->lhs->expr_type) || isTypeBoolean(binop->lhs->expr_type)) {
             assert(!"Pointers and booleans cannot be divided!");
         } else if (isTypeInteger(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateUDiv(binop->lhs->codegen, binop->rhs->codegen, "udiv");
+            binop->codegen = llinfo.Builder->CreateUDiv(binop->lhs->codegen, binop->rhs->codegen, "udiv");
         } else if (isTypeFloating(binop->lhs->expr_type)) {
-            binop->codegen = Builder.CreateFDiv(binop->lhs->codegen, binop->rhs->codegen, "fdiv");
+            binop->codegen = llinfo.Builder->CreateFDiv(binop->lhs->codegen, binop->rhs->codegen, "fdiv");
         } else {
             assert(!"Type not supported for division!");
         }
@@ -876,11 +924,11 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
         break;
     }
     case TK_PLUS: {
-        binop->codegen = Builder.CreateAdd(binop->lhs->codegen, binop->rhs->codegen, "add");
+        binop->codegen = llinfo.Builder->CreateAdd(binop->lhs->codegen, binop->rhs->codegen, "add");
         break;
     }
     case TK_MINUS: {
-        binop->codegen = Builder.CreateSub(binop->lhs->codegen, binop->rhs->codegen, "sub");
+        binop->codegen = llinfo.Builder->CreateSub(binop->lhs->codegen, binop->rhs->codegen, "sub");
         break;
     }
     default:
@@ -890,7 +938,7 @@ static void generateBinaryOperation(BinaryOperationAST *binop)
 
 static void generateCode(BaseAST *ast)
 {
-    emitLocation(ast);
+    llinfo.emitLocation(ast);
 
     switch (ast->ast_type)
     {
@@ -922,18 +970,22 @@ static void generateCode(BaseAST *ast)
 
         if (stmt_block->codegen) return;
 
-        if (DBuilder) {
+        bool need_pop_scope = false;
+
+        if (llinfo.DBuilder) {
             if (stmt_block->block_scope.debug_scope == nullptr) {
                 // A normal block would not have a debug scope, but this block is the body of a function, 
                 // then we want to use the function debug scope
-                stmt_block->block_scope.debug_scope = DBuilder->createLexicalBlock(stmt_block->scope->debug_scope,
-                    getOrCreateDFile(stmt_block), stmt_block->line_num, stmt_block->char_num);
+                stmt_block->block_scope.debug_scope = llinfo.DBuilder->createLexicalBlock(llinfo.getDebugScope(),
+                    llinfo.getOrCreateDFile(stmt_block), stmt_block->line_num, stmt_block->char_num);
+                llinfo.pushDebugScope(stmt_block->block_scope.debug_scope);
+                need_pop_scope = true;
                 //            printf("Creating DebugLexical block %p from parent scope %p, Statement scope %d:%d\n",
                 //                stmt_block->block_scope.debug_scope, stmt_block->scope->debug_scope, stmt_block->line_num, stmt_block->char_num);
             }
             // It is important that we set the debug location to that of this statement block (could be a function)
             // Otherwise, it would use the parent and that is not valid
-            Builder.SetCurrentDebugLocation(llvm::DILocation::get(TheContext, stmt_block->line_num, 0, stmt_block->block_scope.debug_scope));
+            llinfo.emitLocation(ast);
         }
 
         for (auto decl : stmt_block->block_scope.decls) {
@@ -943,6 +995,8 @@ static void generateCode(BaseAST *ast)
         for (auto item : stmt_block->statements) {
             generateCode(item);
         }
+
+        if (need_pop_scope) llinfo.popDebugScope();
         break;
     }
     case AST_IF_STATEMENT: {
@@ -959,10 +1013,10 @@ static void generateCode(BaseAST *ast)
         auto ret_stmt = (ReturnStatementAST *)ast;
         if (ret_stmt->ret != nullptr) {
             generateCode(ret_stmt->ret);
-            emitLocation(ret_stmt);
-            Builder.CreateStore(ret_stmt->ret->codegen, findEnclosingFunction(ret_stmt)->llret_alloc);
+            llinfo.emitLocation(ret_stmt);
+            llinfo.Builder->CreateStore(ret_stmt->ret->codegen, findEnclosingFunction(ret_stmt)->llret_alloc);
         } 
-        Builder.CreateBr(findEnclosingFunction(ret_stmt)->llret_block);
+        llinfo.Builder->CreateBr(findEnclosingFunction(ret_stmt)->llret_block);
         break;
     }
     case AST_FUNCTION_DEFINITION: {
@@ -979,13 +1033,13 @@ static void generateCode(BaseAST *ast)
             ArgsV.push_back(arg->codegen);
         }
         // The function call should not have a name if the return value is void
-        auto llvm_call = Builder.CreateCall((llvm::Function *)funcall->fundef->var_decl->codegen, ArgsV);
+        auto llvm_call = llinfo.Builder->CreateCall((llvm::Function *)funcall->fundef->var_decl->codegen, ArgsV);
         funcall->codegen = llvm_call;
         break;
     }
     case AST_IDENTIFIER: {
         auto id = (IdentifierAST *)ast;
-        id->codegen = Builder.CreateLoad(getIdentifierType(id), generateIdentifierCode(id), id->name);
+        id->codegen = llinfo.Builder->CreateLoad(getIdentifierType(id), generateIdentifierCode(id), id->name);
         break;
     }
     case AST_LITERAL: {
@@ -1005,12 +1059,12 @@ static void generateCode(BaseAST *ast)
             generateCode(unop->expr);
             assert(unop->expr->expr_type->ast_type == AST_POINTER_TYPE);
             PointerTypeAST* pt = (PointerTypeAST*)unop->expr->expr_type;
-            unop->codegen = Builder.CreateLoad(pt->points_to_type->llvm_type, unop->expr->codegen);
+            unop->codegen = llinfo.Builder->CreateLoad(pt->points_to_type->llvm_type, unop->expr->codegen);
             break;
         }
         case TK_BANG: {
             generateCode(unop->expr);
-            unop->codegen = Builder.CreateNot(unop->expr->codegen, "not");
+            unop->codegen = llinfo.Builder->CreateNot(unop->expr->codegen, "not");
             break;
         }
         case TK_STAR: {
@@ -1036,8 +1090,8 @@ static void generateCode(BaseAST *ast)
         } else {
             store_val = generateAssignLHSCode(assign->lhs);
         }
-        emitLocation(assign);
-        Builder.CreateStore(assign->rhs->codegen, store_val);
+        llinfo.emitLocation(assign);
+        llinfo.Builder->CreateStore(assign->rhs->codegen, store_val);
         break;
     }
     case AST_VARIABLE_DECLARATION: {
@@ -1083,24 +1137,24 @@ static void generateCode(BaseAST *ast)
 
         ftype->llvm_type = llvm_ft;
 
-        if (DBuilder) {
+        if (llinfo.DBuilder) {
             std::vector<Metadata*> debug_args;
-            debug_args.push_back(ftype->return_type->debug_type);
-            //if (isVoidType(ftype->return_type)) {
-            //    debug_args.push_back(nullptr);
-            //} else {
-            //    debug_args.push_back(ftype->return_type->debug_type);
-            //}
+           // debug_args.push_back(ftype->return_type->debug_type);
+            if (isVoidType(ftype->return_type)) {
+                debug_args.push_back(nullptr);
+            } else {
+                debug_args.push_back(ftype->return_type->debug_type);
+            }
             for (auto arg : ftype->arguments) {
                 // Complex data structures are pointers in llvm
                 if (isTypeArray(arg->specified_type) || isTypeStruct(arg->specified_type)) {
-                    debug_args.push_back(DBuilder->createPointerType(arg->specified_type->debug_type, 64));
+                    debug_args.push_back(getLlvmDebugPointer(arg->specified_type));
                 } else {
                     debug_args.push_back(arg->specified_type->debug_type);
                 }
             }
 
-            ftype->debug_type = DBuilder->createSubroutineType(DBuilder->getOrCreateTypeArray(debug_args));
+            ftype->debug_type = llinfo.DBuilder->createSubroutineType(llinfo.DBuilder->getOrCreateTypeArray(debug_args));
         }
         break;
     }
@@ -1110,27 +1164,27 @@ static void generateCode(BaseAST *ast)
 
         switch (dtype->basic_type) {
         case BASIC_TYPE_BOOL: {
-            dtype->llvm_type = Type::getInt1Ty(TheContext);
-            if (DBuilder) dtype->debug_type = DBuilder->createBasicType("bool", 1, dwarf::DW_ATE_boolean);
+            dtype->llvm_type = Type::getInt1Ty(*llinfo.TheContext);
+            if (llinfo.DBuilder) dtype->debug_type = llinfo.DBuilder->createBasicType("bool", 1, dwarf::DW_ATE_boolean);
             break;
         }
         case BASIC_TYPE_CUSTOM: {
             assert(dtype->custom_type != nullptr);
             if (dtype->custom_type->llvm_type == nullptr) generateCode(dtype->custom_type);
             dtype->llvm_type = dtype->custom_type->llvm_type;
-            if (DBuilder) dtype->debug_type = dtype->custom_type->debug_type;
+            if (llinfo.DBuilder) dtype->debug_type = dtype->custom_type->debug_type;
             break;
         }
         case BASIC_TYPE_FLOATING: {
             switch (dtype->size_in_bytes) {
             case 4: {
-                dtype->llvm_type = Type::getFloatTy(TheContext);
-                if (DBuilder) dtype->debug_type = DBuilder->createBasicType("f32", 32, dwarf::DW_ATE_float);
+                dtype->llvm_type = Type::getFloatTy(*llinfo.TheContext);
+                if (llinfo.DBuilder) dtype->debug_type = llinfo.DBuilder->createBasicType("f32", 32, dwarf::DW_ATE_float);
                 break;
             }
             case 8: {
-                dtype->llvm_type = Type::getDoubleTy(TheContext);
-                if (DBuilder) dtype->debug_type = DBuilder->createBasicType("f64", 64, dwarf::DW_ATE_float);
+                dtype->llvm_type = Type::getDoubleTy(*llinfo.TheContext);
+                if (llinfo.DBuilder) dtype->debug_type = llinfo.DBuilder->createBasicType("f64", 64, dwarf::DW_ATE_float);
                 break;
             }
             default:
@@ -1141,45 +1195,45 @@ static void generateCode(BaseAST *ast)
         case BASIC_TYPE_INTEGER: {
             switch (dtype->size_in_bytes) {
             case 1: {
-                dtype->llvm_type = Type::getInt8Ty(TheContext);
-                if (DBuilder) {
+                dtype->llvm_type = Type::getInt8Ty(*llinfo.TheContext);
+                if (llinfo.DBuilder) {
                     if (dtype->isSigned) {
-                        dtype->debug_type = DBuilder->createBasicType("s8", 8, dwarf::DW_ATE_signed);
+                        dtype->debug_type = llinfo.DBuilder->createBasicType("s8", 8, dwarf::DW_ATE_signed);
                     } else {
-                        dtype->debug_type = DBuilder->createBasicType("u8", 8, dwarf::DW_ATE_unsigned);
+                        dtype->debug_type = llinfo.DBuilder->createBasicType("u8", 8, dwarf::DW_ATE_unsigned);
                     }
                 }
                 break;
             }
             case 2: {
-                dtype->llvm_type = Type::getInt16Ty(TheContext);
-                if (DBuilder) {
+                dtype->llvm_type = Type::getInt16Ty(*llinfo.TheContext);
+                if (llinfo.DBuilder) {
                     if (dtype->isSigned) {
-                        dtype->debug_type = DBuilder->createBasicType("s16", 16, dwarf::DW_ATE_signed);
+                        dtype->debug_type = llinfo.DBuilder->createBasicType("s16", 16, dwarf::DW_ATE_signed);
                     } else {
-                        dtype->debug_type = DBuilder->createBasicType("u16", 16, dwarf::DW_ATE_unsigned);
+                        dtype->debug_type = llinfo.DBuilder->createBasicType("u16", 16, dwarf::DW_ATE_unsigned);
                     }
                 }
                 break;
             }
             case 4: {
-                dtype->llvm_type = Type::getInt32Ty(TheContext);
-                if (DBuilder) {
+                dtype->llvm_type = Type::getInt32Ty(*llinfo.TheContext);
+                if (llinfo.DBuilder) {
                     if (dtype->isSigned) {
-                        dtype->debug_type = DBuilder->createBasicType("s32", 32, dwarf::DW_ATE_signed);
+                        dtype->debug_type = llinfo.DBuilder->createBasicType("s32", 32, dwarf::DW_ATE_signed);
                     } else {
-                        dtype->debug_type = DBuilder->createBasicType("u32", 32, dwarf::DW_ATE_unsigned);
+                        dtype->debug_type = llinfo.DBuilder->createBasicType("u32", 32, dwarf::DW_ATE_unsigned);
                     }
                 }
                 break;
             }
             case 8: {
-                dtype->llvm_type = Type::getInt64Ty(TheContext);
-                if (DBuilder) {
+                dtype->llvm_type = Type::getInt64Ty(*llinfo.TheContext);
+                if (llinfo.DBuilder) {
                     if (dtype->isSigned) {
-                        dtype->debug_type = DBuilder->createBasicType("s64", 64, dwarf::DW_ATE_signed);
+                        dtype->debug_type = llinfo.DBuilder->createBasicType("s64", 64, dwarf::DW_ATE_signed);
                     } else {
-                        dtype->debug_type = DBuilder->createBasicType("u64", 64, dwarf::DW_ATE_unsigned);
+                        dtype->debug_type = llinfo.DBuilder->createBasicType("u64", 64, dwarf::DW_ATE_unsigned);
                     }
                 }
                 break;
@@ -1192,35 +1246,39 @@ static void generateCode(BaseAST *ast)
         case BASIC_TYPE_STRING: {
             // A string is a special case of a struct type
             std::vector<Type *> struct_members;
-            struct_members.push_back(Type::getInt8PtrTy(TheContext)); // the char *
-            struct_members.push_back(Type::getInt64Ty(TheContext)); // the size
-            dtype->llvm_type = StructType::create(TheContext, struct_members, "Rad_string");
-            if (DBuilder) {
+            struct_members.push_back(Type::getInt8PtrTy(*llinfo.TheContext)); // the char *
+            struct_members.push_back(Type::getInt64Ty(*llinfo.TheContext)); // the size
+            dtype->llvm_type = StructType::create(*llinfo.TheContext, struct_members, "Rad_string");
+            if (llinfo.DBuilder) {
 
                 // Ok, this is rather complicated. For debug struct types in llvm, is needed to 
                 // first create the container object, but without members. 
-                auto* composite_type = DBuilder->createStructType(dtype->scope->debug_scope, "Rad_string",
-                    getOrCreateDFile(dtype), dtype->line_num, 128, 0, DINode::FlagZero, nullptr,
+                auto* composite_type = llinfo.DBuilder->createStructType(llinfo.getDebugScope(), "Rad_string",
+                    llinfo.getOrCreateDFile(dtype), dtype->line_num, 128, 0, DINode::FlagZero, nullptr,
                     DINodeArray());
                 // Now we create the elements
                 std::vector<Metadata*> debug_struct_members;
                 DirectTypeAST* s8type = getBuiltInType(TK_S8);
                 if (s8type->debug_type == nullptr) generateCode(s8type);
-                debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "data", nullptr, 0, 64, 0, 0,
-                    DINode::FlagZero, DBuilder->createPointerType(s8type->debug_type, 64)));
+                debug_struct_members.push_back(llinfo.DBuilder->createMemberType(composite_type, "data", nullptr, 0, 64, 0, 0,
+                    DINode::FlagZero, getLlvmDebugPointer(s8type)));
                 DirectTypeAST* s64type = getBuiltInType(TK_S64);
                 if (s64type->debug_type == nullptr) generateCode(s64type);
-                debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "count", nullptr, 0, 64, 0, 64,
+                debug_struct_members.push_back(llinfo.DBuilder->createMemberType(composite_type, "count", nullptr, 0, 64, 0, 64,
                     DINode::FlagZero, s64type->debug_type));
                 // Create the array the way they like it, and replace the arrays           
-                DBuilder->replaceArrays(composite_type, DBuilder->getOrCreateArray(debug_struct_members));
+                llinfo.DBuilder->replaceArrays(composite_type, llinfo.DBuilder->getOrCreateArray(debug_struct_members));
                 dtype->debug_type = composite_type;
             }
             break;
         }
         case BASIC_TYPE_VOID: {
-            dtype->llvm_type = Type::getVoidTy(TheContext);
-            // void for debug types can be just nullptr (for return functions)
+            dtype->llvm_type = Type::getVoidTy(*llinfo.TheContext);
+            if (llinfo.DBuilder) {
+                // Actually, void* does not exist in LLVM, we use u8*. 
+                // Mostly this is used when we have a void*. 
+                dtype->debug_type = llinfo.DBuilder->createBasicType("u8", 8, dwarf::DW_ATE_unsigned);
+            }
             return;
         }
         default:
@@ -1240,10 +1298,10 @@ static void generateCode(BaseAST *ast)
             // shortcut pointers to structs
             if (stype->llvm_type) {
                 ptype->llvm_type = stype->llvm_type->getPointerTo();
-                if (DBuilder) ptype->debug_type = DBuilder->createPointerType(stype->debug_type, 64);
+                if (llinfo.DBuilder) ptype->debug_type = getLlvmDebugPointer(stype);
             } else {
                 // When a struct has a self reference pointer, we are in this case
-                Type *tp = StructType::create(TheContext, stype->decl->varname);
+                Type *tp = StructType::create(*llinfo.TheContext, stype->decl->varname);
                 stype->llvm_type = tp;
                 ptype->llvm_type = tp->getPointerTo();
             }
@@ -1252,7 +1310,7 @@ static void generateCode(BaseAST *ast)
             assert(dtype->llvm_type != nullptr);
             ptype->llvm_type = getLlvmPointer(dtype);
             // Musings, should there be a centralize unique pointer type for a given type?
-            if (DBuilder) ptype->debug_type = DBuilder->createPointerType(dtype->debug_type, 64);
+            if (llinfo.DBuilder) ptype->debug_type = getLlvmDebugPointer(dtype);
         }
         break;
     }
@@ -1263,47 +1321,47 @@ static void generateCode(BaseAST *ast)
         assert(atype->array_of_type->llvm_type != nullptr);
         if (isStaticArray(atype)) {
             atype->llvm_type = ArrayType::get(atype->array_of_type->llvm_type, atype->num_elems);
-            if (DBuilder) {
+            if (llinfo.DBuilder) {
                 SmallVector<Metadata*, 1> subrange;
                 subrange.push_back(
-                    DBuilder->getOrCreateSubrange(0, atype->num_elems - 1));
-                atype->debug_type = DBuilder->createArrayType(atype->num_elems, 0,
-                    atype->array_of_type->debug_type, DBuilder->getOrCreateArray(subrange));
+                    llinfo.DBuilder->getOrCreateSubrange(0, atype->num_elems - 1));
+                atype->debug_type = llinfo.DBuilder->createArrayType(atype->num_elems, 0,
+                    atype->array_of_type->debug_type, llinfo.DBuilder->getOrCreateArray(subrange));
             }
         } else {
             // common parts for sized and dynamic arrays
             std::vector<Type *> array_members;
             u64 internal_struct_size = 128; // .data and count
             array_members.push_back(getLlvmPointer(atype->array_of_type)); // .data
-            array_members.push_back(Type::getInt64Ty(TheContext)); // This is .count
+            array_members.push_back(Type::getInt64Ty(*llinfo.TheContext)); // This is .count
             const char *llvm_name = "SizedArray";
             if (isDynamicArray(atype)) {
-                array_members.push_back(Type::getInt64Ty(TheContext)); // This is .reserved_size                
+                array_members.push_back(Type::getInt64Ty(*llinfo.TheContext)); // This is .reserved_size                
                 llvm_name = "DynamicArray";
                 internal_struct_size += 64;
             }
-            atype->llvm_type = StructType::create(TheContext, array_members, llvm_name);
+            atype->llvm_type = StructType::create(*llinfo.TheContext, array_members, llvm_name);
 
-            if (DBuilder) {
+            if (llinfo.DBuilder) {
                 // Ok, this is rather complicated. For debug struct types in llvm, is needed to 
                 // first create the container object, but without members. 
-                auto* composite_type = DBuilder->createStructType(atype->scope->debug_scope, llvm_name,
-                    getOrCreateDFile(atype), atype->line_num, internal_struct_size, 0, DINode::FlagZero, nullptr,
+                auto* composite_type = llinfo.DBuilder->createStructType(llinfo.getDebugScope(), llvm_name,
+                    llinfo.getOrCreateDFile(atype), atype->line_num, internal_struct_size, 0, DINode::FlagZero, nullptr,
                     DINodeArray());
                 // Now we create the elements
                 SmallVector<Metadata*, 3> debug_struct_members;
-                debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "data", nullptr, 0, 64, 0, 0,
-                    DINode::FlagZero, DBuilder->createPointerType(atype->array_of_type->debug_type, 64)));
+                debug_struct_members.push_back(llinfo.DBuilder->createMemberType(composite_type, "data", nullptr, 0, 64, 0, 0,
+                    DINode::FlagZero, getLlvmDebugPointer(atype->array_of_type)));
                 DirectTypeAST* s64type = getBuiltInType(TK_S64);
                 if (s64type->debug_type == nullptr) generateCode(s64type);
-                debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "count", nullptr, 0, 64, 0, 64,
+                debug_struct_members.push_back(llinfo.DBuilder->createMemberType(composite_type, "count", nullptr, 0, 64, 0, 64,
                     DINode::FlagZero, s64type->debug_type));
                 if (isDynamicArray(atype)) {
-                    debug_struct_members.push_back(DBuilder->createMemberType(composite_type, "reserved_size", nullptr,
+                    debug_struct_members.push_back(llinfo.DBuilder->createMemberType(composite_type, "reserved_size", nullptr,
                         0, 64, 0, 128, DINode::FlagZero, s64type->debug_type));
                 }
                 // Create the array the way they like it, and replace the arrays           
-                DBuilder->replaceArrays(composite_type, DBuilder->getOrCreateArray(debug_struct_members));
+                llinfo.DBuilder->replaceArrays(composite_type, llinfo.DBuilder->getOrCreateArray(debug_struct_members));
                 atype->debug_type = composite_type;
             }
         }
@@ -1317,7 +1375,7 @@ static void generateCode(BaseAST *ast)
             // how does this play with debug types?
             auto llvm_stype = static_cast<StructType *>(stype->llvm_type);
             if (!llvm_stype->isOpaque()) {
-                if (DBuilder) assert(stype->debug_type);
+                if (llinfo.DBuilder) assert(stype->debug_type);
                 break;
             }
         }
@@ -1330,32 +1388,32 @@ static void generateCode(BaseAST *ast)
             auto llvm_stype = static_cast<StructType *>(stype->llvm_type);
             llvm_stype->setBody(struct_members);            
         } else {
-            stype->llvm_type = StructType::create(TheContext, struct_members, stype->decl->varname);
+            stype->llvm_type = StructType::create(*llinfo.TheContext, struct_members, stype->decl->varname);
         }
 
-        if (DBuilder) {
+        if (llinfo.DBuilder) {
             // This poses a problem. In llvm, the correct way to get the size in bits is using the built
             // llvm type with Layout, but since we generate llvm and debug types at the same time, if we
             // had a struct with a pointer to itself, this would fail. We could assume we know the type size in bits
             // to get past this, or do dual traversal, one for llvm and one for debug types
             // For now, we use our size and no alignments
-            auto& Layout = TheModule->getDataLayout();
-            auto composite_type = DBuilder->createStructType(stype->scope->debug_scope, stype->decl->varname,
-                getOrCreateDFile(stype), stype->line_num, stype->size_in_bytes * 8,
+            auto& Layout = llinfo.TheModule->getDataLayout();
+            auto composite_type = llinfo.DBuilder->createStructType(llinfo.getDebugScope(), stype->decl->varname,
+                llinfo.getOrCreateDFile(stype), stype->line_num, stype->size_in_bytes * 8,
                 0, DINode::FlagZero, nullptr, DINodeArray());
             stype->debug_type = composite_type;
 
             std::vector<Metadata*> debug_struct_members;
             u64 offset = 0;
             for (auto decl : stype->struct_scope.decls) {
-                debug_struct_members.push_back(DBuilder->createMemberType(composite_type, decl->varname,
-                    getOrCreateDFile(decl), decl->line_num, Layout.getTypeSizeInBits(decl->specified_type->llvm_type),
+                debug_struct_members.push_back(llinfo.DBuilder->createMemberType(composite_type, decl->varname,
+                    llinfo.getOrCreateDFile(decl), decl->line_num, Layout.getTypeSizeInBits(decl->specified_type->llvm_type),
                     Layout.getABITypeAlign(decl->specified_type->llvm_type).value(), offset,
                     DINode::FlagZero, decl->specified_type->debug_type));
                 offset += Layout.getTypeSizeInBits(decl->specified_type->llvm_type);
             }
 
-            DBuilder->replaceArrays(composite_type, DBuilder->getOrCreateArray(debug_struct_members));
+            llinfo.DBuilder->replaceArrays(composite_type, llinfo.DBuilder->getOrCreateArray(debug_struct_members));
         }
         break;
     }
@@ -1393,8 +1451,8 @@ static void generateCode(BaseAST *ast)
                 break;
             }
             case ArrayTypeAST::STATIC_ARRAY: {
-                IRBuilder<> TmpB(&llvm_function->getEntryBlock(),
-                    llvm_function->getEntryBlock().begin());
+                IRBuilder<> TmpB(&llinfo.llvm_function->getEntryBlock(),
+                    llinfo.llvm_function->getEntryBlock().begin());
                 auto local_array = TmpB.CreateAlloca(cast->dstType->llvm_type, nullptr, "Internal Array cast");
                 // first, assign the data pointer
                 // create a GEP for the data on the new Sized array
@@ -1411,23 +1469,23 @@ static void generateCode(BaseAST *ast)
 
                 generateCode(dstType->array_of_type);
                 // Get the address of the casted static array, do an llvm to pointer to element (from array)
-                Value *array_data_ptr = Builder.CreatePointerCast(decl->codegen, 
+                Value *array_data_ptr = llinfo.Builder->CreatePointerCast(decl->codegen,
                     dstType->array_of_type->llvm_type->getPointerTo());
                 // And then do a store
-                Value *local_data = Builder.CreateGEP(
+                Value *local_data = llinfo.Builder->CreateGEP(
                     cast->dstType->llvm_type,
                     local_array, idx);
-                Builder.CreateStore(array_data_ptr, local_data);
+                llinfo.Builder->CreateStore(array_data_ptr, local_data);
                 
                 // And now do the same for the count
                 Value *count = ConstantInt::get(llvm_u64, srcType->num_elems);
                 idx.clear();
                 idx.push_back(val_zero);
                 idx.push_back(val_one);
-                Value *local_count = Builder.CreateGEP(
+                Value *local_count = llinfo.Builder->CreateGEP(
                     cast->dstType->llvm_type,
                     local_array, idx);
-                Builder.CreateStore(count, local_count);
+                llinfo.Builder->CreateStore(count, local_count);
                 cast->codegen = local_array;
                 break;
             }
@@ -1446,7 +1504,7 @@ static void generateCode(BaseAST *ast)
             nptr->codegen = ConstantPointerNull::get((PointerType *)nptr->type_to_null->llvm_type);
         } else {
             // assume we are in a corner case and use a default s64 ptr
-            nptr->codegen = ConstantPointerNull::get(Type::getInt64PtrTy(TheContext));
+            nptr->codegen = ConstantPointerNull::get(Type::getInt64PtrTy(*llinfo.TheContext));
         }
         break;
     }
@@ -1458,9 +1516,9 @@ static void generateCode(BaseAST *ast)
             if (!decl_malloc->codegen) generateCode(decl_malloc);
             std::vector<Value *> ArgsV;
             ArgsV.push_back(ConstantInt::get(llvm_u64, ptype->points_to_type->size_in_bytes));
-            auto llvm_call = Builder.CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV, "call");
+            auto llvm_call = llinfo.Builder->CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV, "call");
             // And now we need a cast
-            nast->codegen = Builder.CreatePointerCast(llvm_call, ptype->llvm_type);
+            nast->codegen = llinfo.Builder->CreatePointerCast(llvm_call, ptype->llvm_type);
         } else {
             // Only arrays make sense otherwise
             assert(isTypeArray(nast->expr_type));
@@ -1472,9 +1530,9 @@ static void generateCode(BaseAST *ast)
             if (!decl_malloc->codegen) generateCode(decl_malloc);
             std::vector<Value *> ArgsV;
             ArgsV.push_back(ConstantInt::get(llvm_u64, atype->size_in_bytes));
-            auto llvm_call = Builder.CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV, "call");
+            auto llvm_call = llinfo.Builder->CreateCall((llvm::Function*)decl_malloc->codegen, ArgsV, "call");
             // And now we need a cast
-            nast->codegen = Builder.CreatePointerCast(llvm_call, atype->array_of_type->llvm_type->getPointerTo());
+            nast->codegen = llinfo.Builder->CreatePointerCast(llvm_call, atype->array_of_type->llvm_type->getPointerTo());
         }
         break;
     }
@@ -1682,7 +1740,8 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     auto fname = p.filename();
 
     timer.startTimer();
-    TheModule = new Module(fname.string(), TheContext);
+    llinfo.TheContext = std::make_unique<LLVMContext>();
+    llinfo.TheModule = std::make_unique<Module>(fname.string(), *llinfo.TheContext);
     
     // Initialize the target registry etc.
     InitializeAllTargetInfos();
@@ -1692,18 +1751,18 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     InitializeAllAsmPrinters();
 
     auto TargetTriple = sys::getDefaultTargetTriple();
-    TheModule->setTargetTriple(TargetTriple);
-    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Max, "Dwarf Version", 4);
-    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Warning, "CodeView", 1);
-    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Warning, "Debug Info Version", 3);
+    llinfo.TheModule->setTargetTriple(TargetTriple);
+    llinfo.TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Max, "Dwarf Version", 4);
+    llinfo.TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Warning, "CodeView", 1);
+    llinfo.TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Warning, "Debug Info Version", 3);
     unsigned int wchar_size = 0;
 #ifdef PLATFORM_WINDOWS
     wchar_size = 2;
 #else // PLATFORM_LINUX
     wchar_size = 4;
 #endif                
-    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Error, "wchar_size", wchar_size);
-    TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Max, "PIC Level", 2);
+    llinfo.TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Error, "wchar_size", wchar_size);
+    llinfo.TheModule->addModuleFlag(llvm::Module::ModFlagBehavior::Max, "PIC Level", 2);
 
     std::string Error;
     auto Target = TargetRegistry::lookupTarget(TargetTriple, Error);
@@ -1717,20 +1776,21 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     auto TheTargetMachine =
         Target->createTargetMachine(TargetTriple, CPU, Features, opt, RM);
 
-    TheModule->setDataLayout(TheTargetMachine->createDataLayout());
-    llvm_u32 = Type::getInt32Ty(TheContext);
-    llvm_u64 = Type::getInt64Ty(TheContext);
+    llinfo.TheModule->setDataLayout(TheTargetMachine->createDataLayout());
+    llvm_u32 = Type::getInt32Ty(*llinfo.TheContext);
+    llvm_u64 = Type::getInt64Ty(*llinfo.TheContext);
+    llinfo.Builder = std::make_unique<IRBuilder<>>(*llinfo.TheContext);
 
     if (option_debug_info) {
-        DBuilder = new DIBuilder(*TheModule);
+        llinfo.DBuilder = std::make_unique<DIBuilder>(*llinfo.TheModule);
 
-        DIFile* root_file = getOrCreateDFile(root);
+        DIFile* root_file = llinfo.getOrCreateDFile(root);
 
         // the 1 here is just a hack, we have to define some language
-        RootCU = DBuilder->createCompileUnit(30, root_file, "RAD compiler", 0, "", 0);
-        root->scope->debug_scope = RootCU;
+        llinfo.RootCU = llinfo.DBuilder->createCompileUnit(30, root_file, "RAD compiler", 0, "", 0);
+        root->scope->debug_scope = root_file;
     }
-//    printf("Creating DebugLexical / RootCU %p \n", RootCU);
+//    printf("Creating DebugLexical / RootCU %p Root_File %p \n", RootCU, root_file);
 
     // look for the malloc and free calls (which new depends on)
     for (auto decl : root->global_scope.decls) {
@@ -1767,15 +1827,15 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
             return;
         }
 
-        if (DBuilder) DBuilder->finalize();
+        if (llinfo.DBuilder) llinfo.DBuilder->finalize();
 
 #if 0
         // we can do this with the parameter to print llvm
-        TheModule->print(outs(), nullptr, false, true);
+        llinfo.TheModule->print(outs(), nullptr, false, true);
         outs().flush();
 #endif
 
-        pass.run(*TheModule);
+        pass.run(*llinfo.TheModule);
 
         dest.flush();
 
@@ -1801,7 +1861,7 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     }
 
     if (option_llvm_print) {
-        TheModule->print(outs(), nullptr, false, true);
+        llinfo.TheModule->print(outs(), nullptr, false, true);
         outs().flush();
     }
 }
