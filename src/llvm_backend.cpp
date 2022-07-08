@@ -5,15 +5,18 @@
 #include <windows.h>
 #define DLLEXPORT __declspec(dllexport)
 #else 
+#include <unistd.h>
 #define DLLEXPORT 
 #endif
 
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <filesystem>
 
 #include "Hash.h"
 #include "FileObject.h"
+#include "os.h"
 
 #ifndef WIN32
 # define sprintf_s  sprintf
@@ -37,7 +40,52 @@ Find_Result find_visual_studio_and_windows_sdk();
 void free_resources(Find_Result* result);
 #endif
 
+namespace fs = std::filesystem;
+fs::path find_file_recursive(const fs::path& search_path, const char *fname) {
+    for(auto const& entry: fs::recursive_directory_iterator{search_path}){
+        if (entry.path().filename().string() == fname) {
+            return entry.path();
+        }
+    }
+    return fs::path{};
+}
 
+// List of dependencies
+// 1) same folder as binary (and sub)
+// 2) ../lib (and sub)
+// 3) ../modules (and sub)
+bool find_rad_dependency(const char *name, char* outpath, size_t sz) 
+{
+    char exepath[256]; 
+    if (!osGetCurrentExePath(exepath, sizeof(exepath))) {
+        printf("Error, could not find the current exec path\n");
+        return false;
+    }
+
+    fs::path pexe = fs::path{exepath}.parent_path();
+
+    auto pt = find_file_recursive(pexe, name);
+    if (!pt.empty()) {
+        strncpy(outpath, pt.c_str(), sz);
+        return true;
+    }
+
+    auto bin = pexe / ".." / "bin";
+    pt = find_file_recursive(bin, name);
+    if (!pt.empty()) {
+        strncpy(outpath, pt.c_str(), sz);
+        return true;
+    }
+
+    auto lib = pexe / ".." / "lib";
+    pt = find_file_recursive(lib, name);
+    if (!pt.empty()) {
+        strncpy(outpath, pt.c_str(), sz);
+        return true;
+    }
+
+    return false;
+}
 
 int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_name, bool option_debug_info)
 {
@@ -65,7 +113,7 @@ int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_n
     // the program takes a very long time to exit. We would have to build our own global
     // constructors, destructors and call ExitProcess at the end. Basically implementing a basic CRT
     u32 chars_written = swprintf_s(cmd_line, CMD_SIZE,
-        L"\"%s\\link.exe\" /nologo %hs /INCREMENTAL:NO /subsystem:CONSOLE /NODEFAULTLIB /ENTRY:_start "
+        L"\"%s\\link.exe\" /nologo %hs /INCREMENTAL:NO /subsystem:CONSOLE /NODEFAULTLIB /ENTRY:_radstart "
         L"/LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" /LIBPATH:\"%s\" %s %hs kernel32.lib user32.lib libcmt.lib libvcruntime.lib libucrt.lib"
         L" modules\\start_win.obj", 
         vspath.vs_exe_path, option_debug_info ? "/DEBUG" : "", vspath.vs_library_path, vspath.windows_sdk_root, vspath.windows_sdk_ucrt_library_path, vspath.windows_sdk_um_library_path,
@@ -112,15 +160,27 @@ int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_n
         outfile.setExtension("");
     }
 
+    char depbuf[256];
+    if (!find_rad_dependency("start_win.c.o", depbuf, sizeof(depbuf))) {
+        printf("Error, could not find required file: start_win.c.o\n");
+        return -1;
+    }
+    // TODO: simplify this with assembly chunks: -nodefaultlibs -nostdlib
     u32 chars_written = sprintf(cmd_line, 
-        "clang %s %s -o %s -ldl -lstdc++ -nodefaultlibs",
-        obj_file.getFilename(), option_debug_info ? "-g" : "", outfile.getFilename());
+        "clang %s %s %s -o %s -nodefaultlibs -nostdlib -ldl -Wl,-e,_radstart",
+        obj_file.getFilename(), depbuf, option_debug_info ? "-g" : "", outfile.getFilename());
 
     auto it = imports.begin();
     char *line_ptr = cmd_line + chars_written;
+    char soname[256];
     while (!imports.isEnd(it)) {
         if (it.entry) {
-            chars_written = sprintf(line_ptr, " modules/%s.so", it.entry->key());
+            snprintf(soname, sizeof(soname), "%s.so", it.entry->key());
+            if (!find_rad_dependency(soname, depbuf, sizeof(depbuf))) {
+                printf("Could not find required dependency %s \n", soname);
+                return -1;
+            }
+            chars_written = sprintf(line_ptr, " %s", depbuf);
             line_ptr = line_ptr + chars_written;
         }
         it = imports.next(it);

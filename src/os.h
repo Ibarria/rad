@@ -37,3 +37,4 @@ u64 osGetCurrentProcessId();
 u64 osGetCurrentThreadId();
 
 int compile_c_into_binary(FileObject &filename, ImportsHash &imports);
+bool osGetCurrentExePath(char *path, s32 size);

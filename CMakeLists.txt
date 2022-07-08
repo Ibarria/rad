@@ -56,6 +56,10 @@ add_library(Basic SHARED modules/Basic.cpp)
 set_property(TARGET Basic PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_target_properties(Basic PROPERTIES PREFIX "")
 
+add_library(start_win OBJECT modules/start_win.c)
+
 install(TARGETS rad DESTINATION bin)
 install(TARGETS Basic DESTINATION lib)
+install(FILES $<TARGET_OBJECTS:start_win> DESTINATION lib)
+
 

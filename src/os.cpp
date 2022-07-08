@@ -342,3 +342,16 @@ int compile_c_into_binary(FileObject &filename, ImportsHash &imports)
 #endif
 }
 
+bool osGetCurrentExePath(char *path, s32 size) 
+{
+    memset(path, 0, size);
+#if defined(PLATFORM_WINDOWS)
+    auto ret =  GetModuleFilenameA(NULL, path, size);
+    return ret > 0;
+#elif defined(PLATFORM_LINUX)
+    ssize_t count = readlink("/proc/self/exe", path, size);
+    return count > 0;
+#else
+#error "Unimplemented"
+#endif
+}

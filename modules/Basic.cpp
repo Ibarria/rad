@@ -135,7 +135,12 @@ extern "C" DLLEXPORT void end()
 #if defined(_WIN32)
     ExitProcess(0);
 #else
-	syscall(SYS_exit, 0);
+	// syscall(SYS_exit, 0);
+    asm("mov $60,%rax;" 
+	     "mov $0,%rdi;" 
+		 "syscall"
+    );
+    __builtin_unreachable(); 	
 #endif	
 }
 
@@ -145,6 +150,7 @@ extern "C" DLLEXPORT void __rad_abort()
     __debugbreak();
     end();
 #else
+    __builtin_debugtrap();
     end();
 #endif  
 }
