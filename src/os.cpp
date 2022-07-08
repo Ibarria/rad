@@ -346,7 +346,7 @@ bool osGetCurrentExePath(char *path, s32 size)
 {
     memset(path, 0, size);
 #if defined(PLATFORM_WINDOWS)
-    auto ret =  GetModuleFilenameA(NULL, path, size);
+    auto ret =  GetModuleFileNameA(NULL, path, size);
     return ret > 0;
 #elif defined(PLATFORM_LINUX)
     ssize_t count = readlink("/proc/self/exe", path, size);

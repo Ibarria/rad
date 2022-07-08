@@ -66,21 +66,21 @@ bool find_rad_dependency(const char *name, char* outpath, size_t sz)
 
     auto pt = find_file_recursive(pexe, name);
     if (!pt.empty()) {
-        strncpy(outpath, pt.c_str(), sz);
+        strncpy(outpath, pt.string().c_str(), sz);
         return true;
     }
 
     auto bin = pexe / ".." / "bin";
     pt = find_file_recursive(bin, name);
     if (!pt.empty()) {
-        strncpy(outpath, pt.c_str(), sz);
+        strncpy(outpath, pt.string().c_str(), sz);
         return true;
     }
 
     auto lib = pexe / ".." / "lib";
     pt = find_file_recursive(lib, name);
     if (!pt.empty()) {
-        strncpy(outpath, pt.c_str(), sz);
+        strncpy(outpath, pt.string().c_str(), sz);
         return true;
     }
 
