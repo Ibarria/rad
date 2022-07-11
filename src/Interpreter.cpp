@@ -1509,6 +1509,14 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         // Nothing to do here, we created the type with null on the parser
         break;
     }
+    case AST_CAST : {
+        auto cast = (CastAST*)ast;
+        traversePostfixAST(PPC(cast->dstType), deps);
+        traversePostfixAST(PPC(cast->expr), deps);
+
+        addTypeWork(&pool, astp, deps);
+        break;
+    }
     default:
         assert(!"AST type not being handled on traversePostfixAST");
     }
@@ -2633,7 +2641,7 @@ bool Interpreter::doWorkAST(interp_work * work)
 
                 // special case of Null being on the left hand side
                 if (!isBoolOperator(binop->op)) {
-                    Error(binop, "Null can only be used on boolean operatorsm found on: %s\n",
+                    Error(binop, "Null can only be used on boolean operators found on: %s\n",
                         TokenTypeToCOP(binop->op));
                     return false;
                 }
@@ -3182,7 +3190,116 @@ bool Interpreter::doWorkAST(interp_work * work)
 
         break;
     }
+    case AST_CAST : {
+        auto cast = (CastAST*)ast;
 
+        if (work->action == IA_RESOLVE_TYPE) {
+            cast->expr_type = cast->dstType;
+            // Add here code to ensure that the expr is of a type that can be casted
+            // Likely settle on a cast operation 
+            //  - sign extension
+            //  - extend bytes
+            //  - truncate bytes
+            //  - pointer cast
+            if (cast->expr->expr_type->ast_type == AST_POINTER_TYPE) {
+                if (cast->dstType->ast_type != AST_POINTER_TYPE) {
+                    // pointer to non pointer is only supported on s/u64 integers
+                    if (cast->dstType->ast_type != AST_DIRECT_TYPE) {
+                        Error(ast, "Pointer cast could not be done to other than a {s/u}64\n");
+                        return false;
+                    }
+                    auto dtype = (DirectTypeAST*)cast->dstType;
+                    if (dtype->basic_type != BASIC_TYPE_INTEGER) {
+                        Error(ast, "Pointer cast could not be done to other than a {s/u}64\n");
+                        return false;
+                    }
+                    if (cast->dstType->size_in_bytes != 8) {
+                        Error(ast, "Pointer cast could not be done to other than a {s/u}64, destination is too small\n");
+                        return false;
+                    }
+                    cast->castop = CASTOP_PTR2INT;
+                } else {
+                    // pointer to pointer cast
+                    cast->castop = CASTOP_BITCAST;
+                }
+            } else if (cast->expr->expr_type->ast_type == AST_DIRECT_TYPE) {
+                auto srcdtype = (DirectTypeAST*)cast->expr->expr_type;
+                if (cast->dstType->ast_type == AST_DIRECT_TYPE) {
+                    auto dtype = (DirectTypeAST*)cast->dstType;
+                    // Direct to direct, {int|float|bool} <-> {int|float|bool}
+                    if (srcdtype->basic_type == BASIC_TYPE_INTEGER) {
+                        if (dtype->basic_type == BASIC_TYPE_INTEGER) {
+                            // Integer to integer, sign does not matter, only sizes
+                            if (srcdtype->size_in_bytes > dtype->size_in_bytes) cast->castop = CASTOP_TRUNC;
+                            else if (srcdtype->size_in_bytes < dtype->size_in_bytes) {
+                                cast->castop = srcdtype->isSigned ? CASTOP_SEXT : CASTOP_ZEXT;
+                            } else cast->castop = CASTOP_NOP;
+                        } else if (dtype->basic_type == BASIC_TYPE_FLOATING) {
+                            cast->castop = srcdtype->isSigned ? CASTOP_SI2FP : CASTOP_UI2FP;
+                        } else if (dtype->basic_type == BASIC_TYPE_BOOL) {
+                            cast->castop = srcdtype->size_in_bytes > 1 ? CASTOP_TRUNC: CASTOP_NOP;
+                        } else {
+                            Error(ast, "Cast to a direct type that is not int, float or bool is not supported\n");
+                            return false;
+                        }
+                    } else if (srcdtype->basic_type == BASIC_TYPE_FLOATING) {
+                        if (dtype->basic_type == BASIC_TYPE_FLOATING) {
+                            if (srcdtype->size_in_bytes > dtype->size_in_bytes) {
+                                cast->castop = CASTOP_FPTRUNC;
+                            } else if (srcdtype->size_in_bytes < dtype->size_in_bytes) {
+                                cast->castop = CASTOP_FPEXT;
+                            } else cast->castop = CASTOP_NOP;
+                        } else if (dtype->basic_type == BASIC_TYPE_INTEGER) {
+                            cast->castop = dtype->isSigned ? CASTOP_FP2SI : CASTOP_FP2UI;
+                        } else if (dtype->basic_type == BASIC_TYPE_BOOL) {
+                            cast->castop = CASTOP_FPBOOL;
+                        } else {
+                            Error(ast, "Cast to a direct type that is not int, float or bool is not supported\n");
+                            return false;
+                        }
+                    } else if (srcdtype->basic_type == BASIC_TYPE_BOOL) {
+                        if (dtype->basic_type == BASIC_TYPE_INTEGER) {
+                            if (srcdtype->size_in_bytes < dtype->size_in_bytes) {
+                                cast->castop = srcdtype->isSigned ? CASTOP_SEXT : CASTOP_ZEXT;
+                            } else cast->castop = CASTOP_NOP;
+                        } else if (dtype->basic_type == BASIC_TYPE_FLOATING) {
+                            cast->castop = CASTOP_UI2FP;
+                        } else if (dtype->basic_type == BASIC_TYPE_BOOL) {
+                            cast->castop = CASTOP_NOP;
+                        } else {
+                            Error(ast, "Cast to a direct type that is not int, float or bool is not supported\n");
+                            return false;
+                        }
+                    } else {
+                        Error(ast, "Cast from a direct type that is not integer, float or bool is not supported\n");
+                        return false;
+                    }
+                } else if (cast->dstType->ast_type == AST_POINTER_TYPE) {
+                    // non pointer to pointer, only valid for s/u64 integers
+                    if (srcdtype->basic_type != BASIC_TYPE_INTEGER) {
+                        Error(ast, "Casting to a Pointer could not be done from other than a {s/u}64\n");
+                        return false;
+                    }
+                    if (srcdtype->size_in_bytes != 8) {
+                        Error(ast, "Casting to a Pointer could not be done from other than a {s/u}64, source is too small\n");
+                        return false;
+                    }
+                    cast->castop = CASTOP_INT2PTR;
+                } else {
+                    // @TODO: handle casting on function, arrays and structs
+                    Error(ast, "Cast of anything than pointer, int or float types is not yet supported\n");
+                    return false;
+                }
+            } else {
+                // @TODO: handle casting on function, arrays and structs
+                Error(ast, "Cast of anything than pointer, int or float types is not yet supported\n");
+                return false;
+            }
+        } else {
+            assert(!"Unimplemented, we should never get here");
+        }
+        break;
+    }
     default:
         assert(!"AST type not being handled on traversePostfixAST");
     }

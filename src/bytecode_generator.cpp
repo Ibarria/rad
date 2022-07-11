@@ -1448,7 +1448,12 @@ BCI *bytecode_generator::computeExpression(ExpressionAST * expr)
                 assert(!"We should never be here, unknown array type");
             }
         } else {
-            assert(!"Unsupported cast");
+            // This will handle basic Casts, but not struct casts. 
+            BCI* bci = create_instruction(BC_UNARY_OPERATION, expr_reg->dst_reg, -1, reserveRegister(), cast->castop);
+            assert(cast->expr_type->size_in_bytes < 256);
+            bci->dst_type_bytes = (u8)cast->dstType->size_in_bytes;
+            bci->dst_type = get_regtype_from_type(cast->dstType);
+            ret = bci;
         }
         break;
     }
@@ -2298,6 +2303,266 @@ void bytecode_runner::run_bc_function(bytecode_function * func)
                 dstreg.bytes = bci->dst_type_bytes;
                 break;
             }
+            case CASTOP_NOP: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                assert(bci->dst_type != REGTYPE_UNKNOWN);
+                dstreg.data = srcreg.data;
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                break;
+            }
+            case CASTOP_TRUNC: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                assert(bci->dst_type != REGTYPE_UNKNOWN);
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(bci->dst_type == REGTYPE_SINT || bci->dst_type == REGTYPE_UINT);
+                if (bci->dst_type_bytes == 1) {
+                    dstreg.data._u8 = (u8)(srcreg.data._u64 & 0xFF);
+                } else if (bci->dst_type_bytes == 2) {
+                    dstreg.data._u16 = (u16)(srcreg.data._u64 & 0XFFFF) ;
+                } else if (bci->dst_type_bytes == 4) {
+                    dstreg.data._u32 = (u32)(srcreg.data._u64 & 0XFFFFFFFF);
+                } else {
+                    assert(!"We should never be here, not possible to truncate");
+                }
+                break;
+            }
+            case CASTOP_ZEXT: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                assert(bci->dst_type != REGTYPE_UNKNOWN);
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(bci->dst_type == REGTYPE_SINT || bci->dst_type == REGTYPE_UINT);
+                if (bci->dst_type_bytes == 2) {
+                    assert(srcreg.bytes == 1); // Nothing else makes sense
+                    dstreg.data._u16 = (u16)srcreg.data._u8;
+                } else if (bci->dst_type_bytes == 4) {
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._u32 = (u32)srcreg.data._u8;
+                    } else {
+                        assert(srcreg.bytes == 2);
+                        dstreg.data._u32 = (u32)srcreg.data._u16;
+                    }
+                } else if (bci->dst_type_bytes == 8) {
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._u64 = (u64)srcreg.data._u8;
+                    } else if (srcreg.bytes == 2) {
+                        dstreg.data._u64 = (u64)srcreg.data._u16;
+                    } else {
+                        assert(srcreg.bytes == 4);
+                        dstreg.data._u64 = (u64)srcreg.data._u32;
+                    } 
+                }
+                break;
+            }
+            case CASTOP_SEXT: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(bci->dst_type == REGTYPE_SINT || bci->dst_type == REGTYPE_UINT);
+                if (bci->dst_type_bytes == 2) {
+                    assert(srcreg.bytes == 1); // Nothing else makes sense
+                    dstreg.data._s16 = (s16)srcreg.data._s8;
+                } else if (bci->dst_type_bytes == 4) {
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._s32 = (s32)srcreg.data._s8;
+                    } else {
+                        assert(srcreg.bytes == 2);
+                        dstreg.data._s32 = (s32)srcreg.data._s16;
+                    }
+                } else if (bci->dst_type_bytes == 8) {
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._s64 = (s64)srcreg.data._s8;
+                    } else if (srcreg.bytes == 2) {
+                        dstreg.data._s64 = (s64)srcreg.data._s16;
+                    } else {
+                        assert(srcreg.bytes == 4);
+                        dstreg.data._s64 = (s64)srcreg.data._s32;
+                    }
+                }
+                break;
+            }
+            case CASTOP_FP2UI: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(srcreg.type == REGTYPE_FLOAT);
+                assert(bci->dst_type == REGTYPE_UINT);
+
+                double v = srcreg.bytes == 4 ? srcreg.data._f32 : srcreg.data._f64;
+                if (bci->dst_type_bytes == 1) {
+                    dstreg.data._u8 = (u8)v;
+                } else if (bci->dst_type_bytes == 2) {
+                    dstreg.data._u16 = (u16)v;
+                } else if (bci->dst_type_bytes == 4) {
+                    dstreg.data._u32 = (u32)v;
+                } else {
+                    assert(bci->dst_type_bytes == 8);
+                    dstreg.data._u64 = (u64)v;
+                }
+
+                break;
+            }
+            case CASTOP_FP2SI: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(srcreg.type == REGTYPE_FLOAT);
+                assert(bci->dst_type == REGTYPE_SINT);
+
+                double v = srcreg.bytes == 4 ? srcreg.data._f32 : srcreg.data._f64;
+                if (bci->dst_type_bytes == 1) {
+                    dstreg.data._s8 = (s8)v;
+                } else if (bci->dst_type_bytes == 2) {
+                    dstreg.data._s16 = (s16)v;
+                } else if (bci->dst_type_bytes == 4) {
+                    dstreg.data._s32 = (s32)v;
+                } else {
+                    assert(bci->dst_type_bytes == 8);
+                    dstreg.data._s64 = (s64)v;
+                }
+
+                break;
+            }
+            case CASTOP_SI2FP: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(srcreg.type == REGTYPE_SINT);
+                assert(bci->dst_type == REGTYPE_FLOAT);
+
+                if (bci->dst_type_bytes == 4) {
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._f32 = (f32)srcreg.data._s8;
+                    } else if (srcreg.bytes == 2) {
+                        dstreg.data._f32 = (f32)srcreg.data._s16;
+                    } else if (srcreg.bytes == 4) {
+                        dstreg.data._f32 = (f32)srcreg.data._s32;
+                    } else {
+                        assert(srcreg.bytes == 8);
+                        dstreg.data._f32 = (f32)srcreg.data._s64;
+                    }
+                } else {
+                    assert(bci->dst_type_bytes == 8);
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._f64 = (f64)srcreg.data._s8;
+                    } else if (srcreg.bytes == 2) {
+                        dstreg.data._f64 = (f64)srcreg.data._s16;
+                    } else if (srcreg.bytes == 4) {
+                        dstreg.data._f64 = (f64)srcreg.data._s32;
+                    } else {
+                        assert(srcreg.bytes == 8);
+                        dstreg.data._f64 = (f64)srcreg.data._s64;
+                    }
+                }
+
+                break;
+            }
+            case CASTOP_UI2FP: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(srcreg.type == REGTYPE_UINT);
+                assert(bci->dst_type == REGTYPE_FLOAT);
+
+                if (bci->dst_type_bytes == 4) {
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._f32 = (f32)srcreg.data._u8;
+                    } else if (srcreg.bytes == 2) {
+                        dstreg.data._f32 = (f32)srcreg.data._u16;
+                    } else if (srcreg.bytes == 4) {
+                        dstreg.data._f32 = (f32)srcreg.data._u32;
+                    } else {
+                        assert(srcreg.bytes == 8);
+                        dstreg.data._f32 = (f32)srcreg.data._u64;
+                    }
+                } else {
+                    assert(bci->dst_type_bytes == 8);
+                    if (srcreg.bytes == 1) {
+                        dstreg.data._f64 = (f64)srcreg.data._u8;
+                    } else if (srcreg.bytes == 2) {
+                        dstreg.data._f64 = (f64)srcreg.data._u16;
+                    } else if (srcreg.bytes == 4) {
+                        dstreg.data._f64 = (f64)srcreg.data._u32;
+                    } else {
+                        assert(srcreg.bytes == 8);
+                        dstreg.data._f64 = (f64)srcreg.data._u64;
+                    }
+                }
+                break;
+            }
+            case CASTOP_FPTRUNC: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(srcreg.type == REGTYPE_FLOAT);
+                assert(bci->dst_type == REGTYPE_FLOAT);
+                assert(srcreg.bytes == 8 && bci->dst_type_bytes == 4);
+                dstreg.data._f32 = (f32)srcreg.data._f64;
+                break;
+            }
+            case CASTOP_FPEXT: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(srcreg.type == REGTYPE_FLOAT);
+                assert(bci->dst_type == REGTYPE_FLOAT);
+                assert(srcreg.bytes == 4 && bci->dst_type_bytes == 8);
+                dstreg.data._f64 = (f64)srcreg.data._f32;
+                break;
+            }
+            case CASTOP_FPBOOL: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(srcreg.type == REGTYPE_FLOAT);
+                assert(bci->dst_type == REGTYPE_UINT);
+                assert(bci->dst_type_bytes == 1);
+                dstreg.data._u8 = srcreg.bytes == 4 ? (srcreg.data._f32 == 0.0f) : (srcreg.data._f64 == 0.0);
+                break;
+            }
+            case CASTOP_BITCAST: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(srcreg.type == REGTYPE_POINTER);
+                assert(bci->dst_type == REGTYPE_POINTER);
+                dstreg.data = srcreg.data;
+                break;
+            }
+            case CASTOP_PTR2INT: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(srcreg.type == REGTYPE_POINTER);
+                assert(bci->dst_type == REGTYPE_UINT || bci->dst_type == REGTYPE_SINT);
+                dstreg.data._u64 = (uintptr_t)srcreg.data._ptr;
+                break;
+            }
+            case CASTOP_INT2PTR: {
+                assert((bci->dst_reg < func->num_regs) && (bci->dst_reg >= 0));
+                assert((bci->src_reg < func->num_regs) && (bci->src_reg >= 0));
+                dstreg.type = bci->dst_type;
+                dstreg.bytes = bci->dst_type_bytes;
+                assert(bci->dst_type == REGTYPE_POINTER);
+                assert(srcreg.type == REGTYPE_UINT || srcreg.type == REGTYPE_SINT);
+                dstreg.data._ptr = (u8 *)srcreg.data._u64;
+                break;
+            }
             default:
                 assert(!"Unsupported unary operator!");
             }
@@ -2605,6 +2870,10 @@ void bytecode_runner::callExternalFunction(FunctionDefinitionAST * fundef, BCI *
     vm = (DCCallVM *)CallVM;
     dcReset(vm);
 
+    // We are leveraging C printf (we should move away), and printf expects
+    // all floats to be converted to double
+    bool print_hack = !strcmp(fundef->var_decl->varname, "print");
+
     for (s32 i = 0; i < current_call_register->num_regs; i++) {
         auto &data = current_call_register->data[i];
         auto type = current_call_register->type[i];
@@ -2623,7 +2892,11 @@ void bytecode_runner::callExternalFunction(FunctionDefinitionAST * fundef, BCI *
         else if (type == REGTYPE_FLOAT) {
             switch (bytes) {
             case 4:
-                dcArgFloat(vm, data._f32);
+                if (print_hack) {
+                    dcArgDouble(vm, (f64)data._f32);
+                } else {
+                    dcArgFloat(vm, data._f32);
+                }
                 break;
             case 8: 
                 dcArgDouble(vm, data._f64);

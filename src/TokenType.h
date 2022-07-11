@@ -61,6 +61,7 @@ enum TOKEN_TYPE {
     TK_BREAK,
     TK_CONTINUE,
     TK_RETURN,
+    TK_CAST,
     TK_TRUE,
     TK_FALSE,
     TK_NEW, 

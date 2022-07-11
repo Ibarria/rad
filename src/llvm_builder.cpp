@@ -75,6 +75,8 @@ static LLVMInfo llinfo;
 // Statics for the llvm type, to make code more readable
 static Type *llvm_u32;
 static Type *llvm_u64;
+static Type* llvm_f32;
+static Type* llvm_f64;
 
 // These helpers are for new and delete to know what to call
 // this could be done in the Interpreter
@@ -1026,11 +1028,26 @@ static void generateCode(BaseAST *ast)
     }
     case AST_FUNCTION_CALL: {
         auto funcall = (FunctionCallAST *)ast;
+        // Print in C expects all floats to be printed as double... 
+        bool needs_print_ext = !strcmp(funcall->function_name, "print");
         std::vector<Value *> ArgsV;
         for (auto arg : funcall->args) {
             generateCode(arg);
+            auto* topush = arg->codegen;
             assert(arg->codegen);
-            ArgsV.push_back(arg->codegen);
+            if (needs_print_ext && arg->expr_type->ast_type == AST_DIRECT_TYPE) {
+                auto dtype = (DirectTypeAST*)arg->expr_type;
+                if (dtype->basic_type == BASIC_TYPE_FLOATING && dtype->size_in_bytes == 4) {
+                    topush = llinfo.Builder->CreateFPExt(arg->codegen, llvm_f64);
+                } else if (dtype->basic_type == BASIC_TYPE_INTEGER && (dtype->size_in_bytes < 4)) {
+                    if (dtype->isSigned) {
+                        topush = llinfo.Builder->CreateSExt(arg->codegen, llvm_u32);
+                    } else {
+                        topush = llinfo.Builder->CreateZExt(arg->codegen, llvm_u32);
+                    }
+                }
+            }
+            ArgsV.push_back(topush);
         }
         // The function call should not have a name if the return value is void
         auto llvm_call = llinfo.Builder->CreateCall((llvm::Function *)funcall->fundef->var_decl->codegen, ArgsV);
@@ -1178,12 +1195,12 @@ static void generateCode(BaseAST *ast)
         case BASIC_TYPE_FLOATING: {
             switch (dtype->size_in_bytes) {
             case 4: {
-                dtype->llvm_type = Type::getFloatTy(*llinfo.TheContext);
+                dtype->llvm_type = llvm_f32;
                 if (llinfo.DBuilder) dtype->debug_type = llinfo.DBuilder->createBasicType("f32", 32, dwarf::DW_ATE_float);
                 break;
             }
             case 8: {
-                dtype->llvm_type = Type::getDoubleTy(*llinfo.TheContext);
+                dtype->llvm_type = llvm_f64;
                 if (llinfo.DBuilder) dtype->debug_type = llinfo.DBuilder->createBasicType("f64", 64, dwarf::DW_ATE_float);
                 break;
             }
@@ -1431,6 +1448,7 @@ static void generateCode(BaseAST *ast)
     case AST_CAST: {
         auto cast = (CastAST *)ast;        
         if (cast->dstType->ast_type == AST_ARRAY_TYPE) {
+            assert(cast->isImplicit);
             auto dstType = (ArrayTypeAST *)cast->dstType;
             if (!isSizedArray(dstType)) {
                 assert(!"Unsupported cast");
@@ -1493,7 +1511,71 @@ static void generateCode(BaseAST *ast)
                 assert(!"We should never be here, unknown array type");
             }
         } else {
-            assert(!"Unsupported cast");
+            generateCode(cast->dstType);
+            generateCode(cast->expr);
+            switch (cast->castop) {
+            case CASTOP_NOP: {
+                cast->codegen = cast->expr->codegen;
+                break;
+            }
+            case CASTOP_TRUNC: {
+                cast->codegen = llinfo.Builder->CreateTrunc(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_ZEXT: {
+                cast->codegen = llinfo.Builder->CreateZExt(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_SEXT: {
+                cast->codegen = llinfo.Builder->CreateSExt(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_FP2UI: {
+                cast->codegen = llinfo.Builder->CreateFPToUI(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_FP2SI: {
+                cast->codegen = llinfo.Builder->CreateFPToSI(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_SI2FP: {
+                cast->codegen = llinfo.Builder->CreateSIToFP(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_UI2FP: {
+                cast->codegen = llinfo.Builder->CreateUIToFP(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_FPTRUNC: {
+                cast->codegen = llinfo.Builder->CreateFPTrunc(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_FPEXT: {
+                cast->codegen = llinfo.Builder->CreateFPExt(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_FPBOOL: {
+                // Issue a comparison with the expr, and then assign that to bool
+                bool isDouble = cast->expr->expr_type->size_in_bytes == 8;
+                auto* val = llinfo.Builder->CreateFCmpUNE(cast->expr->codegen, ConstantFP::get(isDouble ? llvm_f64 : llvm_f32, 0.0));
+                cast->codegen = llinfo.Builder->CreateZExt(val, Type::getInt8Ty(*llinfo.TheContext));
+                break;
+            }
+            case CASTOP_BITCAST: {
+                cast->codegen = llinfo.Builder->CreateBitCast(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_PTR2INT: {
+                cast->codegen = llinfo.Builder->CreatePtrToInt(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            case CASTOP_INT2PTR: {
+                cast->codegen = llinfo.Builder->CreateIntToPtr(cast->expr->codegen, cast->dstType->llvm_type);
+                break;
+            }
+            default:
+                assert(!"Unsupported cast");
+            }
         }
         break;
     }
@@ -1779,6 +1861,8 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     llinfo.TheModule->setDataLayout(TheTargetMachine->createDataLayout());
     llvm_u32 = Type::getInt32Ty(*llinfo.TheContext);
     llvm_u64 = Type::getInt64Ty(*llinfo.TheContext);
+    llvm_f32 = Type::getFloatTy(*llinfo.TheContext);
+    llvm_f64 = Type::getDoubleTy(*llinfo.TheContext);
     llinfo.Builder = std::make_unique<IRBuilder<>>(*llinfo.TheContext);
 
     if (option_debug_info) {

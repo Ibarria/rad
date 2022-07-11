@@ -105,6 +105,9 @@
     <None Include="sanity\typecheck_test.rad">
       <Filter>Sanity Tests</Filter>
     </None>
+    <None Include="sanity\cast.rad">
+      <Filter>Sanity Tests</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Grammar.txt" />

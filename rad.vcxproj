@@ -180,6 +180,7 @@
   <ItemGroup>
     <None Include="README.md" />
     <None Include="sanity\arrays.rad" />
+    <None Include="sanity\cast.rad" />
     <None Include="sanity\factorial.rad" />
     <None Include="sanity\for_test.rad" />
     <None Include="sanity\pointers.rad" />

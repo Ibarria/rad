@@ -95,6 +95,7 @@ const char * TokenTypeToStr(TOKEN_TYPE type)
         CASE_TOKEN_TYPE(TK_IF);
         CASE_TOKEN_TYPE(TK_FOR);
         CASE_TOKEN_TYPE(TK_RETURN);
+        CASE_TOKEN_TYPE(TK_CAST);
         CASE_TOKEN_TYPE(TK_BOOL);
         CASE_TOKEN_TYPE(TK_TRUE);
         CASE_TOKEN_TYPE(TK_NEW);

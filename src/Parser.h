@@ -40,6 +40,7 @@ struct Parser {
     FunctionDefinitionAST *parseFunctionDefinition();
     StructDefinitionAST *parseStructDefinition();
     FunctionCallAST *parseFunctionCall();
+    CastAST* parseCast();
     VarReferenceAST * parseVarReference();
 
     ExpressionAST * parseLiteral();

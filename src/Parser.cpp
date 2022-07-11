@@ -971,6 +971,38 @@ FunctionCallAST * Parser::parseFunctionCall()
     return funcall;
 }
 
+CastAST* Parser::parseCast()
+{
+    CastAST* cast = NEW_AST(CastAST);
+    Token t;
+    lex->getNextToken(t);
+
+    assert(t.type == TK_CAST);
+
+    MustMatchToken(TK_OPEN_PAREN);
+    if (!success) {
+        return nullptr;
+    }
+    cast->dstType = parseType();
+    if (!success) {
+        return nullptr;
+    }
+    MustMatchToken(TK_COMMA);
+    if (!success) {
+        return nullptr;
+    }
+    cast->expr = parseExpression();
+    if (!success) {
+        return nullptr;
+    }
+    MustMatchToken(TK_CLOSE_PAREN);
+    if (!success) {
+        return nullptr;
+    }
+
+    return cast;
+}
+
 VarReferenceAST * Parser::parseVarReference()
 {
     Token t;
@@ -1121,6 +1153,8 @@ ExpressionAST * Parser::parseUnaryExpression()
         if (lex->checkAheadToken(TK_OPEN_PAREN, 1)) {
             return parseFunctionCall();
         }
+    } else if (t.type == TK_CAST) {
+        return parseCast();
     } else if (t.type == TK_NEW) {
         lex->consumeToken();
         NewAllocAST *nast = NEW_AST(NewAllocAST);

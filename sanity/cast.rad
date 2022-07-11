@@ -1,0 +1,108 @@
+#import "Basic"
+
+main :: () 
+{
+  setsmallu64 : u64 = 10;
+  setsmallu32 : u32 = 10;
+  setsmallu16 : u16 = 10;
+  setsmallu8 : u8 = 10;
+
+  setsmalls64 : s64 = 10;
+  setsmalls32 : s32 = 10;
+  setsmalls16 : s16 = 10;
+  setsmalls8 : s8 = 10;
+
+  setsmallns64 : s64 = -10;
+  setsmallns32 : s32 = -10;
+  setsmallns16 : s16 = -10;
+  setsmallns8 : s8 = -10;
+
+  setsmallf32 : f32 = 3.2;
+  setsmallf64 : f64 = 4.3;
+  setsmallnf32 : f32 = -2.3;
+  setsmallnf64 : f64 = -8.7;
+
+  setlargeu64 : u64 = 68719476735;
+  setlargeu32 : u32 = 3004967295;
+  setlargeu16 : u16 = 64020;
+  setlargeu8  : u8  = 212;
+
+  unsetu64 : u64;
+  unsetu32 : u32;
+  unsetu16 : u16;
+  unsetu8 : u8;
+
+  unsets64 : s64;
+  unsets32 : s32;
+  unsets16 : s16;
+  unsets8 : s8;
+
+  unsetf32 : f32;
+  unsetf64 : f64;
+
+  // Do simple cast to u32 from unsigned int
+  unsetu32 = cast(u32, setsmallu64);
+  print("Casting u64 %zu to u32: %u\n", setsmallu64, unsetu32);
+  unsetu32 = cast(u32, setsmallu32);
+  print("Casting u32 %u to u32: %u\n", setsmallu32, unsetu32);
+  unsetu32 = cast(u32, setsmallu16);
+  print("Casting u16 %u to u32: %u\n", setsmallu16, unsetu32);
+  unsetu32 = cast(u32, setsmallu8);
+  print("Casting u8 %u to u32: %u\n", setsmallu8, unsetu32);
+
+  // Do simple cast to u32 from signed int
+  unsetu32 = cast(u32, setsmalls64);
+  print("Casting s64 %zd to u32: %u\n", setsmalls64, unsetu32);
+  unsetu32 = cast(u32, setsmalls32);
+  print("Casting s32 %d to u32: %u\n", setsmalls32, unsetu32);
+  unsetu32 = cast(u32, setsmalls16);
+  print("Casting s16 %d to u32: %u\n", setsmalls16, unsetu32);
+  unsetu32 = cast(u32, setsmalls8);
+  print("Casting s8 %d to u32: %u\n", setsmalls8, unsetu32);
+
+  // Do simple cast to u32 from negative signed int
+  unsetu32 = cast(u32, setsmallns64);
+  print("Casting s64 %zd to u32: %X\n", setsmallns64, unsetu32);
+  unsetu32 = cast(u32, setsmallns32);
+  print("Casting s32 %d to u32: %X\n", setsmallns32, unsetu32);
+  unsetu32 = cast(u32, setsmallns16);
+  print("Casting s16 %d to u32: %X\n", setsmallns16, unsetu32);
+  unsetu32 = cast(u32, setsmallns8);
+  print("Casting s8 %d to u32: %X\n", setsmallns8, unsetu32);
+
+  // Do casts that lose precision
+  unsetu32 = cast(u32, setlargeu64);
+  print("Casting u64 %zX to u32: %X\n", setlargeu64, unsetu32);
+  unsetu16 = cast(u16, setlargeu64);
+  print("Casting u64 %zX to u16: %hX\n", setlargeu64, unsetu16);
+  unsetu8 = cast(u8, setlargeu64);
+  print("Casting u64 %zX to u8: %X\n", setlargeu64, unsetu8);
+
+  unsetu16 = cast(u16, setlargeu32);
+  print("Casting u32 %X to u16: %hX\n", setlargeu32, unsetu16);
+  unsetu8 = cast(u8, setlargeu32);
+  print("Casting u32 %X to u8: %X\n", setlargeu32, unsetu8);
+
+  unsetu8 = cast(u8, setlargeu16);
+  print("Casting u16 %hX to u8: %X\n", setlargeu16, unsetu8);
+
+  unsetf32 = cast(f32, setsmallf32);
+  print("Casting f32 %f to f32: %f\n", setsmallf32, unsetf32);
+  unsetf32 = cast(f32, setsmallf64);
+  print("Casting f64 %f to f32: %f\n", setsmallf64, unsetf32);
+  unsetf32 = cast(f32, setsmallnf32);
+  print("Casting f32 %f to f32: %f\n", setsmallnf32, unsetf32);
+  unsetf32 = cast(f32, setsmallnf64);
+  print("Casting f64 %f to f32: %f\n", setsmallnf64, unsetf32);
+
+  unsetf64 = cast(f64, setsmallf32);
+  print("Casting f32 %f to f64: %f\n", setsmallf32, unsetf64);
+  unsetf64 = cast(f64, setsmallnf32);
+  print("Casting f32 %f to f64: %f\n", setsmallnf32, unsetf64);
+
+  unsetu32 = cast(u32, setsmallf32);
+  print("Casting f32 %f to u32 %u\n", setsmallf32, unsetu32);
+
+}
+
+#run main()

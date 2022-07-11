@@ -71,6 +71,24 @@ enum AST_CLASS_TYPE {
     AST_STRUCT_ACCESS,
 };
 
+enum CastOperation {
+    CASTOP_UNKNOWN = 0,
+    CASTOP_NOP = 0x1000,
+    CASTOP_TRUNC, 
+    CASTOP_ZEXT,
+    CASTOP_SEXT,
+    CASTOP_FP2UI,
+    CASTOP_FP2SI,
+    CASTOP_SI2FP,
+    CASTOP_UI2FP,
+    CASTOP_FPTRUNC,
+    CASTOP_FPEXT,
+    CASTOP_FPBOOL,
+    CASTOP_BITCAST,
+    CASTOP_PTR2INT,
+    CASTOP_INT2PTR
+};
+
 struct BaseAST
 {
     AST_CLASS_TYPE ast_type;
@@ -368,6 +386,7 @@ struct CastAST : ExpressionAST
     TypeAST *srcType = nullptr;
     TypeAST *dstType = nullptr;
     ExpressionAST *expr = nullptr;
+    CastOperation castop = CASTOP_UNKNOWN;
     bool isImplicit = false;
 };
 

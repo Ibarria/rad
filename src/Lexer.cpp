@@ -71,6 +71,7 @@ struct ReservedKeyword {
     { "float",    TK_FLOAT },
     { "f32",      TK_F32 },
     { "f64",      TK_F64 },
+    { "cast",     TK_CAST },
 
     { nullptr,    TK_INVALID}
 };
