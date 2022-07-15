@@ -162,6 +162,8 @@ struct IfStatementAST : StatementAST
     StatementAST *then_branch = nullptr;
     StatementAST *else_branch = nullptr;
     llvm::Value *codegen = nullptr;
+    bool then_branch_return = false;
+    bool else_branch_return = false;
 };
 
 struct ForStatementAST : StatementAST

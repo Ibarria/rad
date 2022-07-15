@@ -23,7 +23,7 @@ def compare_files(file1, file2):
         print("Files", file1, file2, "differ!")
         return False
 
-def execute_test( radexe, golddir, testdir, testname):
+def execute_test( radexe, golddir, testdir, testname, cflags):
     # Ensure a clean slate
     myremove('compileout.txt')
     myremove('runout.txt')
@@ -31,7 +31,7 @@ def execute_test( radexe, golddir, testdir, testname):
     nameonly = os.path.splitext(testname)[0]
 
     # Start by compiling    
-    cmd = radexe + " -quiet " + os.path.join(testdir, testname)
+    cmd = radexe + " -quiet " + cflags + " " + os.path.join(testdir, testname)
     file = open('compileout.txt', 'w')
     with open('compileout.txt', 'w') as file:
         subprocess.call(cmd, stdout=file, stderr=subprocess.STDOUT, shell=True)
@@ -91,14 +91,37 @@ bad_tests = []
 
 for filename in os.listdir(testdir):
     if filename.endswith(".rad"): 
-        print("%-40s" % os.path.join(testdir, filename), end = " ")
-        if not execute_test(radexe, golddir, testdir, filename) :
-            print(Fore.RED + " FAILED" + Style.RESET_ALL)
+        print("%-30s" % os.path.join(testdir, filename), end = " ")
+        normal = execute_test(radexe, golddir, testdir, filename, "")
+        if normal: 
+            print(Fore.GREEN + " NORMAL" + Style.RESET_ALL, end = " ")
+        else:
+            print(Fore.RED + " NORMAL" + Style.RESET_ALL, end = " ")
+
+        dbinfo = execute_test(radexe, golddir, testdir, filename, "-g")
+        if dbinfo: 
+            print(Fore.GREEN + " DBINFO" + Style.RESET_ALL, end = " ")
+        else:
+            print(Fore.RED + " DBINFO" + Style.RESET_ALL, end = " ")
+
+        opt = execute_test(radexe, golddir, testdir, filename, "-opt")
+        if opt: 
+            print(Fore.GREEN + " OPT" + Style.RESET_ALL, end = " ")
+        else:
+            print(Fore.RED + " OPT" + Style.RESET_ALL, end = " ")
+
+        dbopt = execute_test(radexe, golddir, testdir, filename, "-g -opt")
+        if dbopt: 
+            print(Fore.GREEN + " DBOPT" + Style.RESET_ALL)
+        else:
+            print(Fore.RED + " DBOPT" + Style.RESET_ALL)
+
+        if normal and dbinfo and opt and dbopt :
+            num_ok_tests+=1
+        else :
             num_bad_tests+=1
             bad_tests.append(filename)
-        else:
-            print(Fore.GREEN + " OK" + Style.RESET_ALL)
-            num_ok_tests+=1
+
         continue
     else:
         continue

@@ -643,8 +643,6 @@ static void generateIfStatement(IfStatementAST *ifst)
     generateCode(ifst->condition);
 
     Value *cond = ifst->condition->codegen;
-    cond = llinfo.Builder->CreateICmpEQ(cond, ConstantInt::getTrue(*llinfo.TheContext), "if_cond");
-
     Function *lfunc = llinfo.Builder->GetInsertBlock()->getParent();
 
     BasicBlock *then_block = BasicBlock::Create(*llinfo.TheContext, "if.then", lfunc);
@@ -661,14 +659,19 @@ static void generateIfStatement(IfStatementAST *ifst)
     generateCode(ifst->then_branch);
     Value *then_val = ifst->then_branch->codegen;
 
-    llinfo.Builder->CreateBr(merge_block);
+    if (!ifst->then_branch_return) {
+        // Only jump to the merge block if we do not have a return that does it
+        llinfo.Builder->CreateBr(merge_block);
+    }
     then_block = llinfo.Builder->GetInsertBlock();
 
     if (ifst->else_branch) {
         llinfo.llvm_function->getBasicBlockList().push_back(else_block);
         llinfo.Builder->SetInsertPoint(else_block);
         generateCode(ifst->else_branch);
-        llinfo.Builder->CreateBr(merge_block);
+        if (!ifst->then_branch_return) {
+            llinfo.Builder->CreateBr(merge_block);
+        }
         else_block = llinfo.Builder->GetInsertBlock();
     }
 
