@@ -152,6 +152,7 @@ struct ReturnStatementAST: StatementAST
     ReturnStatementAST() { ast_type = AST_RETURN_STATEMENT; }
     ExpressionAST *ret = nullptr;
     llvm::Value *codegen = nullptr;
+    bool isFunctionLevel = false; // true if the block is a function body or directly. False for if, while
 };
 
 struct IfStatementAST : StatementAST
@@ -188,7 +189,9 @@ struct FunctionDefinitionAST : DefinitionAST
     llvm::Value *llret_alloc = nullptr; // stores the return value mem location on llvm
     llvm::BasicBlock* llret_block = nullptr; // block where we do the return
     u32 size_in_bytes = 8;
+    u32 num_return_statements = 0; // Used in llvm, number of return statements not in level
     bool being_generated = false;
+    
 };
 
 struct ExpressionAST : DefinitionAST

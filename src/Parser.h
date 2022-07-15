@@ -17,6 +17,7 @@ struct Parser {
     FileAST *top_level_ast = nullptr;
     bool isImport = false;
     bool success;
+    bool isFunctionLevel = false; // true if the current parsing is a function body or directly. False for if, while
     void Error(const char *msg, ...);
     void ErrorWithLoc(SrcLocation &loc, const char *msg, ...);
 

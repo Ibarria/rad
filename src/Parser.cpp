@@ -602,6 +602,7 @@ ReturnStatementAST *Parser::parseReturnStatement()
     if (!success) {
         return nullptr;
     }
+    ret->isFunctionLevel = isFunctionLevel;
     return ret;
 }
 
@@ -612,6 +613,9 @@ IfStatementAST * Parser::parseIfStatement()
     if (!success) {
         return nullptr;
     }
+
+    bool oldFunctionLevel = isFunctionLevel;
+    isFunctionLevel = false; 
 
     ifst->condition = parseExpression();
     if (!success) {
@@ -632,6 +636,8 @@ IfStatementAST * Parser::parseIfStatement()
             return nullptr;
         }
     }
+
+    isFunctionLevel = oldFunctionLevel;
 
     return ifst;
 }
@@ -755,8 +761,13 @@ ForStatementAST * Parser::parseForStatement()
     forst->for_scope.parent = current_scope;
     current_scope = &forst->for_scope;
 
+    bool oldFunctionLevel = isFunctionLevel;
+    isFunctionLevel = false;
+    
     // Assume single array, time to parse a statement
     forst->loop_block = parseStatement();
+    
+    isFunctionLevel = oldFunctionLevel;
 
     current_scope = current_scope->parent;
 
@@ -887,6 +898,10 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
             TokenTypeToStr(lex->getTokenType()));
         return nullptr;
     }
+
+    bool oldFunctionLevel = isFunctionLevel;
+    isFunctionLevel = true;
+
     // We need to add the declarated variables into the statementBlock
     // for the function
     fundef->function_body = parseStatementBlock(fundef);
@@ -897,6 +912,9 @@ FunctionDefinitionAST *Parser::parseFunctionDefinition()
         arg->scope = &fundef->function_body->block_scope;
         arg->specified_type->scope = arg->scope;
     }
+
+    isFunctionLevel = oldFunctionLevel;
+
     return fundef;
 }
 

@@ -21,6 +21,11 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Utils.h"
 #include "llvm/IR/DIBuilder.h"
 
 #include "FileObject.h"
@@ -57,6 +62,9 @@ struct LLVMInfo {
     std::unique_ptr<IRBuilder<>> Builder;
     std::unique_ptr<Module> TheModule;
     std::unique_ptr<DIBuilder> DBuilder;
+    std::unique_ptr<legacy::FunctionPassManager> fpass;
+    legacy::PassManager pass;
+    PassManagerBuilder PMBuilder;
     DICompileUnit* RootCU = nullptr;
     Function* llvm_function = nullptr;
     DIFilesHash filesHash;
@@ -189,11 +197,12 @@ static void generateFunctionPrototype(VariableDeclarationAST *decl)
     Function *llvm_func = Function::Create(llvm_type, Function::ExternalLinkage,
         decl->varname, *llinfo.TheModule);
     // Got these for main from looking at clang
-    llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
-    llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoRecurse);
+    if (!llinfo.fpass) {
+        llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
+        llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoRecurse);
+        llvm_func->addFnAttr(llvm::Attribute::AttrKind::OptimizeNone);
+    }
     llvm_func->addFnAttr(llvm::Attribute::AttrKind::NoUnwind);
-    llvm_func->addFnAttr(llvm::Attribute::AttrKind::OptimizeNone);
-    llvm_func->addFnAttr(llvm::Attribute::AttrKind::UWTable);
 
     // ensure llvm knows the name of arguments
     u32 idx = 0;
@@ -536,9 +545,11 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
 
         generateCode(func_decl->function_body);
 
-        llinfo.Builder->CreateBr(func_decl->llret_block);
-        llvm_func->getBasicBlockList().push_back(func_decl->llret_block);
-        llinfo.Builder->SetInsertPoint(func_decl->llret_block);
+        if (func_decl->num_return_statements > 0) {
+            llinfo.Builder->CreateBr(func_decl->llret_block);
+            llvm_func->getBasicBlockList().push_back(func_decl->llret_block);
+            llinfo.Builder->SetInsertPoint(func_decl->llret_block);
+        }
         if (isVoidType(ft->return_type)) {
             llinfo.Builder->CreateRetVoid();
         } else {
@@ -554,6 +565,12 @@ static void generateVariableDeclaration(VariableDeclarationAST *decl)
         // printf("\n***************** FUNC ****************\n");
 
         verifyFunction(*llvm_func);
+        if (llinfo.fpass) {
+//            llinfo.fpass->doInitialization();
+            llinfo.fpass->run(*llvm_func);
+//            llinfo.fpass->doFinalization();
+        }
+
         llinfo.llvm_function = old_func;
 
         if (oldBlock) {
@@ -1016,9 +1033,11 @@ static void generateCode(BaseAST *ast)
         if (ret_stmt->ret != nullptr) {
             generateCode(ret_stmt->ret);
             llinfo.emitLocation(ret_stmt);
-            llinfo.Builder->CreateStore(ret_stmt->ret->codegen, findEnclosingFunction(ret_stmt)->llret_alloc);
+            auto* fundef = findEnclosingFunction(ret_stmt);
+            if (!ret_stmt->isFunctionLevel) fundef->num_return_statements++;
+            llinfo.Builder->CreateStore(ret_stmt->ret->codegen, fundef->llret_alloc);
         } 
-        llinfo.Builder->CreateBr(findEnclosingFunction(ret_stmt)->llret_block);
+        if (!ret_stmt->isFunctionLevel) llinfo.Builder->CreateBr(findEnclosingFunction(ret_stmt)->llret_block);
         break;
     }
     case AST_FUNCTION_DEFINITION: {
@@ -1810,9 +1829,8 @@ xsaveopt                      - Support xsaveopt instructions.
 xsaves                        - Support xsaves instructions.
 */
 
-
-void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, double &bingenTime, double &linkTime, 
-	bool option_llvm_print, bool option_quiet, bool option_debug_info, const char* output_name)
+void llvm_compile(FileAST* root, FileObject& obj_file, const llvm_options& opt, llvm_timing& timing,
+                  const char* output_name)
 {   
     Timer timer;
 
@@ -1853,10 +1871,9 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     // Should this be avx2 or such?
     auto Features = "";
 
-    TargetOptions opt;
     auto RM = Optional<Reloc::Model>();
     auto TheTargetMachine =
-        Target->createTargetMachine(TargetTriple, CPU, Features, opt, RM);
+        Target->createTargetMachine(TargetTriple, CPU, Features, TargetOptions{}, RM);
 
     llinfo.TheModule->setDataLayout(TheTargetMachine->createDataLayout());
     llvm_u32 = Type::getInt32Ty(*llinfo.TheContext);
@@ -1865,7 +1882,33 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     llvm_f64 = Type::getDoubleTy(*llinfo.TheContext);
     llinfo.Builder = std::make_unique<IRBuilder<>>(*llinfo.TheContext);
 
-    if (option_debug_info) {
+    if (opt.option_optimize) {
+        llinfo.fpass = std::make_unique<legacy::FunctionPassManager>(llinfo.TheModule.get());
+
+        /*
+        llinfo.PMBuilder.OptLevel = 3;
+        llinfo.PMBuilder.VerifyOutput = true;
+        llinfo.PMBuilder.VerifyInput = true;
+        llinfo.PMBuilder.populateFunctionPassManager(*llinfo.fpass);
+        llinfo.PMBuilder.populateModulePassManager(llinfo.pass);
+        */
+
+        // Promote allocas to registers.
+        llinfo.fpass->add(createPromoteMemoryToRegisterPass());
+        // Do simple "peephole" optimizations and bit-twiddling optzns.
+        llinfo.fpass->add(createInstructionCombiningPass());
+        // Reassociate expressions.
+        llinfo.fpass->add(createReassociatePass());
+        // Eliminate Common SubExpressions.
+        llinfo.fpass->add(createGVNPass());
+        // Simplify the control flow graph (deleting unreachable blocks, etc).
+        llinfo.fpass->add(createCFGSimplificationPass());
+
+        llinfo.fpass->doInitialization();
+
+    }
+
+    if (opt.option_debug_info) {
         llinfo.DBuilder = std::make_unique<DIBuilder>(*llinfo.TheModule);
 
         DIFile* root_file = llinfo.getOrCreateDFile(root);
@@ -1888,7 +1931,7 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     // Do the actual compile
     generateCode(root);
 
-    codegenTime = timer.stopTimer();
+    timing.codegenTime = timer.stopTimer();
 
     timer.startTimer();
 
@@ -1902,16 +1945,18 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
             return;
         }
 
-        legacy::PassManager pass;
+       
+
         auto FileType = llvm::CGFT_ObjectFile;
 
-        if (TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
+        if (TheTargetMachine->addPassesToEmitFile(llinfo.pass, dest, nullptr, FileType)) {
             errs() << "TheTargetMachine can't emit a file of this type";
             assert(false);
             return;
         }
 
         if (llinfo.DBuilder) llinfo.DBuilder->finalize();
+        if (llinfo.fpass) llinfo.fpass->doFinalization();
 
 #if 0
         // we can do this with the parameter to print llvm
@@ -1919,14 +1964,14 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
         outs().flush();
 #endif
 
-        pass.run(*llinfo.TheModule);
+        llinfo.pass.run(*llinfo.TheModule);
 
         dest.flush();
 
-        bingenTime = timer.stopTimer();
+        timing.bingenTime = timer.stopTimer();
     }
 
-	if (!option_quiet) {
+	if (!opt.option_quiet) {
 		outs() << "Object generation [" << obj_file.getFilename() << "] completed, now linking...\n";
 		outs().flush();
 	}
@@ -1934,8 +1979,8 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
     {
         CPU_SAMPLE("LLVM external link");
         timer.startTimer();
-        int retcode = link_object(obj_file, root->imports, output_name, option_debug_info);
-        linkTime = timer.stopTimer();
+        int retcode = link_object(obj_file, root->imports, output_name, opt.option_debug_info);
+        timing.linkTime = timer.stopTimer();
         if (retcode != 0) {
             printf("Error, compilation failed!!!\n\n");
             return;
@@ -1944,7 +1989,7 @@ void llvm_compile(FileAST *root, FileObject &obj_file, double &codegenTime, doub
         }
     }
 
-    if (option_llvm_print) {
+    if (opt.option_llvm_print) {
         llinfo.TheModule->print(outs(), nullptr, false, true);
         outs().flush();
     }

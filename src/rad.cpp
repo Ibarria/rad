@@ -28,6 +28,7 @@ bool option_c = false;
 bool option_quiet = false;
 bool option_show_help = false;
 bool option_debug_info = false;
+bool option_optimize = false;
 char* option_output_name = nullptr;
 
 #ifndef WIN32
@@ -51,6 +52,7 @@ void usage()
     printf("\tOptions:\n");
     printf("\t-o <name> : name the final executable with that name\n");
     printf("\t-g: Add debug information to the binary for debugging\n");
+    printf("\t-opt : enable llvm optimization\n");
     printf("\t-backend:[LLVM|C|NULL]\n");
     printf("\t\tLLVM: use the llvm backend[DEFAULT]\n");
     printf("\t\tC: use the C backend\n");
@@ -71,8 +73,9 @@ void parseOptions(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-tokens")) {
             option_printTokens = true;
-        }
-        else if (!strcmp(argv[i], "-o")) {
+        } else if (!strcmp(argv[i], "-opt")) {
+            option_optimize = true;
+        } else if (!strcmp(argv[i], "-o")) {
             if (i + 1 >= argc) {
                 printf("Error, the '-o' option requires an argument\n");
                 exit(-1);
@@ -159,7 +162,8 @@ char *getCfilename(const char *jai_name)
 int main(int argc, char **argv)
 {
 	parseOptions(argc, argv);
-    double astBuildTime = 0.0, codegenTime = 0.0, linkTime = 0.0, binaryGenTime = 0.0;
+    llvm_timing timing;
+    double astBuildTime = 0.0;
 
     INIT_PROFILER();
 
@@ -204,8 +208,12 @@ int main(int argc, char **argv)
 
     if (option_llvm) {
         output_file.setExtension("o");
-        llvm_compile(parsedFile, output_file, codegenTime, binaryGenTime, linkTime, 
-			option_llvm_print, option_quiet, option_debug_info, option_output_name);
+        llvm_options opt;
+        opt.option_debug_info = option_debug_info;
+        opt.option_llvm_print = option_llvm_print;
+        opt.option_optimize = option_optimize;
+        opt.option_quiet = option_quiet;
+        llvm_compile(parsedFile, output_file, opt, timing, option_output_name);
     } else if (option_c) {
         timer.startTimer();
 
@@ -214,7 +222,7 @@ int main(int argc, char **argv)
         c_generator gen;
         gen.generate_c_file(output_file, parsedFile);
 
-        codegenTime = timer.stopTimer();
+        timing.codegenTime = timer.stopTimer();
 
         timer.startTimer();
 
@@ -223,7 +231,7 @@ int main(int argc, char **argv)
             res = compile_c_into_binary(output_file, parsedFile->imports);
         }
 
-        binaryGenTime = timer.stopTimer();
+        timing.bingenTime = timer.stopTimer();
 
         if (res != 0) {
             printf("The C compilation failed with error code: %d\n", res);
@@ -239,15 +247,15 @@ int main(int argc, char **argv)
 		printf("\n ******** Compile time statistics ******** \n");
 		printTime("     AST and inference stage", astBuildTime);
 		if (option_llvm) {
-			printTime("LLVM ojbect generation stage", binaryGenTime);
-			printTime("         External Link stage", linkTime);
+			printTime("LLVM ojbect generation stage", timing.bingenTime);
+			printTime("         External Link stage", timing.linkTime);
 		}
 		else if (option_c) {
-			printTime("     C code generation stage", codegenTime);
-			printTime("      External compile stage", binaryGenTime);
+			printTime("     C code generation stage", timing.codegenTime);
+			printTime("      External compile stage", timing.bingenTime);
 		}
 		printf("---------------------------------------------\n");
-		printTime("          Total compile time", astBuildTime + codegenTime + binaryGenTime + linkTime);
+		printTime("          Total compile time", astBuildTime + timing.codegenTime + timing.bingenTime + timing.linkTime);
 	}
 
     DELETE_PROFILER();

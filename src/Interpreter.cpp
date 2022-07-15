@@ -1266,6 +1266,24 @@ bool Interpreter::enforceRunDirectiveConstraints(BaseAST * ast)
     return true;
 }
 
+static bool findAndCullReturn(StatementBlockAST* block)
+{
+    for (u32 sidx = 0; sidx < block->statements.size(); sidx++) {
+        // this does not cover the case of a return statement inside a statement block
+        if (block->statements[sidx]->ast_type == AST_RETURN_STATEMENT) {
+            block->statements.reset(sidx + 1);
+            return true;
+        } else if (block->statements[sidx]->ast_type == AST_STATEMENT_BLOCK) {
+            if (findAndCullReturn((StatementBlockAST*)block->statements[sidx])) {
+                // We found and culled a return, we should cull too
+                block->statements.reset(sidx + 1);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
 {
     auto ast = *astp;
@@ -1369,6 +1387,10 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
     case AST_FUNCTION_DEFINITION: {
         auto fundef = (FunctionDefinitionAST *)ast;
         traversePostfixAST(PPC(fundef->declaration), deps);
+
+        // Cull things after clean return
+        if (fundef->function_body) findAndCullReturn(fundef->function_body);
+
         traversePostfixAST(PPC(fundef->function_body), deps);
         // No other checks for a function definition? 
 
