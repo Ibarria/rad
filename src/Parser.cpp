@@ -594,9 +594,11 @@ ReturnStatementAST *Parser::parseReturnStatement()
         return nullptr;
     }
 
-    ret->ret = parseExpression();
-    if (!success) {
-        return nullptr;
+    if (!lex->checkToken(TK_SEMICOLON)) {
+        ret->ret = parseExpression();
+        if (!success) {
+            return nullptr;
+        }
     }
     MustMatchToken(TK_SEMICOLON, "Statement needs to end in semicolon");
     if (!success) {

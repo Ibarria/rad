@@ -867,9 +867,11 @@ void bytecode_generator::generate_statement(StatementAST *stmt)
     }
     case AST_RETURN_STATEMENT: {
         auto ret_stmt = (ReturnStatementAST *)stmt;
-        auto ret_inst = computeExpression(ret_stmt->ret);
-        createStoreInstruction(BC_STORE_TO_CALL_REGISTER, 0, ret_stmt->ret->expr_type->size_in_bytes,
-            ret_inst->dst_reg, get_regtype_from_type(ret_stmt->ret->expr_type));
+        if (ret_stmt->ret) {
+            auto ret_inst = computeExpression(ret_stmt->ret);
+            createStoreInstruction(BC_STORE_TO_CALL_REGISTER, 0, ret_stmt->ret->expr_type->size_in_bytes,
+                ret_inst->dst_reg, get_regtype_from_type(ret_stmt->ret->expr_type));
+        }
         create_instruction(BC_RETURN, -1, -1, -1, 0);
         break;
     }

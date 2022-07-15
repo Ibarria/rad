@@ -36,6 +36,8 @@ test::()
 
 	// Having this instruction will result in an error due to recursive call
 	// #run test();
+
+	return;
 }
 
 

@@ -584,6 +584,15 @@ inline bool isTypeNullPtr(TypeAST *t)
     return t->ast_type == AST_NULL_TYPE;
 }
 
+inline bool isTypeVoid(TypeAST* t)
+{
+    if (t->ast_type == AST_DIRECT_TYPE) {
+        auto dt = (DirectTypeAST*)t;
+        return dt->basic_type == BASIC_TYPE_VOID;
+    }
+    return false;
+}
+
 // Should this include the VOID type?
 inline bool isTypeRunSupported(TypeAST *t) 
 {

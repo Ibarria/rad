@@ -2233,13 +2233,22 @@ bool Interpreter::doWorkAST(interp_work * work)
             // next we need to type check the return expression
             // with the enclosing function (!!)
             bool needs_cast = false;
-            TypeAST *ret_type = ret_stmt->ret->expr_type;
             FunctionDefinitionAST *fundef = findEnclosingFunction(ret_stmt);
             if (!fundef) {
                 Error(ret_stmt, "Return statement not within a function\n");
                 return false;
             }
             TypeAST *func_ret_type = fundef->declaration->return_type;
+            if (ret_stmt->ret == nullptr) {
+                if (!isTypeVoid(func_ret_type)) {
+                    char ftype[64] = {};
+                    printTypeToStr(ftype, func_ret_type);
+                    Error(ret_stmt, "Found return without expression when expected a %s\n", ftype);
+                    return false;
+                }
+                break;
+            }
+            TypeAST* ret_type = ret_stmt->ret->expr_type;
             TypeCheckError err = checkTypesAllowLiteralAndCast(&ret_stmt->ret, func_ret_type, ret_type);
             if (err != TCH_OK) {
                 char ltype[64] = {}, rtype[64] = {};
