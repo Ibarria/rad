@@ -32,9 +32,9 @@ def execute_test( radexe, golddir, testdir, testname, cflags):
 
     # Start by compiling    
     cmd = radexe + " -quiet " + cflags + " " + os.path.join(testdir, testname)
-    file = open('compileout.txt', 'w')
     with open('compileout.txt', 'w') as file:
         subprocess.call(cmd, stdout=file, stderr=subprocess.STDOUT, shell=True)
+   
     goldcomp = os.path.join(golddir, nameonly + '.cmptxt');
     
     if os.path.exists( goldcomp ) :
