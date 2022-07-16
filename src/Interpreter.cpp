@@ -1535,6 +1535,8 @@ void Interpreter::traversePostfixAST(BaseAST ** astp, interp_deps & deps)
         traversePostfixAST(PPC(forst->it), deps);
         traversePostfixAST(PPC(forst->it_index), deps);
 
+        forst->for_block_has_return = findAndCullReturn(forst->loop_block);
+
         // traverse the block latest as we should know all on the loop
         traversePostfixAST(PPC(forst->loop_block), deps);
         break;

@@ -738,14 +738,20 @@ static void generateForStatement(ForStatementAST *forst)
         // Do the actual loop code
         generateCode(forst->loop_block);
 
-        // Do the loop increment, and then inconditional jump
-        Value *llvm_one = ConstantInt::get(llvm_u64, 1);
-        Value *it_index_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
-        Value *it_index_inc = llinfo.Builder->CreateAdd(it_index_val, llvm_one, "inc");
-        llinfo.Builder->CreateStore(it_index_inc, forst->it_index->decl->codegen);
+        if (!forst->for_block_has_return) {
+            BasicBlock* for_incr = BasicBlock::Create(*llinfo.TheContext, "for_incr", lfunc);
 
-        llinfo.Builder->CreateBr(for_entry);
-        llinfo.Builder->SetInsertPoint(for_after);
+            llinfo.Builder->CreateBr(for_incr);
+            llinfo.Builder->SetInsertPoint(for_incr);
+
+            // Do the loop increment, and then inconditional jump
+            Value* llvm_one = ConstantInt::get(llvm_u64, 1);
+            Value* it_index_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
+            Value* it_index_inc = llinfo.Builder->CreateAdd(it_index_val, llvm_one, "inc");
+            llinfo.Builder->CreateStore(it_index_inc, forst->it_index->decl->codegen);
+
+            llinfo.Builder->CreateBr(for_entry);
+        }
     } else {
         generateCode(forst->end);
         Value *end_val = forst->end->codegen;
@@ -768,19 +774,26 @@ static void generateForStatement(ForStatementAST *forst)
         // Do the actual loop code
         generateCode(forst->loop_block);
 
-        // increment the it, it_index. It could have changed
-        it_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it), generateIdentifierCode(forst->it), forst->it->name);
-        Value *llvm_one = ConstantInt::get(llvm_u64, 1);
-        Value *it_inc = llinfo.Builder->CreateAdd(it_val, llvm_one, "inc");
-        llinfo.Builder->CreateStore(it_inc, forst->it->decl->codegen);
+        if (!forst->for_block_has_return) {
+            BasicBlock* for_incr = BasicBlock::Create(*llinfo.TheContext, "for_incr", lfunc);
+            llinfo.Builder->CreateBr(for_incr);
+            llinfo.Builder->SetInsertPoint(for_incr);
 
-        Value *it_index_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
-        Value *it_index_inc = llinfo.Builder->CreateAdd(it_index_val, llvm_one, "inc");
-        llinfo.Builder->CreateStore(it_index_inc, forst->it_index->decl->codegen);
+            // increment the it, it_index. It could have changed
+            it_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it), generateIdentifierCode(forst->it), forst->it->name);
+            Value* llvm_one = ConstantInt::get(llvm_u64, 1);
+            Value* it_inc = llinfo.Builder->CreateAdd(it_val, llvm_one, "inc");
+            llinfo.Builder->CreateStore(it_inc, forst->it->decl->codegen);
 
-        llinfo.Builder->CreateBr(for_entry);
-        llinfo.Builder->SetInsertPoint(for_after);
+            Value* it_index_val = llinfo.Builder->CreateLoad(getIdentifierType(forst->it_index), generateIdentifierCode(forst->it_index), forst->it_index->name);
+            Value* it_index_inc = llinfo.Builder->CreateAdd(it_index_val, llvm_one, "inc");
+            llinfo.Builder->CreateStore(it_index_inc, forst->it_index->decl->codegen);
+
+            llinfo.Builder->CreateBr(for_entry);
+        }
     }
+    llinfo.Builder->SetInsertPoint(for_after);
+
     if (llinfo.DBuilder) {
         llinfo.popDebugScope();
     }
@@ -1033,11 +1046,11 @@ static void generateCode(BaseAST *ast)
     }
     case AST_RETURN_STATEMENT: {
         auto ret_stmt = (ReturnStatementAST *)ast;
+        auto* fundef = findEnclosingFunction(ret_stmt);
+        if (!ret_stmt->isFunctionLevel) fundef->num_return_statements++;
         if (ret_stmt->ret != nullptr) {
             generateCode(ret_stmt->ret);
             llinfo.emitLocation(ret_stmt);
-            auto* fundef = findEnclosingFunction(ret_stmt);
-            if (!ret_stmt->isFunctionLevel) fundef->num_return_statements++;
             llinfo.Builder->CreateStore(ret_stmt->ret->codegen, fundef->llret_alloc);
         } 
         if (!ret_stmt->isFunctionLevel) llinfo.Builder->CreateBr(findEnclosingFunction(ret_stmt)->llret_block);

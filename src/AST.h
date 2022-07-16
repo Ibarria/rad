@@ -178,6 +178,7 @@ struct ForStatementAST : StatementAST
     Scope for_scope;
     bool is_array = false;
     bool is_it_ptr = false;
+    bool for_block_has_return = false;
 };
 
 struct FunctionDefinitionAST : DefinitionAST
