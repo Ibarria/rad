@@ -47,6 +47,7 @@ llvm_config(rad support core debuginfodwarf
     linker native nativecodegen option passes target )
 
 set_property(TARGET rad APPEND_STRING PROPERTY LINK_FLAGS " ${RAD_LINK_FLAG}")
+list(APPEND CMAKE_INSTALL_RPATH ${CMAKE_INSTALL_PREFIX}/lib )
 
 target_link_libraries(rad PRIVATE stdc++ stdc++fs z rt tinfo curses xml2 m dl pthread )
 

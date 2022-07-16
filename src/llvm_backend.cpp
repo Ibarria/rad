@@ -152,7 +152,8 @@ int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_n
 
     return exit_code;
 #elif defined(PLATFORM_LINUX)
-    char cmd_line[512] = {};
+    char* cmd_line = (char *)malloc(4096);
+    memset(cmd_line, 0, 4096);
     FileObject outfile; 
     if (output_name) outfile.setFile(output_name);
     else {
@@ -165,10 +166,23 @@ int link_object(FileObject &obj_file, ImportsHash &imports, const char* output_n
         printf("Error, could not find required file: start_win.c.o\n");
         return -1;
     }
+    char basicbuf[256] = {};
+    if (!find_rad_dependency("Basic.so", basicbuf, sizeof(basicbuf))) {
+        printf("Error, could not find required file: Basic.so\n");
+        return -1;
+    }
+    size_t blen = strlen(basicbuf);
+    for(size_t i = blen; i > 0; i--) {
+        if (basicbuf[i] == '/') {
+            basicbuf[i] = 0;
+            break;
+        }
+    }
+
     // TODO: simplify this with assembly chunks: -nodefaultlibs -nostdlib
     u32 chars_written = sprintf(cmd_line, 
-        "clang %s %s %s -o %s -nodefaultlibs -nostdlib -ldl -Wl,-e,_radstart",
-        obj_file.getFilename(), depbuf, option_debug_info ? "-g" : "", outfile.getFilename());
+        "clang %s %s %s -o %s -nodefaultlibs -nostdlib -ldl -Wl,-e,_radstart -Wl,-rpath=%s",
+        obj_file.getFilename(), depbuf, option_debug_info ? "-g" : "", outfile.getFilename(), basicbuf);
 
     auto it = imports.begin();
     char *line_ptr = cmd_line + chars_written;
